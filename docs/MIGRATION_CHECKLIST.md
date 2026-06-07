@@ -14,21 +14,21 @@ cd ai-workflow-control-kit
 Required:
 
 - Git
-- PowerShell
 - Node.js
 - Codex or Claude Code
 
 Recommended:
 
 - Python, required only when updating `cc-switch.db`
+- PowerShell 7 (`pwsh`), required only for legacy replay scripts or one-off Windows maintenance
 - cc-switch, required only when using shared Claude/Codex common config
 - rtk, required for the Claude `PreToolUse` hook path
 - uv, bun, ffmpeg, and openspec if your skills call them
 
 ## 3. Dry Run
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -DryRun -BackupExisting
+```bash
+node scripts/install-ai-workflow-kit.js --dry-run --backup-existing
 ```
 
 Confirm the target paths before installing. The default replay-autopilot target is:
@@ -41,8 +41,8 @@ Use `-ReplayAutopilotRoot D:\opt\replay-autopilot` only if that is your intended
 
 ## 4. Install With Backup
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -BackupExisting
+```bash
+node scripts/install-ai-workflow-kit.js --backup-existing
 ```
 
 The script backs up replaced files or directories as:
@@ -83,15 +83,21 @@ Restore secrets from your password manager or provider login flow, not from this
 
 Run the built-in verifier:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Verify-AiWorkflowKit.ps1
+```bash
+node scripts/verify-ai-workflow-kit.js
 ```
 
 Run the repository checks:
 
+```bash
+node scripts/test-no-secrets.js
+node scripts/verify-ai-workflow-kit.js
+```
+
+Legacy replay controllers are still PowerShell scripts. Prefer `pwsh` when running them:
+
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-NoSecrets.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
 ```
 
 Optional replay regression checks:

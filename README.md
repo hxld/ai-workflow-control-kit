@@ -43,13 +43,13 @@ docs/                Migration, productization, and operating guides
 Required on a new Windows machine:
 
 - Git
-- PowerShell
 - Node.js
 - Codex or Claude Code
 
 Recommended when you use the related integrations:
 
 - Python for writing cc-switch SQLite settings
+- PowerShell 7 (`pwsh`) for legacy replay scripts and one-off Windows maintenance
 - cc-switch for shared Claude/Codex common config
 - rtk for the Claude `PreToolUse` hook path
 - uv, bun, ffmpeg, and openspec for skills that call those tools
@@ -65,20 +65,20 @@ cd ai-workflow-control-kit
 
 Run a dry run first:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -DryRun -BackupExisting
+```bash
+node scripts/install-ai-workflow-kit.js --dry-run --backup-existing
 ```
 
 Install with backups:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -BackupExisting
+```bash
+node scripts/install-ai-workflow-kit.js --backup-existing
 ```
 
 Verify the installation:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Verify-AiWorkflowKit.ps1
+```bash
+node scripts/verify-ai-workflow-kit.js
 ```
 
 ## Skills Sync Model
@@ -110,6 +110,12 @@ Codex uses `config.toml` for hooks and global `AGENTS.md` / `RTK.md` for RTK gui
 Do not keep both `$HOME\.codex\hooks.json` and hook definitions in `$HOME\.codex\config.toml`; this can trigger duplicate hook-source warnings.
 
 Project trust entries are intentionally not preconfigured. Add trusted project paths only when a real local project needs them.
+
+## Node-First Runtime
+
+The default installer, verifier, secret scanner, cc-switch updater, and high-frequency hooks run through Node.js. When they need an external program, they call it directly with `execFile` instead of going through a shell interpreter.
+
+PowerShell scripts are retained as compatibility and legacy replay entry points. Do not wire Windows PowerShell 5.1 into high-frequency hooks.
 
 ## Replay Autopilot
 
@@ -147,8 +153,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\T
 
 Before committing or publishing, run:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-NoSecrets.ps1
+```bash
+node scripts/test-no-secrets.js
 ```
 
 The repository should contain templates and placeholders only. Real credentials must be restored locally after installation.
@@ -168,7 +174,7 @@ Requirements:
 4. Do not install auth tokens, real provider keys, runtime sessions, SQLite state, cache, or logs.
 5. Keep ~/.agents/skills as the canonical skill source, and link ~/.claude/skills and ~/.codex/skills to it.
 6. Run the verification commands from README.
-7. Run scripts/Verify-AiWorkflowKit.ps1.
+7. Run `node scripts/verify-ai-workflow-kit.js`.
 8. Report what succeeded and what still requires manual local credentials or path edits.
 ```
 

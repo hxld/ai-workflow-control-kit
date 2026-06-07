@@ -1,0 +1,16 @@
+{
+  "name": "ai-workflow-control-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Portable control plane for AI-assisted software delivery: skills, hooks, host adapters, and replay automation.",
+  "scripts": {
+    "install:workflow": "node scripts/install-ai-workflow-kit.js",
+    "install:workflow:dry": "node scripts/install-ai-workflow-kit.js --dry-run --backup-existing",
+    "install:cc-switch": "node scripts/install-cc-switch-common-config.js",
+    "verify": "node scripts/verify-ai-workflow-kit.js",
+    "test:no-secrets": "node scripts/test-no-secrets.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

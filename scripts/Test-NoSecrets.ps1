@@ -20,6 +20,9 @@ Get-ChildItem -LiteralPath $root -Recurse -Force -File | ForEach-Object {
     if ($normalizedRel -eq '.git' -or $normalizedRel.StartsWith('.git\')) {
         return
     }
+    if ($normalizedRel -eq '.memory' -or $normalizedRel.StartsWith('.memory\')) {
+        return
+    }
     if ($_.Name -eq '.env' -and $allowedEnvFiles -notcontains $normalizedRel) {
         $failures.Add("forbidden file: $rel") | Out-Null
         return

@@ -1,0 +1,58 @@
+{
+  "version": "2.0",
+  "description": "Multi-project Configuration - Modify according to actual situation",
+
+  "projects": {
+    "order-system": {
+      "name": "Order System",
+      "description": "Example core business system - Modify workDir to actual path",
+      "workDir": "",
+      "codeLanguage": "java",
+      "sourcePaths": ["src/main/java"],
+
+      "containers": {
+        "order-api": {
+          "name": "Order API Service",
+          "indexPattern": "",
+          "labelSelector": "",
+          "logFormat": "json"
+        }
+      },
+
+      "customFields": {
+        "orderNo": ["orderNo", "order_no"],
+        "userId": ["userId", "user_id"]
+      }
+    },
+
+    "integration-system": {
+      "name": "Integration System",
+      "description": "External channel integration system - Modify workDir to actual path",
+      "workDir": "",
+      "codeLanguage": "java",
+      "sourcePaths": ["src/main/java"],
+
+      "containers": {
+        "integration-api": {
+          "name": "Integration API Service",
+          "indexPattern": "",
+          "labelSelector": "",
+          "logFormat": "json"
+        }
+      },
+
+      "customFields": {
+        "channelCode": ["channelCode", "channel_code"]
+      }
+    }
+  },
+
+  "defaultProject": "order-system",
+
+  "aliases": {
+    "订单": "order-system",
+    "订单系统": "order-system",
+    "对接": "integration-system",
+    "对接系统": "integration-system"
+  }
+}

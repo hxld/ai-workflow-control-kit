@@ -1,0 +1,650 @@
+{
+  "version": 3,
+  "skills": {
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/vercel-labs/skills.git",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-02-23T12:25:11.551Z",
+      "updatedAt": "2026-03-26T05:48:27.924Z"
+    },
+    "baoyu-format-markdown": {
+      "source": "jimliu/baoyu-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/jimliu/baoyu-skills.git",
+      "skillPath": "skills/baoyu-format-markdown/SKILL.md",
+      "skillFolderHash": "",
+      "pluginName": "baoyu-skills",
+      "installedAt": "2026-02-23T13:36:35.139Z",
+      "updatedAt": "2026-03-26T05:50:39.350Z"
+    },
+    "acquisition-channel-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/acquisition-channel-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:41.845Z",
+      "updatedAt": "2026-03-26T05:51:18.910Z"
+    },
+    "ai-shaped-readiness-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/ai-shaped-readiness-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:42.877Z",
+      "updatedAt": "2026-03-26T05:51:21.205Z"
+    },
+    "altitude-horizon-framework": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/altitude-horizon-framework/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:43.856Z",
+      "updatedAt": "2026-03-26T05:51:22.376Z"
+    },
+    "business-health-diagnostic": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/business-health-diagnostic/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:44.504Z",
+      "updatedAt": "2026-03-26T05:51:24.156Z"
+    },
+    "company-research": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/company-research/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:45.028Z",
+      "updatedAt": "2026-03-26T05:51:26.011Z"
+    },
+    "context-engineering-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/context-engineering-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:45.519Z",
+      "updatedAt": "2026-03-26T05:51:27.927Z"
+    },
+    "customer-journey-map": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/customer-journey-map/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:46.385Z",
+      "updatedAt": "2026-03-26T05:51:29.192Z"
+    },
+    "customer-journey-mapping-workshop": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/customer-journey-mapping-workshop/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:47.789Z",
+      "updatedAt": "2026-03-26T05:51:30.877Z"
+    },
+    "director-readiness-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/director-readiness-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:48.807Z",
+      "updatedAt": "2026-03-26T05:51:32.138Z"
+    },
+    "discovery-interview-prep": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/discovery-interview-prep/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:49.485Z",
+      "updatedAt": "2026-03-26T05:51:33.591Z"
+    },
+    "discovery-process": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/discovery-process/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:50.511Z",
+      "updatedAt": "2026-03-26T05:51:34.827Z"
+    },
+    "eol-message": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/eol-message/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:52.461Z",
+      "updatedAt": "2026-03-26T05:51:36.598Z"
+    },
+    "epic-breakdown-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/epic-breakdown-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:54.629Z",
+      "updatedAt": "2026-03-26T05:51:37.913Z"
+    },
+    "epic-hypothesis": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/epic-hypothesis/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:55.454Z",
+      "updatedAt": "2026-03-26T05:51:49.726Z"
+    },
+    "executive-onboarding-playbook": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/executive-onboarding-playbook/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:55.979Z",
+      "updatedAt": "2026-03-26T05:51:51.021Z"
+    },
+    "feature-investment-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/feature-investment-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:57.936Z",
+      "updatedAt": "2026-03-26T05:51:52.408Z"
+    },
+    "finance-based-pricing-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/finance-based-pricing-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:59.436Z",
+      "updatedAt": "2026-03-26T05:51:54.496Z"
+    },
+    "finance-metrics-quickref": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/finance-metrics-quickref/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:42:59.926Z",
+      "updatedAt": "2026-03-26T05:51:55.800Z"
+    },
+    "jobs-to-be-done": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/jobs-to-be-done/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:01.036Z",
+      "updatedAt": "2026-03-26T05:51:57.277Z"
+    },
+    "lean-ux-canvas": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/lean-ux-canvas/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:02.185Z",
+      "updatedAt": "2026-03-26T05:51:58.890Z"
+    },
+    "opportunity-solution-tree": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/opportunity-solution-tree/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:02.800Z",
+      "updatedAt": "2026-03-26T05:52:10.604Z"
+    },
+    "pestel-analysis": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/pestel-analysis/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:03.995Z",
+      "updatedAt": "2026-03-26T05:52:12.031Z"
+    },
+    "pol-probe": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/pol-probe/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:04.524Z",
+      "updatedAt": "2026-03-26T05:52:13.371Z"
+    },
+    "pol-probe-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/pol-probe-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:05.648Z",
+      "updatedAt": "2026-03-26T05:52:24.636Z"
+    },
+    "positioning-statement": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/positioning-statement/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:06.142Z",
+      "updatedAt": "2026-03-26T05:52:26.116Z"
+    },
+    "positioning-workshop": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/positioning-workshop/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:06.667Z",
+      "updatedAt": "2026-03-26T05:52:27.998Z"
+    },
+    "prd-development": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/prd-development/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:07.156Z",
+      "updatedAt": "2026-03-26T05:52:29.400Z"
+    },
+    "press-release": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/press-release/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:07.643Z",
+      "updatedAt": "2026-03-26T05:52:30.629Z"
+    },
+    "prioritization-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/prioritization-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:08.643Z",
+      "updatedAt": "2026-03-26T05:52:32.214Z"
+    },
+    "problem-framing-canvas": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/problem-framing-canvas/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:09.616Z",
+      "updatedAt": "2026-03-26T05:52:33.463Z"
+    },
+    "problem-statement": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/problem-statement/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:10.634Z",
+      "updatedAt": "2026-03-26T05:52:34.653Z"
+    },
+    "product-strategy-session": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/product-strategy-session/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:11.339Z",
+      "updatedAt": "2026-03-26T05:52:36.368Z"
+    },
+    "proto-persona": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/proto-persona/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:12.032Z",
+      "updatedAt": "2026-03-26T05:52:38.126Z"
+    },
+    "recommendation-canvas": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/recommendation-canvas/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:13.028Z",
+      "updatedAt": "2026-03-26T05:52:39.761Z"
+    },
+    "roadmap-planning": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/roadmap-planning/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:14.502Z",
+      "updatedAt": "2026-03-26T05:52:41.450Z"
+    },
+    "saas-economics-efficiency-metrics": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/saas-economics-efficiency-metrics/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:15.106Z",
+      "updatedAt": "2026-03-26T05:52:42.775Z"
+    },
+    "saas-revenue-growth-metrics": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/saas-revenue-growth-metrics/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:16.008Z",
+      "updatedAt": "2026-03-26T05:52:45.606Z"
+    },
+    "skill-authoring-workflow": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/skill-authoring-workflow/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:16.855Z",
+      "updatedAt": "2026-03-26T05:52:46.937Z"
+    },
+    "storyboard": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/storyboard/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:28.656Z",
+      "updatedAt": "2026-03-26T05:52:49.097Z"
+    },
+    "tam-sam-som-calculator": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/tam-sam-som-calculator/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:29.151Z",
+      "updatedAt": "2026-03-26T05:52:51.680Z"
+    },
+    "user-story": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/user-story/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:29.770Z",
+      "updatedAt": "2026-03-26T05:52:53.160Z"
+    },
+    "user-story-mapping": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/user-story-mapping/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:30.231Z",
+      "updatedAt": "2026-03-26T05:52:54.405Z"
+    },
+    "user-story-mapping-workshop": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/user-story-mapping-workshop/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:31.097Z",
+      "updatedAt": "2026-03-26T05:52:56.270Z"
+    },
+    "user-story-splitting": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/user-story-splitting/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:31.879Z",
+      "updatedAt": "2026-03-26T05:52:57.604Z"
+    },
+    "vp-cpo-readiness-advisor": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/vp-cpo-readiness-advisor/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:32.449Z",
+      "updatedAt": "2026-03-26T05:52:58.786Z"
+    },
+    "workshop-facilitation": {
+      "source": "deanpeters/product-manager-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/deanpeters/product-manager-skills.git",
+      "skillPath": "skills/workshop-facilitation/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-04T14:43:33.264Z",
+      "updatedAt": "2026-03-26T05:53:00.044Z"
+    },
+    "brainstorming": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/brainstorming/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:44.614Z",
+      "updatedAt": "2026-03-26T05:46:40.856Z"
+    },
+    "dispatching-parallel-agents": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/dispatching-parallel-agents/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:46.360Z",
+      "updatedAt": "2026-03-26T05:46:42.573Z"
+    },
+    "executing-plans": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/executing-plans/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:47.722Z",
+      "updatedAt": "2026-03-26T05:46:43.769Z"
+    },
+    "finishing-a-development-branch": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/finishing-a-development-branch/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:49.048Z",
+      "updatedAt": "2026-03-26T05:46:44.998Z"
+    },
+    "receiving-code-review": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/receiving-code-review/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:50.314Z",
+      "updatedAt": "2026-03-26T05:46:46.308Z"
+    },
+    "requesting-code-review": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/requesting-code-review/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:51.560Z",
+      "updatedAt": "2026-03-26T05:46:48.782Z"
+    },
+    "subagent-driven-development": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/subagent-driven-development/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:52.827Z",
+      "updatedAt": "2026-03-26T05:46:50.039Z"
+    },
+    "systematic-debugging": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/systematic-debugging/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:54.516Z",
+      "updatedAt": "2026-03-26T05:46:52.134Z"
+    },
+    "test-driven-development": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/test-driven-development/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:55.755Z",
+      "updatedAt": "2026-03-26T05:46:53.384Z"
+    },
+    "using-git-worktrees": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/using-git-worktrees/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:56.973Z",
+      "updatedAt": "2026-03-26T05:47:04.760Z"
+    },
+    "using-superpowers": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/using-superpowers/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:58.203Z",
+      "updatedAt": "2026-03-26T05:47:06.582Z"
+    },
+    "verification-before-completion": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/verification-before-completion/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:06:59.510Z",
+      "updatedAt": "2026-03-26T05:47:18.022Z"
+    },
+    "writing-plans": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/writing-plans/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:07:00.842Z",
+      "updatedAt": "2026-03-26T05:47:19.762Z"
+    },
+    "writing-skills": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/obra/superpowers.git",
+      "skillPath": "skills/writing-skills/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-10T01:07:02.518Z",
+      "updatedAt": "2026-03-26T05:47:21.078Z"
+    },
+    "ccc": {
+      "source": "cocoindex-io/cocoindex-code",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/cocoindex-io/cocoindex-code.git",
+      "skillPath": "skills/ccc/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-19T01:53:55.399Z",
+      "updatedAt": "2026-03-19T01:54:27.527Z"
+    },
+    "chrome-cdp": {
+      "source": "pasky/chrome-cdp-skill",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/pasky/chrome-cdp-skill.git",
+      "skillPath": "skills/chrome-cdp/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-21T14:57:02.022Z",
+      "updatedAt": "2026-03-26T05:54:52.394Z"
+    },
+    "pua": {
+      "source": "tanweai/pua",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/tanweai/pua.git",
+      "skillPath": "skills/pua/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-23T01:11:41.371Z",
+      "updatedAt": "2026-03-23T01:11:41.371Z"
+    },
+    "web-access": {
+      "source": "eze-is/web-access",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/eze-is/web-access.git",
+      "skillPath": "SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-29T09:10:30.892Z",
+      "updatedAt": "2026-03-29T09:10:30.892Z"
+    },
+    "follow-builders": {
+      "source": "xiaoxuerenww/follow-builders",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/xiaoxuerenww/follow-builders.git",
+      "skillPath": "SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-29T12:09:57.707Z",
+      "updatedAt": "2026-03-29T12:09:57.707Z"
+    },
+    "ai-decision-5steps": {
+      "source": "wilingna/ai-decision-5steps",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/wilingna/ai-decision-5steps.git",
+      "skillPath": "SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-03-29T14:31:37.917Z",
+      "updatedAt": "2026-03-29T14:31:37.917Z"
+    },
+    "gstack": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/garrytan/gstack.git",
+      "skillPath": "SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-04-05T14:44:14.896Z",
+      "updatedAt": "2026-04-05T14:44:14.896Z"
+    },
+    "chb-effort-estimation": {
+      "source": "ai-dev/skills-public",
+      "sourceType": "git",
+      "sourceUrl": "http://techdoc.oa.com/ai-dev/skills-public.git",
+      "skillPath": "skills/channel-b/chb-effort-estimation/SKILL.md",
+      "skillFolderHash": "",
+      "installedAt": "2026-04-17T01:16:27.575Z",
+      "updatedAt": "2026-04-20T02:27:36.486Z"
+    }
+  },
+  "dismissed": {
+    "findSkillsPrompt": true
+  },
+  "lastSelectedAgents": [
+    "amp",
+    "cline",
+    "codex",
+    "cursor",
+    "gemini-cli",
+    "github-copilot",
+    "kimi-cli",
+    "opencode",
+    "warp"
+  ]
+}

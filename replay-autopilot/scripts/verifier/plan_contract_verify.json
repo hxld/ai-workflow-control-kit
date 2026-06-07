@@ -1,0 +1,134 @@
+{
+  "verifier_name": "Plan Contract Verification with V457 Schema and Layer Validation",
+  "version": "v459-experiment-1-2-3",
+  "description": "Validates plan contract follows V457 first_slice_proof schema and layer validation requirements",
+  "checks": [
+    {
+      "check_name": "v457_first_slice_proof_target_carrier_line_number",
+      "priority": "P0",
+      "condition": "plan_status == 'PROCEED'",
+      "required_evidence": [
+        "target_carrier_line_number: exact integer line number, not TBD/unknown/placeholder"
+      ],
+      "fail_if": "target_carrier_line_number is TBD_facade_save_method or any placeholder",
+      "gap_type": "executable_evidence_gate",
+      "remediation": "Find exact line number using rg or file read, write integer value",
+      "blocks_plan_approval": true,
+      "v457_experiment": "executable_evidence_gate"
+    },
+    {
+      "check_name": "v457_first_slice_proof_expected_assertions",
+      "priority": "P0",
+      "condition": "plan_status == 'PROCEED'",
+      "required_evidence": [
+        "expected_assertions: JSON array format with at least 3 assertions",
+        "Example: expected_assertions: [\"assertEquals(35, caseStatus)\", \"verify(mapper).insert()\", \"assertNotNull(result)\"]"
+      ],
+      "fail_if": "expected_assertions is missing, narrative format, or has fewer than 3 items",
+      "gap_type": "executable_evidence_gate",
+      "remediation": "Convert assertions to JSON array format with at least 3 concrete assertions",
+      "blocks_plan_approval": true,
+      "v457_experiment": "executable_evidence_gate"
+    },
+    {
+      "check_name": "v457_first_slice_proof_expected_side_effects",
+      "priority": "P0",
+      "condition": "plan_status == 'PROCEED'",
+      "required_evidence": [
+        "expected_side_effects: JSON array format with at least 1 side effect",
+        "Example: expected_side_effects: [{\"table\": \"t_compensate_detail\", \"operation\": \"insert\"}]"
+      ],
+      "fail_if": "expected_side_effects is missing, narrative format, or empty",
+      "gap_type": "executable_evidence_gate",
+      "remediation": "Convert side effects to JSON array format with at least 1 concrete side effect",
+      "blocks_plan_approval": true,
+      "v457_experiment": "executable_evidence_gate"
+    },
+    {
+      "check_name": "v457_layer_validation_core_entry",
+      "priority": "P0",
+      "condition": "highest_weight_open_gate == 'core_entry'",
+      "required_evidence": [
+        "selected_carrier must be Facade or Controller layer, not Service"
+      ],
+      "fail_if": "selected_carrier contains 'Service' but not 'Facade' for core_entry family",
+      "gap_type": "surface_coverage_gate",
+      "remediation": "Search for corresponding Facade using rg 'class.*Facade' --type java, reject Service layer for core_entry",
+      "blocks_plan_approval": true,
+      "v457_experiment": "surface_coverage_gate"
+    },
+    {
+      "check_name": "carrier_search_queries_mandatory",
+      "priority": "P0",
+      "condition": "plan_status == 'PROCEED'",
+      "required_evidence": [
+        "carrier_search_queries: at least 3 reproducible search commands or expressions",
+        "existing_production_carriers: list of carriers found or NONE_FOUND_AFTER_SEARCH"
+      ],
+      "fail_if": "carrier_search_queries is missing, empty, or has fewer than 3 queries",
+      "gap_type": "wrong_test_surface",
+      "remediation": "Add carrier_search_queries with at least 3 search commands before selecting any carrier",
+      "blocks_plan_approval": true,
+      "v453_experiment": "carrier_existence_enforcement"
+    },
+    {
+      "check_name": "facade_exists_check",
+      "priority": "P0",
+      "condition": "selected_carrier_type == 'NEW' and target_family == 'core_entry'",
+      "required_evidence": [
+        "all_facades_checked: list of all *Facade.java files matching feature keywords",
+        "facade_insufficiency_reason: explanation for each Facade why it cannot carry the requirement"
+      ],
+      "fail_if": "all_facades_checked is empty or facade_insufficiency_reason is missing",
+      "gap_type": "wrong_test_surface",
+      "remediation": "Search for existing Facade carriers using: rg 'class.*Facade.*java' --type java",
+      "v453_experiment": "carrier_existence_enforcement"
+    },
+    {
+      "check_name": "carrier_layer_binding",
+      "priority": "P0",
+      "required_fields": [
+        "selected_carriers[].classpath",
+        "selected_carriers[].target_family",
+        "selected_carriers[].target_layer",
+        "selected_carriers[].layer_justification"
+      ],
+      "validation": "target_layer must be in FAMILY_LAYER_REQUIREMENTS[target_family]",
+      "allowed_layers": ["Facade", "Controller", "Service", "Mapper", "Dao"],
+      "family_layer_requirements": {
+        "core_entry": ["Facade", "Controller"],
+        "stateful_side_effect": ["Service", "Facade"],
+        "config_policy_threshold": ["Service", "Facade"],
+        "deploy_export_page": ["Controller", "Facade"],
+        "wire_payload_api_contract": ["Service", "Facade"]
+      },
+      "fail_if": "target_layer is missing or not in allowed layers for target_family",
+      "gap_type": "wrong_test_surface",
+      "remediation": "Specify target_layer as Facade/Controller/Service and explain why appropriate for target_family",
+      "blocks_plan_approval": true,
+      "v453_experiment": "layer_validation_shift_left"
+    },
+    {
+      "check_name": "layer_classification_consistency",
+      "priority": "P1",
+      "validation": "target_layer must match inferred layer from classpath",
+      "fail_if": "classpath ends with 'Facade.java' but target_layer != 'Facade'",
+      "gap_type": "wrong_test_surface",
+      "remediation": "Ensure target_layer matches the actual layer from classpath naming"
+    }
+  ],
+  "experiment_references": {
+    "experiment_1": "V457 Executable Evidence Gate - First Slice Proof Schema",
+    "experiment_2": "V457 Surface Coverage Gate - Layer Validation",
+    "experiment_3": "Facade-First Carrier Selection"
+  },
+  "validation_commands": [
+    "python plan_contract_verify.py <plan_result_path> <oracle_files_path> <replay_mode> [codebase_root] [oracle_contracts_path] [first_slice_proof_path] --enable_carrier_verify --enable_exact_contract_verify"
+  ],
+  "expected_impact": {
+    "plan_stage_block_rate_reduction": "40%",
+    "first_slice_proof_compliance": "90%",
+    "layer_validation_compliance": "95%",
+    "executable_evidence_gate_compliance": "85%"
+  }
+}

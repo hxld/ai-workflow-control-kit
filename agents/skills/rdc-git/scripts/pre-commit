@@ -1,0 +1,145 @@
+#!/bin/sh
+#
+# Git hook: pre-commit
+# 提交前检查敏感文件和大文件
+#
+
+# 颜色定义 (兼容无颜色终端)
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# 检查是否支持颜色
+if [ -t 1 ] && command -v tput >/dev/null 2>&1 && [ "$(tput colors 2>/dev/null)" -ge 8 ]; then
+    HAS_COLOR=1
+else
+    HAS_COLOR=0
+    RED=""
+    YELLOW=""
+    NC=""
+fi
+
+# 敏感文件列表
+sensitive_files="
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+credentials.json
+secrets.json
+application-local.yml
+application-local.yaml
+application-local.properties
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+.npmrc
+.pypirc
+"
+
+# 敏感内容模式
+sensitive_patterns="
+password\s*=
+passwd\s*=
+secret\s*=
+api_key\s*=
+apikey\s*=
+access_token\s*=
+private_key
+BEGIN RSA PRIVATE KEY
+BEGIN DSA PRIVATE KEY
+BEGIN EC PRIVATE KEY
+BEGIN OPENSSH PRIVATE KEY
+BEGIN PRIVATE KEY
+"
+
+# 大文件阈值 (5MB)
+max_file_size=5242880
+
+has_error=0
+
+echo "Running pre-commit checks..."
+
+# 获取暂存的文件列表
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$staged_files" ]; then
+    exit 0
+fi
+
+# 检查敏感文件名
+echo "Checking for sensitive files..."
+for file in $staged_files; do
+    filename=$(basename "$file")
+
+    for pattern in $sensitive_files; do
+        # 跳过空行
+        [ -z "$pattern" ] && continue
+
+        case "$filename" in
+            $pattern)
+                echo "${RED}[BLOCKED]${NC} 敏感文件: $file"
+                echo "          该文件可能包含敏感信息，不应提交到仓库"
+                has_error=1
+                ;;
+        esac
+    done
+done
+
+# 检查敏感内容 (仅检查文本文件)
+echo "Checking for sensitive content..."
+for file in $staged_files; do
+    # 跳过不存在的文件
+    [ ! -f "$file" ] && continue
+
+    # 跳过二进制文件
+    if file "$file" 2>/dev/null | grep -q "binary"; then
+        continue
+    fi
+
+    # 检查敏感模式
+    for pattern in $sensitive_patterns; do
+        [ -z "$pattern" ] && continue
+
+        if git diff --cached "$file" 2>/dev/null | grep -iE "$pattern" >/dev/null 2>&1; then
+            echo "${YELLOW}[WARNING]${NC} 可能包含敏感内容: $file"
+            echo "          检测到模式: $pattern"
+        fi
+    done
+done
+
+# 检查大文件
+echo "Checking for large files..."
+for file in $staged_files; do
+    [ ! -f "$file" ] && continue
+
+    file_size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
+
+    if [ -n "$file_size" ] && [ "$file_size" -gt "$max_file_size" ]; then
+        size_mb=$(echo "scale=2; $file_size / 1048576" | bc 2>/dev/null || echo "$((file_size / 1048576))")
+        echo "${RED}[BLOCKED]${NC} 大文件: $file (${size_mb}MB)"
+        echo "          文件超过 5MB 限制，请使用 Git LFS 或排除该文件"
+        has_error=1
+    fi
+done
+
+if [ $has_error -eq 1 ]; then
+    echo ""
+    echo "=================================================="
+    echo "  提交被阻止，请检查上述问题"
+    echo "=================================================="
+    echo ""
+    echo "如果确认要提交这些文件，可以使用:"
+    echo "  git commit --no-verify"
+    echo ""
+    exit 1
+fi
+
+echo "Pre-commit checks passed."
+exit 0

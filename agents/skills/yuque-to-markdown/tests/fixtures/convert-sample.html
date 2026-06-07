@@ -1,0 +1,42 @@
+<div class="yuque-doc-content">
+  <ne-p>
+    <ne-text ne-bold="true">0<a<=免审批金额（2.1.1自动审批管理）时，则：再判断</ne-text>
+    <ne-text>t_order_approver审批人表是否有数据，如有则进行后续步骤，如无则走人工</ne-text>
+  </ne-p>
+  <ne-p>
+    <ne-text ne-bold="true">a>免审批金额（2.1.1自动审批管理）or a<=0时，则：保持系统原流程，无需调整</ne-text>
+  </ne-p>
+
+  <table>
+    <tr>
+      <td colspan="2">字段名</td>
+      <td>取值</td>
+      <td>备注</td>
+    </tr>
+    <tr>
+      <td>配置项目ID</td>
+      <td>config_item_id</td>
+      <td>取外部系统返回的JSON串item_type对应的ID</td>
+      <td></td>
+    </tr>
+  </table>
+
+  <table>
+    <tr>
+      <td>字段名</td>
+      <td>字段名</td>
+      <td>字段名</td>
+      <td>取值</td>
+      <td>备注</td>
+    </tr>
+    <tr>
+      <td>配置项目</td>
+      <td>配置项目</td>
+      <td>config_item</td>
+      <td>取外部系统返回的JSON串item_type</td>
+      <td></td>
+    </tr>
+  </table>
+
+  <ne-p>末尾零宽字符校验</ne-p>
+</div>

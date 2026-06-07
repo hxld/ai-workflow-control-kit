@@ -1,0 +1,9 @@
+# Portable baseline rules only. Keep project-specific commands, private paths,
+# credentials, and one-off historical allow entries out of this repository.
+prefix_rule(pattern=["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"], decision="allow")
+prefix_rule(pattern=["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"], decision="allow")
+prefix_rule(pattern=["git", "status"], decision="allow")
+prefix_rule(pattern=["git", "diff"], decision="allow")
+prefix_rule(pattern=["git", "log"], decision="allow")
+prefix_rule(pattern=["rg"], decision="allow")
+prefix_rule(pattern=["rtk", "hook", "claude"], decision="allow")

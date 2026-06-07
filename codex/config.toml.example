@@ -1,0 +1,62 @@
+model_context_window = 1000000
+model_auto_compact_token_limit = 900000
+disable_response_storage = true
+model_reasoning_effort = "xhigh"
+model_verbosity = "high"
+web_search = "live"
+approvals_reviewer = "user"
+sandbox_mode = "danger-full-access"
+service_tier = "priority"
+
+[projects.'<CLAIM_PROJECT_ROOT>']
+trust_level = "trusted"
+
+[projects.'<USERPROFILE>']
+trust_level = "trusted"
+
+[windows]
+sandbox = "elevated"
+
+[tui]
+notification_condition = "always"
+
+[notice]
+fast_default_opt_out = true
+hide_full_access_warning = true
+hide_rate_limit_model_nudge = true
+
+[features]
+hooks = true
+js_repl = false
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "node <CODEX_HOME_SLASH>/hooks/scripts/skill-tracker.js codex_user_prompt_submit"
+timeout = 10
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node <USERPROFILE_SLASH>/.agents/hooks/skill-execution-receipt.js"
+timeout = 10
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node <CODEX_HOME_SLASH>/hooks/scripts/skill-tracker.js codex_stop"
+timeout = 10
+
+[[hooks.SessionStart]]
+matcher = "startup|resume"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "node <USERPROFILE_SLASH>/.agents/hooks/workflow-sync-state.js"
+timeout = 10
+goals = true
+
+[desktop]
+appearanceTheme = "dark"
+localeOverride = "zh-CN"
+conversationDetailMode = "STEPS_COMMANDS"

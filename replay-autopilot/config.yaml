@@ -1,0 +1,85 @@
+project_root: .
+feature_name: example-feature
+requirement_source: README.md
+base_commit: HEAD
+oracle_branch: main
+oracle_commit: HEAD
+replay_root_base: .\replay-evidence\example-feature\replay-v000
+run_label: v000
+target_coverage: 90
+max_rounds: 3
+control_cycle_rounds: 3
+control_max_cycles: 3
+control_run_evolution: true
+control_use_latest_knowledge_version: true
+control_zero_cap_stop_enabled: true
+control_zero_cap_stop_cycles: 1
+control_zero_cap_evolution_continue_limit: 1
+control_zero_cap_next_action: golden_slice
+control_reflection_gate_enabled: true
+max_no_improvement_rounds: 1
+stop_loss_lookback: 10
+stop_loss_min_oracle_improvement: 8
+stop_loss_low_cap_threshold: 45
+stop_loss_low_cap_rounds: 2
+stop_loss_repeated_gap_threshold: 2
+executor: claude
+require_executor: claude
+allow_codex_executor: false
+executor_timeout_minutes: 240
+codex_sandbox: danger-full-access
+codex_approval: never
+codex_model:
+codex_reasoning_effort: medium
+claude_model:
+claude_phase0_model:
+claude_plan_model:
+claude_phase1_model:
+claude_phase2_model:
+claude_deep_review_model:
+claude_evolution_model:
+claude_max_budget_usd:
+system_context_dir: .\docs
+plan_candidate_count: 3
+phase0_model:
+phase0_reasoning_effort:
+plan_model:
+plan_reasoning_effort:
+phase1_model:
+phase1_reasoning_effort:
+phase1_max_slices: 12
+phase2_model:
+phase2_reasoning_effort:
+deep_review_model:
+deep_review_reasoning_effort:
+evolution_model:
+evolution_reasoning_effort:
+auto_evolution: false
+skill_source_root: .\agents\skills
+knowledge_repo: .
+knowledge_backup_auto_sync: false
+knowledge_backup_auto_push: false
+knowledge_backup_evidence_mode: Milestone
+knowledge_backup_push_retries: 2
+knowledge_backup_push_retry_delay_seconds: 60
+knowledge_backup_push_failure_is_blocking: false
+golden_sample_auto_mine: false
+golden_sample_auto_apply: false
+golden_delivery_slice_auto_generate: true
+golden_delivery_slice_auto_apply: false
+golden_sample_max_roots: 160
+golden_sample_min_oracle_coverage: 30
+golden_sample_run_agent: false
+external_practice_auto_search: false
+external_practice_run_agent: false
+external_practice_auto_apply: false
+external_practice_allow_fallback: true
+external_practice_primary_executor: claude
+external_practice_fallback_executor: codex
+external_practice_timeout_minutes: 180
+external_practice_fallback_timeout_minutes: 120
+external_practice_wrapper_timeout_minutes: 360
+external_practice_model:
+external_practice_fallback_model:
+external_practice_fallback_reasoning_effort: high
+external_practice_seed_urls:

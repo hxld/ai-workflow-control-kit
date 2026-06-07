@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# Git hook: commit-msg
+# 验证 commit message 是否符合慧择 Git 规范
+# 格式: <type>(<scope>): <subject>
+#
+
+commit_msg_file=$1
+commit_msg=$(cat "$commit_msg_file")
+
+# 核心类型
+core_types="feat|fix|ui|build|docs|style|refactor|perf|test|ci|revert|config|quickfix|security|k8s|docker|deploy|analytics|animation|breaking|poo|access|db|ux|arch|responsive|seo|api|cache|mq|rpc"
+
+# 辅助类型
+aux_types="wip|beer|prune|init|release|lint|docs-code|texts|downgrade|upgrade|dep-add|dep-rm|dep-up|i18n|typo|merge|mv|review|osx|linux|windows|android|ios|experiment"
+
+# 合并所有类型
+all_types="$core_types|$aux_types"
+
+# 正则表达式: type(scope): subject 或 type: subject
+pattern="^($all_types)(\([a-zA-Z0-9_-]+\))?: .+"
+
+# 允许 merge commit
+merge_pattern="^Merge "
+
+# 允许 revert commit
+revert_pattern="^Revert "
+
+if echo "$commit_msg" | grep -qE "$merge_pattern"; then
+    exit 0
+fi
+
+if echo "$commit_msg" | grep -qE "$revert_pattern"; then
+    exit 0
+fi
+
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+    echo ""
+    echo "=================================================="
+    echo "  Commit Message 格式错误!"
+    echo "=================================================="
+    echo ""
+    echo "正确格式: <type>(<scope>): <subject>"
+    echo ""
+    echo "示例:"
+    echo "  feat(login): 添加微信登录功能"
+    echo "  fix(order-service): 修复订单状态更新问题"
+    echo "  wip: 功能开发中"
+    echo ""
+    echo "核心类型: feat, fix, ui, build, docs, style, refactor,"
+    echo "         perf, test, ci, revert, config, quickfix,"
+    echo "         security, k8s, docker, deploy, db, api,"
+    echo "         cache, mq, rpc, arch, breaking..."
+    echo ""
+    echo "辅助类型: wip, init, release, merge, upgrade, typo..."
+    echo ""
+    echo "你的提交信息: $commit_msg"
+    echo "=================================================="
+    echo ""
+    exit 1
+fi
+
+exit 0

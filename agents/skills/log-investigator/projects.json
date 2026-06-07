@@ -1,0 +1,54 @@
+{
+  "version": "2.1",
+  "description": "Generic multi-project runtime log mapping. Add project-specific mappings locally or in a private project adapter.",
+  "projects": {
+    "example-service": {
+      "name": "Example Service",
+      "description": "Example mapping for a Java service. Replace paths, index patterns, app ids, tables, and selectors with local project values.",
+      "workDir": "<PROJECT_ROOT>",
+      "codeLanguage": "java",
+      "kibana": {
+        "prodIndexPattern": "<PROD_INDEX_PATTERN>",
+        "appField": "kubernetes.labels.app",
+        "resolveDiscoverIndexPattern": true
+      },
+      "sourcePaths": [
+        "src/main/java"
+      ],
+      "containers": {
+        "example-service": {
+          "name": "Example Service",
+          "indexPattern": "<INDEX_PATTERN>",
+          "labelSelector": "app=<APP_ID>",
+          "appIds": [
+            "<APP_ID>"
+          ],
+          "logFormat": "logback-pattern"
+        }
+      },
+      "businessLogSources": {
+        "businessEvent": {
+          "type": "database-or-api",
+          "preferBeforeEs": true,
+          "apiPath": "<API_PATH>",
+          "tables": [
+            "<TABLE_NAME>"
+          ],
+          "selectors": [
+            "<SELECTOR_FIELD>"
+          ]
+        }
+      },
+      "customFields": {
+        "traceId": [
+          "traceId",
+          "trace_id",
+          "trace.id",
+          "requestId",
+          "request_id"
+        ]
+      }
+    }
+  }
+}
+

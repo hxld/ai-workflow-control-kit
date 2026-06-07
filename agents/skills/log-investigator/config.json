@@ -1,0 +1,93 @@
+{
+  "version": "2.1",
+  "description": "Log Investigator Configuration (non-sensitive)",
+
+  "environments": {
+    "dev": {
+      "name": "Development Environment",
+      "envPrefix": "ES_DEV"
+    },
+    "test": {
+      "name": "Test Environment",
+      "envPrefix": "ES_TEST"
+    },
+    "uat": {
+      "name": "UAT Environment",
+      "envPrefix": "ES_UAT"
+    },
+    "pre": {
+      "name": "Pre-production Environment",
+      "envPrefix": "ES_PRE",
+      "confirmBeforeQuery": true
+    },
+    "prod": {
+      "name": "Production Environment",
+      "envPrefix": "ES_PROD",
+      "confirmBeforeQuery": true
+    }
+  },
+
+  "globalSettings": {
+    "defaultEnvironment": "test",
+    "defaultTimeRange": "now-7d",
+    "defaultSize": 100,
+    "maxSize": 500,
+    "queryTimeout": 30,
+    "retryCount": 3,
+    "debugMode": false
+  },
+
+  "queryPolicy": {
+    "preferDirectApi": true,
+    "browserFallbackOnly": true,
+    "requireProjectAndEnvironment": true,
+    "requireSelectorForProduction": true,
+    "requireConfirmationForProduction": true,
+    "preferKibanaBackendWhenEsMissing": true,
+    "knownKibanaBackendFirst": true,
+    "skipEndpointDiscoveryWhenKnownBackendConfigured": true
+  },
+
+  "kibanaBackendSearch": {
+    "enabled": true,
+    "knownEndpointFirst": true,
+    "useWhen": "Kibana URL is available, a Discover URL is provided, or direct ES URL/credentials are not configured",
+    "discoverUrlInput": "extract _a.index and _g.time when a Discover URL is provided",
+    "statusPath": "/api/status",
+    "indexPatternObjectPath": "/api/saved_objects/index-pattern/{indexPatternId}",
+    "msearchPath": "/elasticsearch/_msearch",
+    "msearchContentType": "application/x-ndjson",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/x-ndjson",
+      "kbn-xsrf": "kibana"
+    },
+    "requestBodyFormat": "NDJSON: {index:<resolvedIndexPattern>,ignore_unavailable:true}\\n{searchBody}\\n",
+    "fallbackIndexPatternSource": "project container indexPattern",
+    "preflightProbe": "skip status/UI/endpoint exploration until the first configured _msearch request fails with auth, version, path, or index-pattern resolution error",
+    "fallbackAfterKnownEndpointFailure": ["saved object index-pattern resolution", "statusPath", "browser authenticated UI", "link-only output"]
+  },
+
+  "logSettings": {
+    "timestampField": "@timestamp",
+    "messageFields": ["message", "log", "msg", "content", "stacktrace"],
+    "appFields": ["kubernetes.labels.app", "app", "appId", "application", "service.name"],
+    "levelField": "level",
+    "levelMapping": {
+      "error": ["ERROR", "ERR", "SEVERE", "FATAL"],
+      "warn": ["WARN", "WARNING"],
+      "info": ["INFO", "INFORMATION"],
+      "debug": ["DEBUG", "TRACE"]
+    },
+    "traceIdFields": ["traceId", "trace_id", "trace.id", "requestId", "request_id", "spanId", "huizTraceId"]
+  },
+
+  "keywords": {
+    "npe": ["NullPointerException", "null pointer"],
+    "timeout": ["timeout", "TimeoutException", "SocketTimeoutException"],
+    "connection": ["Connection refused", "ConnectException", "SocketException"],
+    "sql": ["SQLException", "DataAccessException", "DatabaseException"],
+    "param": ["IllegalArgumentException", "参数异常", "invalid parameter"],
+    "auth": ["AccessDeniedException", "PermissionDenied", "Unauthorized"]
+  }
+}

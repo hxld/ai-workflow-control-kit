@@ -1,0 +1,8 @@
+{
+    "schema_version": 1,
+    "files": [
+        {"path": "claim-core/src/main/java/com/huize/claim/service/ai/AiAutoClaimFlowService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/compensate/CompensateTableService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-domain/src/main/java/com/huize/claim/domain/ai/AiClaimDataDto.java", "layer": "DTO", "weight": "LOW", "is_production": true}
+    ]
+}

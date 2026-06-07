@@ -1,0 +1,52 @@
+.DS_Store
+Thumbs.db
+
+# Secrets and local auth
+.env
+*.env
+auth.json
+settings.local.json
+*token*
+*secret*
+*credential*
+!scripts/Test-NoSecrets.ps1
+
+# Runtime state
+.memory/
+history.jsonl
+session_index.jsonl
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.log
+logs/
+state/
+cache/
+sessions/
+transcripts/
+projects/
+attachments/
+tmp/
+.tmp/
+agents/skills/.system/
+codex/skills/.system/
+claude/skills/.system/
+codex/hooks.json
+**/.codex-system-skills.marker
+*.disabled-*
+
+# Python/runtime artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Replay runtime output
+replay-evidence/
+run-logs/
+**/RUN_REPLAYLOOP_*.log
+**/PREFLIGHT_*.log
+replay-autopilot/PREFLIGHT_BLOCKER.md
+replay-autopilot/PREFLIGHT_TEST_COMPILATION.json
+

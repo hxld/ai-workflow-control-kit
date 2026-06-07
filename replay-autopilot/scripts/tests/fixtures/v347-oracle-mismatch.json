@@ -1,0 +1,10 @@
+{
+    "schema_version": 1,
+    "files": [
+        {"path": "claim-core/src/main/java/com/huize/claim/service/examine/ExamineFlowService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/examine/ExamineFlowFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/push/InsureCompanyPushService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/return/ReturnTicketContext.java", "layer": "DTO", "weight": "LOW", "is_production": true},
+        {"path": "claim-api/src/main/java/com/huize/claim/api/facade/ai/AiClaimDataFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true}
+    ]
+}

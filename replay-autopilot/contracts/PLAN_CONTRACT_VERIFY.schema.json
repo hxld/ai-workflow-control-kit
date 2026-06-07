@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Plan Contract Verification Schema",
+  "description": "Schema for verifying exact contract matching at plan stage (Experiment 2 from NEXT_EXPERIMENT_PLAN.md)",
+  "type": "object",
+  "required": ["stage", "verification_required", "checks"],
+  "properties": {
+    "stage": {
+      "type": "string",
+      "const": "Plan",
+      "description": "Verification stage - always Plan"
+    },
+    "verification_required": {
+      "type": "boolean",
+      "const": true,
+      "description": "Verification is mandatory"
+    },
+    "oracle_available": {
+      "type": "boolean",
+      "description": "Whether oracle contracts are available for comparison"
+    },
+    "oracle_source": {
+      "type": "string",
+      "description": "Path to oracle contracts file (ORACLE_CONTRACTS.json or ORACLE_DIFF_ANALYSIS.json)"
+    },
+    "checks": {
+      "type": "array",
+      "description": "Verification checks to perform",
+      "items": {
+        "type": "object",
+        "required": ["name", "required"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "exact_signature_match",
+              "dto_field_match",
+              "parameter_type_match",
+              "return_type_match",
+              "synthetic_carrier_check"
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "description": "Whether this check is mandatory"
+          },
+          "extract_from": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Artifacts to extract signatures from (IMPLEMENTATION_CONTRACT.md, REPLAY_PLAN.md, etc.)"
+          },
+          "compare_to": {
+            "type": "string",
+            "description": "Source to compare against (oracle_diff_method_signatures, oracle_dto_fields, etc.)"
+          },
+          "fail_if": {
+            "type": "string",
+            "description": "Condition that causes failure"
+          }
+        }
+      }
+    },
+    "verification_result": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "WARN", "SKIPPED"]
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {"type": "string"},
+              "message": {"type": "string"},
+              "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+              "location": {"type": "string"}
+            }
+          }
+        },
+        "carriers_verified": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "class_name": {"type": "string"},
+              "method_name": {"type": "string"},
+              "planned_signature": {"type": "string"},
+              "oracle_signature": {"type": "string"},
+              "match_status": {"type": "string", "enum": ["exact", "partial", "none", "synthetic"]},
+              "drift_details": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "stage": "Plan",
+      "verification_required": true,
+      "oracle_available": true,
+      "oracle_source": "ORACLE_CONTRACTS.json",
+      "checks": [
+        {
+          "name": "exact_signature_match",
+          "required": true,
+          "extract_from": ["IMPLEMENTATION_CONTRACT.md", "REPLAY_PLAN.md"],
+          "compare_to": "oracle_diff_method_signatures",
+          "fail_if": "method_name_mismatch OR parameter_type_mismatch OR return_type_mismatch"
+        },
+        {
+          "name": "dto_field_match",
+          "required": true,
+          "extract_from": ["IMPLEMENTATION_CONTRACT.md"],
+          "compare_to": "oracle_dto_fields",
+          "fail_if": "field_name_mismatch OR field_type_mismatch OR missing_required_field"
+        },
+        {
+          "name": "synthetic_carrier_check",
+          "required": true,
+          "extract_from": ["REPLAY_PLAN.md"],
+          "compare_to": "oracle_production_files",
+          "fail_if": "new_service_without_oracle_match AND existing_carrier_found"
+        }
+      ]
+    }
+  ]
+}

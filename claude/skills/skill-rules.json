@@ -1,0 +1,281 @@
+{
+  "_meta": {
+    "runtime_truth": "skills contains the managed auto-trigger registry; skill directories may include manual or company-specific skills that are intentionally unmanaged.",
+    "intentionally_unmanaged_skills": {
+      "rdc-git": "company-specific Git/MR workflow skill; manually invoked and not part of generic auto-trigger routing by default."
+    }
+  },
+  "skills": {
+    "pre-flight-check": {
+      "description": "在修改代码、编辑文件、修复缺陷、重构，或执行构建、测试、发布前使用",
+      "priority": "critical",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖 .memory、.doc、openspec 与当前技能链的预检查约定，属于宿主工作流守卫。",
+      "feedback_summary": "会在写代码、构建或发布前重新检查项目记忆、错误教训以及 build/test 配置。",
+      "triggers": {
+        "keywords": ["修改", "写代码", "编辑文件", "编辑代码", "bug", "fix", "修复bug", "重构"],
+        "tools": ["Edit", "Write"]
+      }
+    },
+    "restore-context": {
+      "description": "在新会话开始、继续上次工作或确认当前任务进度时使用",
+      "priority": "high",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖当前技能生态的上下文恢复入口、回执与状态文件，不是纯领域无关技巧。",
+      "auto_apply": true,
+      "feedback_summary": "会恢复最近任务上下文、当前进度以及本次会话最可能的下一步。",
+      "triggers": {
+        "keywords": ["恢复上下文", "继续之前的工作", "restore context", "resume", "接着上次", "我做到哪了", "继续上次"]
+      }
+    },
+    "compound-learning": {
+      "description": "在记录重复错误、先沉淀错误再继续工作，或处理技能漏触发/误触发与重复纠正时使用",
+      "priority": "critical",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖 .memory、skill-feedback 与当前工作流的错误沉淀链路，属于宿主治理技能。",
+      "feedback_summary": "会把可复用经验或重复出现的错误整理进长期学习记录。",
+      "triggers": {
+        "keywords": ["记住这个错误", "下次不要再犯", "总结错误", "总结错误先", "先总结错误", "知识沉淀", "compound learning", "记录错误", "记录教训", "搜索知识", "清理知识", "知识统计", "技能触发错了", "漏触发", "误触发", "不要再犯", "重复纠正"]
+      }
+    },
+    "dialogue-learning": {
+      "description": "在记录重复对话模式、知识薄弱点或可复用的讲解习惯时使用",
+      "priority": "medium",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖当前知识沉淀文件与对话治理流程，更适合作为宿主工作流的一部分。",
+      "auto_apply": true,
+      "feedback_summary": "当技能真正加载后，会把薄弱点或重复对话模式记录到 knowledge-gaps.md 或 solution-patterns.md。",
+      "triggers": {
+        "keywords": ["记录这个模式", "标记薄弱点", "知识薄弱点", "查看薄弱点", "查看模式", "记录下来", "记成经验", "记录经验", "总结成经验", "沉淀一下"]
+      }
+    },
+    "ideate": {
+      "description": "在头脑风暴改进想法、探索方案或在定方向前生成备选项时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "这是跨项目可复用的发散式思考方法，不依赖特定仓库或公司流程。",
+      "triggers": {
+        "keywords": ["构思", "创意", "ideate", "改进想法", "头脑风暴", "方案探索", "有什么想法"]
+      }
+    },
+    "requirement-assessment": {
+      "description": "在投入实现前，用于判断需求是否值得做、是否存在缺陷、风险或价值偏低",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "需求价值判断与风险筛查可跨项目复用，属于通用方法论技能。",
+      "triggers": {
+        "keywords": ["评估需求", "需求评审", "需求评估"]
+      }
+    },
+    "req-alignment-check": {
+      "description": "在实现前，用于检查隐藏需求、范围缺口或验收标准是否模糊",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "需求对齐、隐藏需求扫描与显式 literal 对齐属于跨项目通用方法。",
+      "triggers": {
+        "keywords": ["核对需求", "拆解用例", "需求对齐", "校验需求", "从分支反推需求", "分支重建需求", "commit重建需求", "无需求文档"]
+      }
+    },
+    "deep-plan": {
+      "description": "在编码前，用于产出技术设计、方案选项或需求转技术文档的结果",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "技术方案拆解、冻结决策与验证边界定义可跨项目复用，属于通用规划方法。",
+      "triggers": {
+        "keywords": ["深度规划", "技术设计", "deep plan", "技术文档", "设计文档", "tech doc", "branch-derived", "commit-derived"]
+      }
+    },
+    "dev-workflow": {
+      "description": "在需要把一个功能或缺陷修复从设计一路推进到实现并完成验证时使用",
+      "priority": "critical",
+      "scope_tier": "host-workflow",
+      "scope_note": "实现链路显式依赖 .doc、openspec、验证门与技能编排，是宿主工作流主链。",
+      "triggers": {
+        "keywords": ["完整开发", "一键开发", "从需求到代码", "end-to-end", "full development", "开发工作流", "自主开发", "自主实现", "少问我", "覆盖90", "90%覆盖", "需求文档后实现", "给定需求文档"]
+      }
+    },
+    "auto-complete": {
+      "description": "在用户希望尽量自动执行、减少中途打断，或明确要求过程中不要被追问时使用",
+      "priority": "critical",
+      "scope_tier": "generic",
+      "scope_note": "高自治执行模式本身可跨项目复用，不绑定某个仓库业务语义。",
+      "triggers": {
+        "keywords": ["请你独自完成", "全程自动", "中间不要问我", "complete autonomously", "don't ask", "自动完成"]
+      }
+    },
+    "gen-tests": {
+      "description": "在补测试、修测试失败、补反向断言或检查代码变更附近的覆盖缺口时使用",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "测试补齐、失败修复、反向断言与覆盖缺口检查是跨项目通用工程方法，并承接自定义技能体系中的 TDD 测试落点。",
+      "triggers": {
+        "keywords": ["生成测试", "写测试", "单元测试", "测试用例", "补测试", "反向断言", "negative assertion", "测试不通过", "检查覆盖率", "测试覆盖率", "fix tests", "coverage", "add tests", "write unit tests", "mock 绿了", "mock行为", "mock 行为", "测试只是 mock", "测试只是mock", "test-only"]
+      }
+    },
+    "deep-review": {
+      "description": "在审查代码、PR 或反馈时，用于识别缺陷、回归风险以及缺失的测试",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "代码审查与风险识别属于通用工程实践，不依赖当前项目约束。",
+      "triggers": {
+        "keywords": ["深度审查", "代码审查", "deep review", "check this code", "代码优化", "优化代码", "审查代码", "检查代码质量", "review this PR", "code review", "审查代码质量", "十轮深度审查", "10轮深度审查", "第二视角审校", "reviewer challenge", "Claude Code 审查", "Codex 审查"]
+      }
+    },
+    "add-comments": {
+      "description": "在为不直观的逻辑、设计原因或强调 WHY 的说明补充和改进注释时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "为复杂逻辑补 WHY 注释是通用代码沟通技巧，可跨项目迁移。",
+      "triggers": {
+        "keywords": ["添加注释", "加注释", "注释", "写注释"]
+      }
+    },
+    "sync-progress": {
+      "description": "在收尾工作、同步 .doc、openspec 和 memory 文件，或在总结、提交、发版前使用",
+      "priority": "medium",
+      "scope_tier": "host-workflow",
+      "scope_note": "显式依赖 .doc、openspec、.memory 与收尾发布链，是宿主工作流收口技能。",
+      "feedback_summary": "会在收尾前同步任务进度、设计文档、openspec 工件以及 memory 文件。",
+      "triggers": {
+        "keywords": ["同步进度", "sync progress", "更新进度", "进度同步"]
+      }
+    },
+    "quality-check": {
+      "description": "在评估代码健康度、比较质量趋势或检查项目级回归风险时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "质量评分与回归风险评估属于通用工程治理方法，不绑定特定项目。",
+      "triggers": {
+        "keywords": ["质量检查", "quality check", "health check", "代码质量", "质量评分"]
+      }
+    },
+    "log-investigator": {
+      "description": "在排查日志、事故、线上问题或基于运行时证据分析不明确故障时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "日志排查与事故定位是通用运行时分析方法，可跨项目使用。",
+      "triggers": {
+        "keywords": ["查日志", "search logs", "investigate logs", "日志调查", "排查日志", "查生产", "生产问题", "pod crash", "跨组件字段丢失", "单点日志解释不了", "状态链路", "数据链路"]
+      }
+    },
+    "retro": {
+      "description": "在按时间周期复盘已交付工作、周产出、热点问题或工程模式时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "周期复盘与模式总结是通用团队改进方法，不依赖当前仓库结构。",
+      "triggers": {
+        "keywords": ["复盘", "retro", "周复盘", "这周做了什么", "回顾", "retrospective"]
+      }
+    },
+    "skill-platform-maintenance": {
+      "description": "在跨环境同步自定义技能、hooks、插件、平台配置，或排查宿主技能加载故障时使用",
+      "priority": "medium",
+      "scope_tier": "host-workflow",
+      "scope_note": "它服务于多平台技能运行环境的同步维护和宿主健康检查，属于宿主基础设施技能。",
+      "triggers": {
+        "keywords": ["技能平台维护", "更新插件", "更新技能", "同步技能", "hook报错", "hooks报错", "settings报错", "OpenCode报错", "Claude Code报错", "技能不同步", "duplicate skill", "MCP error", "会话发送失败"]
+      }
+    },
+    "skill-audit": {
+      "description": "技能审查 - 8维度评分(结构7维+实测1维)+P0/P1/P2行动项",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "对技能做结构化审查与评分属于通用技能治理方法，可跨项目复用。",
+      "triggers": {
+        "keywords": ["审查技能", "审计技能", "skill audit", "检查技能", "测试技能效果", "实测技能", "eval skill", "技能评分", "replay 报告审查", "branch-derived replay", "分支重跑", "commit重跑"]
+      }
+    },
+    "skill-evolution": {
+      "description": "在改进已有技能、吸收其他技能或参考实现的优点时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "技能进化与规则融合是通用治理方法，不依赖某个具体项目。",
+      "triggers": {
+        "keywords": ["进化技能", "技能进化", "融合优点", "evolve skill"]
+      }
+    },
+    "yuque-to-markdown": {
+      "description": "在把语雀链接或类似在线文档转换为结构化本地 Markdown 文件时使用",
+      "priority": "high",
+      "scope_tier": "generic",
+      "scope_note": "在线文档转 Markdown 的处理模式可跨项目使用，属于通用转换技能。",
+      "triggers": {
+        "keywords": ["语雀", "yuque", "转MD", "转markdown", "保存为markdown", "yuque to markdown"]
+      }
+    },
+    "knowledge-refresh": {
+      "description": "在刷新过期知识文档、合并重复内容或在改动后清理过时指引时使用",
+      "priority": "medium",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖当前知识库目录、文档治理链路与维护习惯，属于宿主知识治理技能。",
+      "triggers": {
+        "keywords": ["刷新知识", "知识维护", "refresh knowledge", "knowledge maintenance", "知识过期", "知识刷新"]
+      }
+    },
+    "ship-release": {
+      "description": "在代码准备发版、创建 PR、推送变更或执行发布流程时使用",
+      "priority": "high",
+      "scope_tier": "host-workflow",
+      "scope_note": "发版链路依赖当前工作流中的文档同步、验证门与发布约定，属于宿主流程技能。",
+      "triggers": {
+        "keywords": ["发版", "ship", "deploy", "发布代码", "发布上线", "create PR", "push to production", "创建PR", "创建 PR", "推送代码", "推代码"]
+      }
+    },
+    "resolve-feedback": {
+      "description": "在处理评审意见或 PR 反馈，且改代码前需要先评估建议是否合理时使用",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "评审意见分流、验证与处理属于通用协作方法，不依赖特定项目业务。",
+      "triggers": {
+        "keywords": ["处理反馈", "resolve feedback", "fix review comments", "address PR feedback", "修复审查", "处理审查意见", "review 反馈", "review反馈", "push back", "破坏契约", "破坏现有契约"]
+      }
+    },
+    "workflow-router": {
+      "description": "在面对新请求或模糊任务时，用于决定应该先走哪个技能或工作流",
+      "priority": "critical",
+      "scope_tier": "host-workflow",
+      "scope_note": "入口分诊直接依赖当前技能集合、自动触发规则和宿主工作流分层，是宿主路由器。",
+      "auto_apply": true,
+      "feedback_summary": "会在真正开始实现前，先选择最合适的首个技能或工作流路径。",
+      "triggers": {
+        "keywords": ["开始工作", "what should I do", "哪个技能", "用哪个技能", "先用什么技能", "我拿到一个需求，应该怎么做", "拿到一个需求", "给定需求文档", "需求文档后实现", "自主实现", "自主开发", "少问我", "覆盖90", "90%覆盖", "先出技术方案", "先出快版", "出评审版", "准备评审材料", "给我口播稿", "技术反讲", "反讲稿", "上午先出", "下午补全", "这个是不是已经可以开发了", "会不会影响旧逻辑", "有没有遗漏", "继续完成", "继续推进", "剩下未完成的任务", "按功能点继续做", "没有需求文档", "从分支反推", "重跑分支", "分支重跑", "commit重跑", "口头现象", "只有口头描述", "没有日志也没有复现", "跨组件问题", "跨组件字段丢失", "单点日志解释不了", "我会让 Claude Code 审查你", "我会让 Codex 审查你", "Claude Code 会审查", "Codex 会审查", "外部 AI 会复核", "第二视角审校"]
+      }
+    },
+    "backend-effort-estimate": {
+      "description": "在按公司模板填写后端工时评估、人天或报工信息时使用",
+      "priority": "medium",
+      "scope_tier": "company-specific",
+      "scope_note": "显式绑定公司工时模板、报工口径与内部交付流程，属于公司专用技能。",
+      "triggers": {
+        "keywords": ["工时评估", "人天", "报工", "填工时表", "后端工时", "AI压缩版工时", "effort estimate", "工时表"]
+      }
+    },
+    "obsidian-wiki": {
+      "description": "在收录原始资料、维护 wiki 或把原始知识编译成结构化 vault 页面时使用",
+      "priority": "medium",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖当前 vault 结构、编译流程与知识库约定，属于宿主知识工作流技能。",
+      "triggers": {
+        "keywords": ["wiki init", "ingest", "批量收录", "巡检wiki", "维护wiki", "知识库", "收录到wiki", "wiki维护"]
+      }
+    },
+    "article-to-obsidian": {
+      "description": "在将网页文章转换为 Obsidian 笔记时使用，支持提取文章内容并嵌入 CDN 图片链接",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "网页文章提取与 Obsidian 笔记格式化可跨项目复用，属于通用内容处理技能。",
+      "triggers": {
+        "keywords": ["保存文章", "收藏文章", "文章转笔记", "article to obsidian", "保存网页", "网页转markdown", "提取文章内容", "article to note"]
+      }
+    },
+    "video-to-obsidian": {
+      "description": "在将 YouTube 或 Bilibili 视频转换为 Obsidian 笔记时使用，基于字幕提取内容",
+      "priority": "medium",
+      "scope_tier": "generic",
+      "scope_note": "视频字幕提取与笔记格式化可跨项目复用，属于通用内容处理技能。",
+      "triggers": {
+        "keywords": ["视频转笔记", "youtube转笔记", "bilibili转笔记", "video to obsidian", "保存视频", "收藏视频", "视频总结", "video to note", "视频字幕"]
+      }
+    }
+  }
+}

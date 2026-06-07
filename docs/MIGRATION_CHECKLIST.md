@@ -59,6 +59,7 @@ After installation:
 - Codex runtime `.system` skills may appear locally after Codex starts; do not vendor them.
 - `update-claude-plugins` is not a generic skill and should not be placed under `.agents\skills`.
 - Codex hooks should live in `config.toml` or cc-switch common config, not both `config.toml` and `hooks.json`.
+- Claude `UserPromptSubmit` should use the Node hook at `$HOME\.agents\hooks\skill-activation-prompt.js`, not Windows PowerShell 5.1.
 
 ## 5. cc-switch
 

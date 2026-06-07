@@ -103,6 +103,8 @@ Claude Code uses hook-based integration for skill activation and RTK:
 - `FileChanged`
 - `PreToolUse` with `rtk hook claude`
 
+The high-frequency Claude `UserPromptSubmit` hook uses Node.js instead of Windows PowerShell 5.1 to avoid intermittent `R6016 - not enough space for thread data` runtime failures.
+
 Codex uses `config.toml` for hooks and global `AGENTS.md` / `RTK.md` for RTK guidance.
 
 Do not keep both `$HOME\.codex\hooks.json` and hook definitions in `$HOME\.codex\config.toml`; this can trigger duplicate hook-source warnings.

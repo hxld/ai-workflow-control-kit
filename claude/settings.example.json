@@ -28,8 +28,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File <USERPROFILE_SLASH>/.claude/hooks/skill-activation-prompt.ps1",
-            "timeout": 15
+            "command": "node \"<USERPROFILE_SLASH>/.agents/hooks/skill-activation-prompt.js\"",
+            "timeout": 10
           }
         ]
       }

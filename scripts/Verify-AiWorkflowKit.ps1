@@ -92,7 +92,29 @@ Write-Check 'codex:no-active-hooks-json' (-not (Test-Path -LiteralPath $legacyCo
 Test-PathExists 'claude:config' (Join-Path $ClaudeHome 'config.json')
 Test-PathExists 'claude:hooks' (Join-Path $ClaudeHome 'hooks')
 Test-PathExists 'claude:skill-activation-hook' (Join-Path $ClaudeHome 'hooks\skill-activation-prompt.ps1')
+Test-PathExists 'claude:node-skill-activation-hook' (Join-Path $AgentsHome 'hooks\skill-activation-prompt.js')
 Test-DirectoryLink 'claude:skills-link' (Join-Path $ClaudeHome 'skills') $agentsSkills
+
+$claudeSettingsPath = Join-Path $ClaudeHome 'settings.json'
+if (Test-Path -LiteralPath $claudeSettingsPath) {
+    try {
+        $claudeSettings = Get-Content -LiteralPath $claudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $promptHookCommands = @()
+        if ($claudeSettings.hooks -and $claudeSettings.hooks.UserPromptSubmit) {
+            foreach ($group in @($claudeSettings.hooks.UserPromptSubmit)) {
+                foreach ($hook in @($group.hooks)) {
+                    if ($hook.command) { $promptHookCommands += [string]$hook.command }
+                }
+            }
+        }
+        $hasPowerShellPromptHook = ($promptHookCommands | Where-Object { $_ -match '(?i)\bpowershell(?:\.exe)?\b' }).Count -gt 0
+        $hasNodePromptHook = ($promptHookCommands | Where-Object { $_ -match '(?i)\bnode\b' -and $_ -match 'skill-activation-prompt\.js' }).Count -gt 0
+        Write-Check 'claude:user-prompt-hook-no-windows-powershell' (-not $hasPowerShellPromptHook) 'avoid R6016 on Windows PowerShell 5.1'
+        Write-Check 'claude:user-prompt-hook-node' $hasNodePromptHook 'node skill-activation-prompt.js'
+    } catch {
+        Write-Check 'claude:settings-parse' $false $_.Exception.Message
+    }
+}
 
 $replayControl = Join-Path $ReplayAutopilotRoot 'scripts\Run-UnattendedReplayControl.ps1'
 Test-PathExists 'replay:control-script' $replayControl

@@ -120,6 +120,35 @@ function Get-LatestKnowledgeVersion {
     }
 
     $candidates = New-Object System.Collections.Generic.List[object]
+    $workflowChangeDir = Join-Path $repo 'workflow-history\changes'
+    if (Test-Path -LiteralPath $workflowChangeDir) {
+        Get-ChildItem -LiteralPath $workflowChangeDir -File -Filter 'v*.md' | ForEach-Object {
+            if ($_.Name -match '^v([0-9]+)(?:[-.]|$)') {
+                $candidates.Add([pscustomobject]@{
+                    Number = [int]$matches[1]
+                    Version = ('v{0}' -f $matches[1])
+                    Source = $_.FullName
+                    LastWriteTime = $_.LastWriteTime
+                    Kind = 'workflow-history-change'
+                }) | Out-Null
+            }
+        }
+    }
+
+    $workflowIndexPath = Join-Path $repo 'workflow-history\CHANGELOG.md'
+    if (Test-Path -LiteralPath $workflowIndexPath) {
+        $workflowIndexItem = Get-Item -LiteralPath $workflowIndexPath
+        Select-String -LiteralPath $workflowIndexPath -Pattern '^\s*#{1,6}\s*v([0-9]+)\b' -Encoding UTF8 | ForEach-Object {
+            $candidates.Add([pscustomobject]@{
+                Number = [int]$_.Matches[0].Groups[1].Value
+                Version = ('v{0}' -f $_.Matches[0].Groups[1].Value)
+                Source = "${workflowIndexPath}:$($_.LineNumber)"
+                LastWriteTime = $workflowIndexItem.LastWriteTime
+                Kind = 'workflow-history-index'
+            }) | Out-Null
+        }
+    }
+
     $historyDir = Join-Path $repo 'custom-skills-history'
     if (Test-Path -LiteralPath $historyDir) {
         Get-ChildItem -LiteralPath $historyDir -File -Filter 'v*.md' | ForEach-Object {
@@ -461,6 +490,8 @@ if ($ValidateOnly) {
         project_root = $projectRoot
         knowledge_repo = $knowledgeRepo
         latest_knowledge_version = $latestVersion.Version
+        latest_knowledge_source = $latestVersion.Source
+        latest_knowledge_kind = $latestVersion.Kind
         replay_root_base = $replayRootBaseForLatest
         evidence_root = $evidenceRoot
         start_round = $initialStartRound

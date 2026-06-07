@@ -33,6 +33,7 @@ claude/              Claude Code adapters and example settings
 codex/               Codex adapters, RTK, hooks, and example config
 cc-switch/           Portable common config templates
 replay-autopilot/    Replay, scoring, reflection, and unattended control loop
+workflow-history/    Repository-local workflow change index and records
 scripts/             Install, validation, and remote bootstrap scripts
 docs/                Migration, productization, and operating guides
 ```
@@ -96,6 +97,12 @@ Validate the controller:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
 ```
+
+## Workflow History
+
+`workflow-history/CHANGELOG.md` is the built-in master index for this kit's workflow changes. Each concrete change lives under `workflow-history/changes/`, and `workflow-history/latest.json` points to the newest entry.
+
+`replay-autopilot` discovers the latest workflow version from `workflow-history` first, then falls back to legacy history locations for older installations. This keeps the clean repository self-contained and avoids a hard dependency on a personal knowledge base such as `hxld_vault`.
 
 Key regression checks:
 

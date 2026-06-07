@@ -38,12 +38,34 @@ scripts/             Install, validation, and remote bootstrap scripts
 docs/                Migration, productization, and operating guides
 ```
 
+## Prerequisites
+
+Required on a new Windows machine:
+
+- Git
+- PowerShell
+- Node.js
+- Codex or Claude Code
+
+Recommended when you use the related integrations:
+
+- Python for writing cc-switch SQLite settings
+- cc-switch for shared Claude/Codex common config
+- rtk for the Claude `PreToolUse` hook path
+- uv, bun, ffmpeg, and openspec for skills that call those tools
+
 ## Quick Start
+
+Clone the repository:
+
+```powershell
+git clone https://github.com/hxld/ai-workflow-control-kit.git
+cd ai-workflow-control-kit
+```
 
 Run a dry run first:
 
 ```powershell
-cd <repo>
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -DryRun -BackupExisting
 ```
 
@@ -51,6 +73,12 @@ Install with backups:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -BackupExisting
+```
+
+Verify the installation:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Verify-AiWorkflowKit.ps1
 ```
 
 ## Skills Sync Model
@@ -78,6 +106,8 @@ Claude Code uses hook-based integration for skill activation and RTK:
 Codex uses `config.toml` for hooks and global `AGENTS.md` / `RTK.md` for RTK guidance.
 
 Do not keep both `$HOME\.codex\hooks.json` and hook definitions in `$HOME\.codex\config.toml`; this can trigger duplicate hook-source warnings.
+
+Project trust entries are intentionally not preconfigured. Add trusted project paths only when a real local project needs them.
 
 ## Replay Autopilot
 
@@ -136,7 +166,8 @@ Requirements:
 4. Do not install auth tokens, real provider keys, runtime sessions, SQLite state, cache, or logs.
 5. Keep ~/.agents/skills as the canonical skill source, and link ~/.claude/skills and ~/.codex/skills to it.
 6. Run the verification commands from README.
-7. Report what succeeded and what still requires manual local credentials or path edits.
+7. Run scripts/Verify-AiWorkflowKit.ps1.
+8. Report what succeeded and what still requires manual local credentials or path edits.
 ```
 
 ## Optional Knowledge Repository

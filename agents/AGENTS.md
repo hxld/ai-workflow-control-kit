@@ -17,19 +17,19 @@ This file is the local operating agreement for custom skills. Read it before edi
 - If a mirror differs from the source, update the source first, then sync outward.
 - External methodology can be absorbed into custom skills, but external skill names must not become local downstream dependencies unless the skill actually exists as a custom source skill.
 
-## Knowledge Base Backup
+## Workflow History
 
-- Backup root: `D:\study\hxld_vault\learning\raw\sources\ai-knowledge`
-- Skill backup mirror: `D:\study\hxld_vault\learning\raw\sources\ai-knowledge\custom-skills-zh`
-- Main guide / changelog entry point: `D:\study\hxld_vault\learning\raw\sources\ai-knowledge\custom-skills-guide.md`
-- Section changelog: `D:\study\hxld_vault\learning\raw\sources\ai-knowledge\guide-sections\changelog.md`
+- Repository-local workflow index: `workflow-history\CHANGELOG.md`
+- Concrete change records: `workflow-history\changes\vNNN-*.md`
+- Latest pointer: `workflow-history\latest.json`
+- External knowledge repositories are optional mirrors. Do not make skills, hooks, or replay control depend on a machine-local vault path.
 
 ## Remote Submission
 
 - `%USERPROFILE%\.agents` is the runtime source and may not be a Git repository.
-- When the user asks to submit skill changes to a remote repository, commit and push the knowledge-base backup repository after source-to-backup sync, unless the canonical source directory itself is explicitly a Git repository.
+- When the user asks to submit workflow-kit changes, commit and push this repository unless the user explicitly names another repository.
 - Do not commit unrelated project worktrees as part of a skill evolution submission.
-- The commit must include the synced backup files and changelog entries, and the final report must name the pushed branch and remote.
+- The commit should include source changes and a matching `workflow-history` entry when the change affects reusable workflow behavior.
 
 ## Required Change Procedure
 
@@ -37,11 +37,9 @@ When modifying source skills:
 
 1. Edit only the canonical source under `%USERPROFILE%\.agents\skills`.
 2. Keep generic skill text project-neutral. Project names, repository paths, class names, table names, business incidents, and team-specific commands belong in repository rules or project memory, not generic skills.
-3. Sync changed source skills and root governance files to `custom-skills-zh`.
-4. Update both changelog surfaces:
-   - `custom-skills-guide.md`
-   - `guide-sections\changelog.md`
-5. Verify the backup mirror matches the source for changed files.
+3. If the change should be shared through this kit, copy the changed source files into the repository copy under `agents\skills`.
+4. Update `workflow-history\CHANGELOG.md`, `workflow-history\latest.json`, and a concrete file under `workflow-history\changes`.
+5. Verify the repository copy matches the intended source changes.
 6. Run a project-specific pollution scan on changed `SKILL.md` files before calling the work complete.
 
 ## Normal Workflow vs Replay / Eval
@@ -52,4 +50,4 @@ When modifying source skills:
 
 ## Completion Rule
 
-Do not say a skill change is complete until the source, backup mirror, and changelog have all been updated or an explicit blocker is reported.
+Do not say a skill change is complete until the runtime source, repository copy, and workflow-history entry have all been updated or an explicit blocker is reported.

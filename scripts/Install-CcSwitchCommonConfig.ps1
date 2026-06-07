@@ -1,6 +1,6 @@
 param(
     [string]$CcSwitchHome = (Join-Path $HOME '.cc-switch'),
-    [string]$ClaimProjectRoot = 'D:\opt\claim',
+    [string]$ClaimProjectRoot = '',
     [switch]$BackupExisting,
     [switch]$DryRun
 )

@@ -9,12 +9,6 @@ sandbox = "elevated"
 [tui]
 notification_condition = "always"
 
-[projects.'<CLAIM_PROJECT_ROOT>']
-trust_level = "trusted"
-
-[projects.'<USERPROFILE>']
-trust_level = "trusted"
-
 [notice]
 fast_default_opt_out = true
 hide_full_access_warning = true

@@ -19,7 +19,7 @@
 AI Workflow Control Kit
 ```
 
-当前 GitHub 仓库名 `ai_workflow_control_kit` 可以保留；展示名建议用 `AI Workflow Control Kit`。这个名字比 `skills`、`hooks` 或 `replay-autopilot` 更准确，因为仓库的核心价值不是单个技能，而是把 AI 研发流程变成一套可安装、可审查、可验证、可回滚的控制体系。
+当前正式 GitHub 仓库名建议使用 `ai-workflow-control-kit`；展示名建议用 `AI Workflow Control Kit`。这个名字比 `skills`、`hooks` 或 `replay-autopilot` 更准确，因为仓库的核心价值不是单个技能，而是把 AI 研发流程变成一套可安装、可审查、可验证、可回滚的控制体系。
 
 一句话定位：
 
@@ -65,7 +65,7 @@ A portable control plane for AI-assisted software delivery: skills, hooks, host 
 当前仓库结构已经能工作。产品化时建议保留现有结构，避免大重构：
 
 ```text
-ai_workflow_control_kit/
+ai-workflow-control-kit/
   README.md
   agents/
     AGENTS.md

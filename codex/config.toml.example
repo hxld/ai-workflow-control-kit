@@ -8,12 +8,6 @@ approvals_reviewer = "user"
 sandbox_mode = "danger-full-access"
 service_tier = "priority"
 
-[projects.'<CLAIM_PROJECT_ROOT>']
-trust_level = "trusted"
-
-[projects.'<USERPROFILE>']
-trust_level = "trusted"
-
 [windows]
 sandbox = "elevated"
 

@@ -1,5 +1,7 @@
 # Migration Checklist
 
+This checklist is for installing AI Workflow Control Kit on a new Windows machine.
+
 ## 1. Clone
 
 ```powershell
@@ -7,82 +9,120 @@ git clone https://github.com/hxld/ai-workflow-control-kit.git
 cd ai-workflow-control-kit
 ```
 
-如果远程仓库还没有创建，先在已有本地仓库中执行：
+## 2. Check Prerequisites
+
+Required:
+
+- Git
+- PowerShell
+- Node.js
+- Codex or Claude Code
+
+Recommended:
+
+- Python, required only when updating `cc-switch.db`
+- cc-switch, required only when using shared Claude/Codex common config
+- rtk, required for the Claude `PreToolUse` hook path
+- uv, bun, ffmpeg, and openspec if your skills call them
+
+## 3. Dry Run
 
 ```powershell
-$env:GH_TOKEN = "<your github token>"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Create-RemoteAndPush.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Create-RemoteAndPush.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -DryRun -BackupExisting
 ```
 
-## 2. Dry Run
+Confirm the target paths before installing. The default replay-autopilot target is:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -DryRun
+```text
+$HOME\.ai-workflow-control-kit\replay-autopilot
 ```
 
-确认输出的目标路径无误。
+Use `-ReplayAutopilotRoot D:\opt\replay-autopilot` only if that is your intended local convention.
 
-## 3. Install With Backup
+## 4. Install With Backup
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-AiWorkflowKit.ps1 -BackupExisting
 ```
 
-脚本会把被覆盖的现有文件备份到：
+The script backs up replaced files or directories as:
 
 ```text
 <target>.backup-YYYYMMDD-HHMMSS
 ```
 
-安装后 `$HOME\.codex\skills` 和 `$HOME\.claude\skills` 必须是指向 `$HOME\.agents\skills` 的目录链接。通用技能只维护 `$HOME\.agents\skills`。Codex 自带 `.system` 是运行态内置技能，可能被自动生成，不需要手动删除；但不要把它提交进仓库。`update-claude-plugins` 不作为通用技能放进 `.agents\skills`。
+After installation:
 
-如果新电脑使用 cc-switch，安装脚本会在发现 `$HOME\.cc-switch\cc-switch.db` 且使用 `-BackupExisting` 时，写入 Claude / Codex 的通用配置模板。仓库模板只能包含 `<USERPROFILE>`、`<USERPROFILE_SLASH>`、`<CLAIM_PROJECT_ROOT>` 等占位符，不能包含真实 API key、个人用户名路径或 provider token。
+- `$HOME\.agents\skills` is the canonical custom skill source.
+- `$HOME\.codex\skills` should link to `$HOME\.agents\skills`.
+- `$HOME\.claude\skills` should link to `$HOME\.agents\skills`.
+- Codex runtime `.system` skills may appear locally after Codex starts; do not vendor them.
+- `update-claude-plugins` is not a generic skill and should not be placed under `.agents\skills`.
+- Codex hooks should live in `config.toml` or cc-switch common config, not both `config.toml` and `hooks.json`.
 
-Codex hooks 应统一写在 `config.toml` / cc-switch common config。若 `$HOME\.codex\hooks.json` 存在，安装脚本会备份改名，避免 Codex 启动时报 hook 双来源告警。默认 Codex 配置不启用 PowerShell `codex-skill-adapter.ps1` 的 `UserPromptSubmit` hook，先降低 Windows PowerShell 5.1 的 `R6016` 风险。
+## 5. cc-switch
 
-## 4. Manual Secrets
+If `$HOME\.cc-switch\cc-switch.db` exists and you install with `-BackupExisting`, the installer writes portable Claude and Codex common config templates into cc-switch.
 
-手动补齐：
+The templates use placeholders such as `<USERPROFILE>` and `<CODEX_HOME_SLASH>`. They must not contain real API keys, provider tokens, or machine-specific private paths.
+
+Project trust entries are intentionally not preconfigured. Add trusted projects when a real project first needs them.
+
+## 6. Manual Secrets
+
+Restore secrets from your password manager or provider login flow, not from this repository:
 
 - `$HOME\.codex\auth.json`
-- `$HOME\.claude\settings.json` 中的真实 env token
-- cc-switch provider 自身的 API key / token / base url
-- `$HOME\.agents\skills\log-investigator\.env` 中的账号、密码、token 占位符
-- 本机路径，例如 `D:\opt\claim`、`D:\maven\settings\settings.xml`
+- provider API keys or base URLs in cc-switch
+- real Claude Code environment tokens
+- project-specific `.env` files
+- skill-specific private credentials, such as log-investigator account details
 
-## 5. Validate
+## 7. Verify
+
+Run the built-in verifier:
 
 ```powershell
-Test-Path "$HOME\.agents\skills"
-(Get-Item "$HOME\.codex\skills").Target
-(Get-Item "$HOME\.claude\skills").Target
-Test-Path "$HOME\.agents\skills\update-claude-plugins" # 应为 False
-Test-Path "$HOME\.agents\skills\.system"               # 可为 True；Codex 运行态内置技能
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Install-CcSwitchCommonConfig.ps1 -DryRun
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Test-v372-UnattendedControlLoop.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Test-v470-FailureAuditPackAndHardReflection.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Verify-AiWorkflowKit.ps1
 ```
 
-## 6. First Codex Session On New Machine
+Run the repository checks:
 
-给 Codex：
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Test-NoSecrets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
+```
+
+Optional replay regression checks:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v372-UnattendedControlLoop.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v470-FailureAuditPackAndHardReflection.ps1
+```
+
+## 8. First Codex Session On New Machine
+
+Give Codex this prompt after installation:
 
 ```text
-请检查我的 AI workflow control kit 是否安装成功。
-读取 ~/.agents/AGENTS.md、~/.codex/RTK.md、~/.codex/config.toml、~/.claude/settings.json、D:\opt\replay-autopilot\config.yaml。
-不要读取 auth/token/session/history/sqlite。
-验证 hooks、skills、replay-autopilot 的关键路径，并输出需要我手动补的配置。
+Please verify my AI Workflow Control Kit installation.
+
+Read README.md and docs/MIGRATION_CHECKLIST.md from the cloned repository.
+Inspect ~/.agents/AGENTS.md, ~/.codex/RTK.md, ~/.codex/config.toml, ~/.claude/settings.json, and the installed replay-autopilot config if they exist.
+Do not read auth, token, session, history, sqlite, cache, or log files.
+Verify skills, skill-rules.json, hooks, symlink/junction targets, cc-switch common config if present, and replay-autopilot ValidateOnly.
+Report what succeeded and what still needs manual credentials or project-specific path edits.
 ```
 
-## 7. Ongoing Sync
+## 9. Ongoing Sync
 
-本地修改后：
+When changing reusable workflow behavior:
 
 ```powershell
 git status
-git add .
+git add <changed-files>
 git commit -m "chore: sync workflow kit"
 git push origin main
 ```
+
+Also update `workflow-history/CHANGELOG.md`, `workflow-history/latest.json`, and a concrete change record under `workflow-history/changes`.

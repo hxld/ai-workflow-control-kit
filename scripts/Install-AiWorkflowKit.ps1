@@ -2,9 +2,9 @@ param(
     [string]$AgentsHome = (Join-Path $HOME '.agents'),
     [string]$CodexHome = (Join-Path $HOME '.codex'),
     [string]$ClaudeHome = (Join-Path $HOME '.claude'),
-    [string]$ReplayAutopilotRoot = 'D:\opt\replay-autopilot',
-    [string]$ClaimProjectRoot = 'D:\opt\claim',
-    [string]$KnowledgeRepo = 'D:\study\hxld_vault\learning\raw\sources\ai-knowledge',
+    [string]$ReplayAutopilotRoot = (Join-Path $HOME '.ai-workflow-control-kit\replay-autopilot'),
+    [string]$ClaimProjectRoot = '',
+    [string]$KnowledgeRepo = '.',
     [switch]$BackupExisting,
     [switch]$DryRun,
     [switch]$SkipCcSwitchConfig
@@ -276,9 +276,11 @@ if ($SkipCcSwitchConfig) {
 } elseif ((Test-Path -LiteralPath $ccSwitchDb) -and (Test-Path -LiteralPath $ccSwitchInstaller) -and ($BackupExisting -or $DryRun)) {
     Write-Step 'Apply cc-switch common config from templates.'
     $ccArgs = @(
-        '-CcSwitchHome', (Join-Path $HOME '.cc-switch'),
-        '-ClaimProjectRoot', $ClaimProjectRoot
+        '-CcSwitchHome', (Join-Path $HOME '.cc-switch')
     )
+    if (-not [string]::IsNullOrWhiteSpace($ClaimProjectRoot)) {
+        $ccArgs += @('-ClaimProjectRoot', $ClaimProjectRoot)
+    }
     if ($BackupExisting) { $ccArgs += '-BackupExisting' }
     if ($DryRun) { $ccArgs += '-DryRun' }
     & powershell -NoProfile -ExecutionPolicy Bypass -File $ccSwitchInstaller @ccArgs

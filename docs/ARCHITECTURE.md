@@ -355,9 +355,12 @@ The default operational scripts are Node-first:
 | `scripts/install-ai-workflow-kit.js` | Install adapters, skills, hooks, cc-switch common config, and replay-autopilot. |
 | `scripts/install-cc-switch-common-config.js` | Update cc-switch common config from templates. |
 | `scripts/verify-ai-workflow-kit.js` | Verify live host config, links, hooks, and replay controller presence. |
+| `scripts/diagnose-powershell-r6016.js` | Classify live `powershell.exe` processes as Codex AST parser, RTK wrapper, build command, or unknown source. |
 | `scripts/test-no-secrets.js` | Scan the repository for credentials and runtime state before commit or publish. |
 
 When these scripts need another executable, they call it directly with `execFile` instead of invoking a shell interpreter. This is deliberate: shell-backed high-frequency paths are fragile on Windows and previously caused `R6016 - not enough space for thread data` failures when Windows PowerShell 5.1 was used in prompt hooks.
+
+`codex/RTK.md` intentionally says to use RTK selectively. Do not wrap Windows commands as `rtk proxy powershell ...`; use direct executables such as `git.exe`, `node.exe`, `python.exe`, or `mvn.cmd` for build and test commands.
 
 ## Unattended Replay Control Plane
 

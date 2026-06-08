@@ -134,6 +134,12 @@ The default installer, verifier, secret scanner, cc-switch updater, and high-fre
 
 PowerShell scripts are retained as compatibility and legacy replay entry points. Do not wire Windows PowerShell 5.1 into high-frequency hooks.
 
+If Windows shows `R6016 - not enough space for thread data` for `powershell.exe`, diagnose the live source before changing hooks:
+
+```bash
+node scripts/diagnose-powershell-r6016.js
+```
+
 ## Replay Autopilot
 
 `replay-autopilot` is the control plane for AI workflow evaluation. It supports:

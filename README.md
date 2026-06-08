@@ -27,6 +27,23 @@ This repository intentionally does not include runtime or private state:
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    User["User prompt or code task"] --> Host["Codex or Claude Code"]
+    Host --> Rules["skills-rules.json"]
+    Host --> Hooks["Host hooks"]
+    Rules --> Skills[".agents/skills"]
+    Hooks --> AgentHooks[".agents/hooks"]
+    Skills --> Workflow["Guided AI workflow"]
+    AgentHooks --> Workflow
+    Workflow --> Replay["replay-autopilot"]
+    Workflow --> History["workflow-history"]
+    Scripts["Node-first scripts"] --> Host
+    CcSwitch["cc-switch common config"] --> Host
+```
+
+For a detailed explanation of the directory model, skill routing, hook lifecycle, cc-switch integration, and unattended replay control plane, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```text
 agents/              Canonical skills, hooks, rules, and templates
 claude/              Claude Code adapters and example settings
@@ -164,7 +181,7 @@ The repository should contain templates and placeholders only. Real credentials 
 After cloning this repository on a new machine, give Codex or Claude Code this prompt:
 
 ```text
-Read README.md and docs/MIGRATION_CHECKLIST.md in this repository.
+Read README.md, docs/ARCHITECTURE.md, and docs/MIGRATION_CHECKLIST.md in this repository.
 Install AI Workflow Control Kit for this machine.
 
 Requirements:
@@ -174,7 +191,7 @@ Requirements:
 4. Do not install auth tokens, real provider keys, runtime sessions, SQLite state, cache, or logs.
 5. Keep ~/.agents/skills as the canonical skill source, and link ~/.claude/skills and ~/.codex/skills to it.
 6. Run the verification commands from README.
-7. Run `node scripts/verify-ai-workflow-kit.js`.
+7. Run `node scripts/verify-ai-workflow-kit.js`, passing `--replay-autopilot-root` if replay-autopilot was installed outside the default path.
 8. Report what succeeded and what still requires manual local credentials or path edits.
 ```
 

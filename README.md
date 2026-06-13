@@ -1,140 +1,142 @@
+**简体中文** | [English](./README.en.md)
+
 # AI Workflow Control Kit
 
-A portable control plane for AI-assisted software delivery: skills, hooks, host adapters, and replay automation.
+一套可迁移的 AI 辅助软件交付控制平面：技能（skills）、钩子（hooks）、宿主适配器和回放自动化。
 
-AI Workflow Control Kit packages the reusable infrastructure behind an AI-assisted development workflow. It is designed to make AI coding less dependent on ad hoc conversation and more dependent on explicit gates, executable evidence, review loops, and replay-based evaluation.
+AI Workflow Control Kit 把一套 AI 辅助研发工作流背后可复用的基础设施打包起来。它的目标是让 AI 编码更少依赖临时对话，更多依赖明确的门禁、可执行的证据、评审闭环，以及基于回放（replay）的评估。
 
-## What It Provides
+## 它提供什么
 
-- Custom skills and skill routing rules.
-- Hooks for skill activation, receipts, and workflow state sync.
-- Claude Code and Codex host adapters.
-- cc-switch common configuration templates.
-- RTK integration guidance for token-aware shell usage.
-- replay-autopilot for isolated replay, scoring, reflection, and unattended control loops.
-- Install, validation, and secret-scan scripts.
+- 自定义技能和技能路由规则。
+- 用于技能激活、执行回执和工作流状态同步的 hooks。
+- Claude Code 和 Codex 宿主适配器。
+- cc-switch 通用配置模板。
+- 用于 token 感知 shell 使用的 RTK 集成指引。
+- replay-autopilot：用于隔离回放、打分、反思和无人值守控制循环。
+- 安装、校验和密钥扫描脚本。
 
-## What It Does Not Include
+## 它不包含什么
 
-This repository intentionally does not include runtime or private state:
+本仓库有意不包含运行态或私密状态：
 
-- auth tokens or provider API keys
-- Codex or Claude runtime sessions
-- SQLite state, cache, logs, history, or local memories
-- business project source code
-- private oracle diffs or production data
-- machine-specific `.env` files
+- 认证 token 或 provider API key
+- Codex 或 Claude 运行态会话
+- SQLite 状态、缓存、日志、history 或本地记忆
+- 业务项目源代码
+- 私密 oracle diff 或生产数据
+- 机器相关的 `.env` 文件
 
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
-    User["User prompt or code task"] --> Host["Codex or Claude Code"]
+    User["用户 prompt 或代码任务"] --> Host["Codex 或 Claude Code"]
     Host --> Rules["skills-rules.json"]
-    Host --> Hooks["Host hooks"]
+    Host --> Hooks["宿主 hooks"]
     Rules --> Skills[".agents/skills"]
     Hooks --> AgentHooks[".agents/hooks"]
-    Skills --> Workflow["Guided AI workflow"]
+    Skills --> Workflow["引导式 AI 工作流"]
     AgentHooks --> Workflow
     Workflow --> Replay["replay-autopilot"]
     Workflow --> History["workflow-history"]
-    Scripts["Node-first scripts"] --> Host
-    CcSwitch["cc-switch common config"] --> Host
+    Scripts["Node 优先脚本"] --> Host
+    CcSwitch["cc-switch 通用配置"] --> Host
 ```
 
-For a detailed explanation of the directory model, skill routing, hook lifecycle, cc-switch integration, and unattended replay control plane, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+关于目录模型、技能路由、hook 生命周期、cc-switch 集成以及无人值守回放控制平面的详细说明，请参阅 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ```text
-agents/              Canonical skills, hooks, rules, and templates
-claude/              Claude Code adapters and example settings
-codex/               Codex adapters, RTK, hooks, and example config
-cc-switch/           Portable common config templates
-replay-autopilot/    Replay, scoring, reflection, and unattended control loop
-workflow-history/    Repository-local workflow change index and records
-scripts/             Install, validation, and remote bootstrap scripts
-docs/                Migration, productization, and operating guides
+agents/              规范的技能、hooks、规则和模板
+claude/              Claude Code 适配器和示例配置
+codex/               Codex 适配器、RTK、hooks 和示例配置
+cc-switch/           可迁移的通用配置模板
+replay-autopilot/    回放、打分、反思和无人值守控制循环
+workflow-history/    仓库本地的工作流变更索引和记录
+scripts/             安装、校验和远程引导脚本
+docs/                迁移、产品化和运维指南
 ```
 
-## Prerequisites
+## 前置条件
 
-Required on a new Windows machine:
+一台新的 Windows 机器上需要：
 
 - Git
 - Node.js
-- Codex or Claude Code
+- Codex 或 Claude Code
 
-Recommended when you use the related integrations:
+使用相关集成时推荐：
 
-- Python for writing cc-switch SQLite settings
-- PowerShell 7 (`pwsh`) for legacy replay scripts and one-off Windows maintenance
-- cc-switch for shared Claude/Codex common config
-- rtk for the Claude `PreToolUse` hook path
-- uv, bun, ffmpeg, and openspec for skills that call those tools
+- Python（用于写入 cc-switch 的 SQLite 设置）
+- PowerShell 7（`pwsh`），用于遗留回放脚本和一次性的 Windows 维护
+- cc-switch，用于共享 Claude/Codex 通用配置
+- rtk，用于 Claude 的 `PreToolUse` hook 路径
+- uv、bun、ffmpeg 和 openspec，用于会调用这些工具的技能
 
-## Quick Start
+## 快速开始
 
-Clone the repository:
+克隆仓库：
 
 ```powershell
 git clone https://github.com/hxld/ai-workflow-control-kit.git
 cd ai-workflow-control-kit
 ```
 
-Run a dry run first:
+先跑一次 dry run：
 
 ```bash
 node scripts/install-ai-workflow-kit.js --dry-run --backup-existing
 ```
 
-Install with backups:
+带备份安装：
 
 ```bash
 node scripts/install-ai-workflow-kit.js --backup-existing
 ```
 
-Verify the installation:
+校验安装：
 
 ```bash
 node scripts/verify-ai-workflow-kit.js
 ```
 
-## Skills Sync Model
+## 技能同步模型
 
-`$HOME\.agents\skills` is the canonical custom skill source.
+`$HOME\.agents\skills` 是规范的自定义技能源。
 
-The installer creates:
+安装器会创建：
 
 - `$HOME\.claude\skills` -> `$HOME\.agents\skills`
 - `$HOME\.codex\skills` -> `$HOME\.agents\skills`
 
-This keeps Claude Code and Codex on the same skill set while avoiding duplicate maintenance.
+这样可以让 Claude Code 和 Codex 共用同一套技能，同时避免重复维护。
 
-Runtime-generated Codex `.system` skills are not vendored. They may appear locally after Codex starts, and that is expected runtime behavior.
+Codex 运行态生成的 `.system` 技能不会进入仓库。它们可能在 Codex 启动后出现在本地，属于正常的运行态行为。
 
-## Host Integration
+## 宿主集成
 
-Claude Code uses hook-based integration for skill activation and RTK:
+Claude Code 使用基于 hook 的集成来做技能激活和 RTK：
 
 - `UserPromptSubmit`
 - `Stop`
 - `FileChanged`
-- `PreToolUse` with `rtk hook claude`
+- `PreToolUse`，调用 `rtk hook claude`
 
-The high-frequency Claude `UserPromptSubmit` hook uses Node.js instead of Windows PowerShell 5.1 to avoid intermittent `R6016 - not enough space for thread data` runtime failures.
+Claude 高频的 `UserPromptSubmit` hook 使用 Node.js 而非 Windows PowerShell 5.1，以避免间歇性的 `R6016 - not enough space for thread data` 运行时失败。
 
-Codex uses `config.toml` for hooks and global `AGENTS.md` / `RTK.md` for RTK guidance.
+Codex 使用 `config.toml` 配置 hooks，用全局 `AGENTS.md` / `RTK.md` 提供 RTK 指引。
 
-Do not keep both `$HOME\.codex\hooks.json` and hook definitions in `$HOME\.codex\config.toml`; this can trigger duplicate hook-source warnings.
+不要同时保留 `$HOME\.codex\hooks.json` 和 `$HOME\.codex\config.toml` 里的 hook 定义；这会触发重复 hook 来源告警。
 
-Project trust entries are intentionally not preconfigured. Add trusted project paths only when a real local project needs them.
+项目信任条目有意不做预配置。只有当某个真实的本地项目需要时，才添加受信任的项目路径。
 
-## Node-First Runtime
+## Node 优先运行时
 
-The default installer, verifier, secret scanner, cc-switch updater, and high-frequency hooks run through Node.js. When they need an external program, they call it directly with `execFile` instead of going through a shell interpreter.
+默认的安装器、校验器、密钥扫描器、cc-switch 更新器和高频 hooks 都通过 Node.js 运行。当它们需要外部程序时，会直接用 `execFile` 调用，而不是经过某个 shell 解释器。
 
-PowerShell scripts are retained as compatibility and legacy replay entry points. Do not wire Windows PowerShell 5.1 into high-frequency hooks.
+PowerShell 脚本作为兼容和遗留回放入口保留。不要把 Windows PowerShell 5.1 接到高频 hooks 上。
 
-If Windows shows `R6016 - not enough space for thread data` for `powershell.exe`, diagnose the live source before changing hooks:
+如果 Windows 对 `powershell.exe` 报 `R6016 - not enough space for thread data`，在改动 hooks 之前先定位真实的来源：
 
 ```bash
 node scripts/diagnose-powershell-r6016.js
@@ -142,49 +144,49 @@ node scripts/diagnose-powershell-r6016.js
 
 ## Replay Autopilot
 
-`replay-autopilot` is the control plane for AI workflow evaluation. It supports:
+`replay-autopilot` 是 AI 工作流评估的控制平面。它支持：
 
-- isolated worktree replay
-- source-of-truth and oracle separation
-- round contracts and result reports
-- coverage scoring and caps
-- stop-and-evolve loops
-- failure audit packs
-- hard reflection gates
-- unattended control cycles
+- 隔离的 worktree 回放
+- 真理来源（source-of-truth）与 oracle 的分离
+- 轮次契约和结果报告
+- 覆盖率打分和上限
+- stop-and-evolve 循环
+- 失败审计包
+- 硬反思门禁（hard reflection gate）
+- 无人值守控制循环
 
-Validate the controller:
+校验控制器：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-UnattendedReplayControl.ps1 -ValidateOnly
 ```
 
-## Workflow History
+## 工作流历史
 
-`workflow-history/CHANGELOG.md` is the built-in master index for this kit's workflow changes. Each concrete change lives under `workflow-history/changes/`, and `workflow-history/latest.json` points to the newest entry.
+`workflow-history/CHANGELOG.md` 是本 kit 工作流变更的内置主索引。每条具体变更放在 `workflow-history/changes/` 下，`workflow-history/latest.json` 指向最新的那条。
 
-`replay-autopilot` discovers the latest workflow version from `workflow-history` first, then falls back to legacy history locations for older installations. This keeps the clean repository self-contained and avoids a hard dependency on a personal knowledge base such as `hxld_vault`.
+`replay-autopilot` 会先从 `workflow-history` 发现最新工作流版本，对旧安装再回退到遗留的历史位置。这让干净的仓库保持自包含，避免对 `hxld_vault` 这类个人知识库的硬依赖。
 
-Key regression checks:
+关键回归检查：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v372-UnattendedControlLoop.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v470-FailureAuditPackAndHardReflection.ps1
 ```
 
-## Security
+## 安全
 
-Before committing or publishing, run:
+提交或发布前，运行：
 
 ```bash
 node scripts/test-no-secrets.js
 ```
 
-The repository should contain templates and placeholders only. Real credentials must be restored locally after installation.
+仓库应当只包含模板和占位符。真实凭据必须在安装后于本地恢复。
 
-## New Machine Prompt
+## 新机器 Prompt
 
-After cloning this repository on a new machine, give Codex or Claude Code this prompt:
+在新机器上克隆本仓库后，给 Codex 或 Claude Code 这段 prompt：
 
 ```text
 Read README.md, docs/ARCHITECTURE.md, and docs/MIGRATION_CHECKLIST.md in this repository.
@@ -201,8 +203,8 @@ Requirements:
 8. Report what succeeded and what still requires manual local credentials or path edits.
 ```
 
-## Optional Knowledge Repository
+## 可选的知识仓库
 
-This kit does not require `hxld_vault` or any other personal knowledge repository.
+本 kit 不需要 `hxld_vault` 或任何其他个人知识库。
 
-If a knowledge backup repository exists, pass it as an optional install parameter. If it does not exist, the workflow kit should still install and run.
+如果存在知识备份仓库，可以作为可选的安装参数传入。如果不存在，工作流 kit 也应当能正常安装和运行。

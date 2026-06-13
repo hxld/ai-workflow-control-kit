@@ -100,6 +100,27 @@ node scripts/install-ai-workflow-kit.js --backup-existing
 node scripts/verify-ai-workflow-kit.js
 ```
 
+## 自定义路径和团队扩展
+
+所有安装路径都可以通过命令行参数自定义（按 Enter 接受默认值）：
+
+```bash
+node scripts/install-ai-workflow-kit.js \
+  --agents-home ~/.agents \
+  --codex-home ~/.codex \
+  --claude-home ~/.claude \
+  --replay-autopilot-root ~/.ai-workflow-control-kit/replay-autopilot \
+  --backup-existing
+```
+
+首次安装推荐用交互向导：
+
+```bash
+node scripts/install-ai-workflow-kit.js --interactive
+```
+
+**公司特定技能**：如果团队有公司内部流程（如 Git/MR 规范、工时评估），可以在 `agents/skills/` 下加一个 `skill-rules.company.json` 文件（见 `skill-rules.company.example.json` 模板）。个人用户直接省略即可，仓库正常运行不依赖它。
+
 ## 技能同步模型
 
 `$HOME\.agents\skills` 是规范的自定义技能源。

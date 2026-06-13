@@ -263,6 +263,20 @@ function main() {
     return;
   }
 
+  // Merge optional company-specific overlay (personal installs can simply omit this file)
+  const companyRulesPath = path.join(path.dirname(rulesPath), 'skill-rules.company.json');
+  if (fs.existsSync(companyRulesPath)) {
+    try {
+      const companyRules = readJson(companyRulesPath);
+      if (companyRules && companyRules.skills) {
+        rules.skills = { ...rules.skills, ...companyRules.skills };
+        log('merged company-specific skill overlay');
+      }
+    } catch (error) {
+      log(`skip company rules overlay: ${error.message}`);
+    }
+  }
+
   const projectDir = process.env.CLAUDE_PROJECT_DIR || payload.cwd || process.cwd();
   const matches = findMatches(promptText, rules);
   const receipt = consumePendingReceipt(projectDir);

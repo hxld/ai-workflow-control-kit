@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "description": "Company-specific skill overrides. Loaded and merged on top of skill-rules.json at runtime. Safe to omit on personal machines; skills here simply won't trigger.",
+    "optional": true
+  },
+  "skills": {
+    "rdc-git": {
+      "description": "公司内部 Git/MR 工作流（慧择 RDC 规范）",
+      "priority": "medium",
+      "scope_tier": "company-specific",
+      "scope_note": "绑定慧择内部 Git 规范、MR 模板和报工流程。",
+      "auto_apply": false,
+      "feedback_summary": "按公司 RDC Git 规范创建 MR、填写模板、关联报工。",
+      "triggers": {
+        "keywords": ["RDC提交", "慧择规范", "rdc-git", "公司Git流程", "MR模板"]
+      }
+    },
+    "backend-effort-estimate": {
+      "description": "按公司模板填写后端工时评估",
+      "priority": "medium",
+      "scope_tier": "company-specific",
+      "scope_note": "绑定慧择工时模板、报工口径与内部交付流程。",
+      "auto_apply": false,
+      "feedback_summary": "按公司模板生成工时评估和人天报告。",
+      "triggers": {
+        "keywords": ["工时评估", "人天", "报工", "填工时表", "后端工时", "effort estimate", "工时表"]
+      }
+    }
+  }
+}

@@ -5,6 +5,7 @@ const childProcess = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const readline = require('readline');
 
 function parseArgs(argv) {
   const result = {
@@ -17,6 +18,7 @@ function parseArgs(argv) {
     backupExisting: false,
     dryRun: false,
     skipCcSwitchConfig: false,
+    interactive: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -30,6 +32,7 @@ function parseArgs(argv) {
     else if (arg === '--backup-existing') result.backupExisting = true;
     else if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--skip-cc-switch-config') result.skipCcSwitchConfig = true;
+    else if (arg === '--interactive') result.interactive = true;
     else if (arg === '--help' || arg === '-h') {
       console.log(`Usage: node scripts/install-ai-workflow-kit.js [options]
 
@@ -42,7 +45,8 @@ Options:
   --knowledge-repo <path>
   --backup-existing
   --dry-run
-  --skip-cc-switch-config`);
+  --skip-cc-switch-config
+  --interactive          # Run interactive wizard to fill in paths`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -198,11 +202,55 @@ function applyCcSwitchConfig(repo, options) {
   childProcess.execFileSync(process.execPath, args, { windowsHide: true, stdio: 'inherit' });
 }
 
+function prompt(question, defaultValue) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => {
+    const suffix = defaultValue !== undefined ? ` [${defaultValue}]` : '';
+    rl.question(`${question}${suffix}: `, answer => {
+      rl.close();
+      resolve(answer.trim() || defaultValue);
+    });
+  });
+}
+
+async function runWizard(defaults) {
+  console.log('[workflow-kit] Interactive setup — press Enter to accept the default.\n');
+  const agentsHome    = await prompt('Agents home (~/.agents)',          defaults.agentsHome);
+  const codexHome     = await prompt('Codex home (~/.codex)',            defaults.codexHome);
+  const claudeHome    = await prompt('Claude home (~/.claude)',          defaults.claudeHome);
+  const replayRoot    = await prompt('Replay autopilot root',            defaults.replayAutopilotRoot);
+  const claimRoot     = await prompt('Claim project root (optional)',    defaults.claimProjectRoot || '');
+  const knowledgeRepo = await prompt('Knowledge repo (optional)',        defaults.knowledgeRepo || '.');
+  const backupAnswer  = await prompt('Back up existing files?',         'y');
+  const backupExisting = /^y(es)?$/i.test(backupAnswer);
+  console.log('');
+  return { agentsHome, codexHome, claudeHome, replayAutopilotRoot: replayRoot,
+           claimProjectRoot: claimRoot, knowledgeRepo, backupExisting,
+           dryRun: false, skipCcSwitchConfig: false, interactive: false };
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const repo = path.resolve(__dirname, '..');
+
+  let finalOptions = options;
+  if (options.interactive) {
+    finalOptions = { ...options, interactive: false };
+    (async () => {
+      finalOptions = await runWizard(options);
+      step(`Repository: ${repo}`);
+      if (finalOptions.dryRun) step('DryRun enabled; no files will be written.');
+      runInstall(finalOptions, repo);
+    })();
+    return;
+  }
+
   step(`Repository: ${repo}`);
   if (options.dryRun) step('DryRun enabled; no files will be written.');
+  runInstall(options, repo);
+}
+
+function runInstall(options, repo) {
 
   copyFile(path.join(repo, 'agents', 'AGENTS.md'), path.join(options.agentsHome, 'AGENTS.md'), options);
   copyFile(path.join(repo, 'agents', '.skill-lock.json'), path.join(options.agentsHome, '.skill-lock.json'), options);

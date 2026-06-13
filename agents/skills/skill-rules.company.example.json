@@ -1,0 +1,30 @@
+{
+  "_meta": {
+    "description": "Company-specific skill overrides template. Copy this file to skill-rules.company.json and fill in your team's skills. Omit skill-rules.company.json on personal installs.",
+    "optional": true
+  },
+  "skills": {
+    "rdc-git": {
+      "description": "公司内部 Git/MR 工作流（替换为你们团队的实际流程）",
+      "priority": "medium",
+      "scope_tier": "company-specific",
+      "scope_note": "绑定公司 Git 规范、MR 模板和关联流程。",
+      "auto_apply": false,
+      "feedback_summary": "按公司规范创建 MR、填写模板。",
+      "triggers": {
+        "keywords": ["rdc-git", "公司Git流程", "MR模板"]
+      }
+    },
+    "backend-effort-estimate": {
+      "description": "按公司模板填写工时评估（替换为你们团队的口径）",
+      "priority": "medium",
+      "scope_tier": "company-specific",
+      "scope_note": "绑定公司工时模板和报工流程。",
+      "auto_apply": false,
+      "feedback_summary": "按公司模板生成工时评估报告。",
+      "triggers": {
+        "keywords": ["工时评估", "人天", "报工"]
+      }
+    }
+  }
+}

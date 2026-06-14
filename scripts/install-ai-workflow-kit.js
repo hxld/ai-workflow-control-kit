@@ -143,6 +143,8 @@ function copyTree(source, destination, options, replace = true, preserveSystemSk
   }
 }
 
+const PLATFORM = os.platform(); // 'win32', 'linux', 'darwin', ...
+
 function linkDirectory(target, destination, options) {
   if (!fs.existsSync(target)) throw new Error(`Link target does not exist: ${target}`);
   const targetReal = fs.realpathSync(target).toLowerCase();
@@ -157,7 +159,13 @@ function linkDirectory(target, destination, options) {
   step(`Link ${destination} -> ${target}`);
   if (options.dryRun) return;
   ensureParent(destination, options);
-  fs.symlinkSync(target, destination, 'junction');
+  // Windows: junction is the safe default for directories (no admin required).
+  // Linux/macOS: use standard symlink.
+  if (PLATFORM === 'win32') {
+    fs.symlinkSync(target, destination, 'junction');
+  } else {
+    fs.symlinkSync(target, destination, 'dir');
+  }
 }
 
 function disableLegacyCodexHooksJson(codexHome, options) {

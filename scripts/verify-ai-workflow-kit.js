@@ -59,7 +59,9 @@ function exists(filePath) {
 
 function commandAvailable(name) {
   try {
-    childProcess.execFileSync('where.exe', [name], { windowsHide: true, stdio: 'pipe' });
+    // Use platform-appropriate command locator
+    const locator = os.platform() === 'win32' ? 'where.exe' : 'which';
+    childProcess.execFileSync(locator, [name], { windowsHide: true, stdio: 'pipe' });
     return true;
   } catch {
     return false;

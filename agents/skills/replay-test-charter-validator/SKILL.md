@@ -30,7 +30,7 @@ allowed-tools: Read,Glob,Grep
 
 ## 可接受的副作用证据
 
-### 有效副作用
+### ✅ 有效副作用
 
 - **DB write**: INSERT/UPDATE/DELETE 带 @Transactional rollback
 - **State change**: 状态转换、任务创建、进度日志
@@ -38,7 +38,7 @@ allowed-tools: Read,Glob,Grep
 - **External API**: RPC 调用、HTTP 请求、消息队列
 - **Async behavior**: @EventListener、@Scheduled 执行
 
-### 无效测试 (不充分)
+### ❌ 无效测试 (不充分)
 
 - 纯函数验证 (仅 validator 逻辑)
 - 静态方法测试 (无状态变化)
@@ -58,9 +58,9 @@ allowed-tools: Read,Glob,Grep
 ### Rule 2: 禁止的测试模式
 
 仅断言以下内容的测试不充分:
-- 返回值: `assertThat(calculate(x)).isEqualTo(y)` 
-- Validator 逻辑: `assertThat(validator.validate(x)).isRejected()` 
-- 字符串序列化: `assertThat(json).contains("field")` 
+- 返回值: `assertThat(calculate(x)).isEqualTo(y)` ❌
+- Validator 逻辑: `assertThat(validator.validate(x)).isRejected()` ❌
+- 字符串序列化: `assertThat(json).contains("field")` ❌
 
 这些对于 carrier 闭包是不充分的。
 
@@ -95,7 +95,7 @@ public void testHandle_InsertsCompensateDetail() {
 
     // Then: 副作用断言
     CompensateDetail detail = compensateDetailMapper.selectByCaseId(caseId);
-    assertThat(detail).isNotNull(); // Side-effect assertion
+    assertThat(detail).isNotNull(); // ✅ Side-effect assertion
 }
 ```
 
@@ -105,7 +105,7 @@ public void testHandle_InsertsCompensateDetail() {
 @Test
 public void testValidate_RejectsNegative() {
     ValidationResult result = validator.validate("-100");
-    assertThat(result.isRejected()).isTrue(); // 无副作用
+    assertThat(result.isRejected()).isTrue(); // ❌ 无副作用
 }
 ```
 
@@ -153,17 +153,15 @@ public void testAutoFlow_InsertsCompensateDetail() {
 你写的每个测试必须证明副作用:
 
 ### 什么算副作用证明
-
-- DB write: `assertThat(mapper.select(...)).isNotNull()`
-- State change: `assertThat(entity.getStatus()).isEqualTo(newStatus)`
-- File generation: `assertThat(generatedFile).exists()`
-- API call: `verify(facade).push(...).times(1)`
+✅ DB write: `assertThat(mapper.select(...)).isNotNull()`
+✅ State change: `assertThat(entity.getStatus()).isEqualTo(newStatus)`
+✅ File generation: `assertThat(generatedFile).exists()`
+✅ API call: `verify(facade).push(...).times(1)`
 
 ### 什么不算
-
-- Return value: `assertThat(calculate(x)).isEqualTo(y)`
-- Validator logic: `assertThat(validator.validate(x)).isRejected()`
-- String format: `assertThat(json).contains("field")`
+❌ Return value: `assertThat(calculate(x)).isEqualTo(y)`
+❌ Validator logic: `assertThat(validator.validate(x)).isRejected()`
+❌ String format: `assertThat(json).contains("field")`
 
 ### 测试模板
 

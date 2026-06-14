@@ -1,6 +1,9 @@
 .DS_Store
 Thumbs.db
 
+# Personal sharing materials (keep local only)
+深度分析-分享材料.md
+
 # IDE
 .idea/
 .vscode/

@@ -45,6 +45,46 @@ const SKILL_RECEIPT_RULES = {
     successPrefix: '已确认在流程选择后更新到',
     missMessage: '已确认读取该技能；本回合它主要用于选择下一步路径，不一定产生新的落盘文件。',
   },
+  'dev-workflow': {
+    pathPrefixes: ['.doc/', 'openspec/'],
+    successPrefix: '已确认开发工作流产出到',
+    missMessage: '已读取该技能；本回合它可能处于早期 phase，尚未产生 `.doc/` 或 `openspec/` 落盘记录。',
+  },
+  'auto-complete': {
+    categories: ['code'],
+    successPrefix: '已确认代码变更产生到',
+    missMessage: '已读取该技能；auto-complete 模式产生代码变更，继续推进即可。',
+  },
+  'gen-tests': {
+    categories: ['code'],
+    successPrefix: '已确认测试产出到',
+    missMessage: '已读取该技能；本回合未检测到新的测试文件落盘记录。',
+  },
+  'deep-review': {
+    categories: ['doc'],
+    successPrefix: '已确认审查发现落盘到',
+    missMessage: '已读取该技能；deep-review 主要提供审查意见，不强制产生落盘文件。',
+  },
+  'deep-plan': {
+    pathPrefixes: ['.doc/', 'openspec/'],
+    successPrefix: '已确认规划产出到',
+    missMessage: '已读取该技能；本回合未检测到 `.doc/` 或 `openspec/` 规划文件的新增落盘记录。',
+  },
+  'ship-release': {
+    pathPrefixes: ['.doc/'],
+    successPrefix: '已确认发布记录更新到',
+    missMessage: '已读取该技能；本回合未检测到发布相关记录。',
+  },
+  'requirement-assessment': {
+    categories: ['doc'],
+    successPrefix: '已确认需求评估记录到',
+    missMessage: '已读取该技能；本回合它主要用于评估需求，不一定产生新的落盘文件。',
+  },
+  'req-alignment-check': {
+    categories: ['doc'],
+    successPrefix: '已确认需求对齐检查记录到',
+    missMessage: '已读取该技能；本回合未检测到需求对齐文件的新增落盘记录。',
+  },
 };
 
 function stripUtf8Bom(s) {

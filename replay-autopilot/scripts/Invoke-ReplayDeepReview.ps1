@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReplayRoot,
-    [string]$HistoryRoot = 'D:\opt',
+    [string]$HistoryRoot = '',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$Executor = 'claude',
     [ValidateSet('codex', 'claude', 'manual', '')]

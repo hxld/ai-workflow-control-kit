@@ -2,6 +2,20 @@
 
 这个目录用于把 aiClaimV2 replay 从“人工复制 prompt”推进到“脚本化循环执行”：准备隔离 worktree、调用本地 agent CLI、收集日志、解析 Phase 1/Phase 2 报告、生成技能进化提案，并在显式授权时触发受控技能进化。
 
+## 路径配置（可移植性）
+
+命令示例中 `.\scripts\...` 假定当前目录是 `replay-autopilot/` 根。指向业务项目和回放产物的路径通过环境变量驱动，不再硬编码到作者机器：
+
+| 环境变量 | 含义 | 命令示例中的形式 |
+|----------|------|------------------|
+| `AI_WORKFLOW_PROJECT_ROOT` | 业务项目根 | `<PROJECT_ROOT>`（文档）|
+| `AI_WORKFLOW_REPLAY_EVIDENCE_ROOT` | 回放产物根 | `$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT` |
+| `AI_WORKFLOW_REPLAY_ROOT` | 父目录（少用） | `$env:AI_WORKFLOW_REPLAY_ROOT` |
+
+仓库自身资源（`templates/`、`tools/`、`scripts/`）通过 `$PSScriptRoot` 解析，无需配置。在 `config.yaml` 顶部也有同名说明。
+
+**关于 `scripts/Test-v*.ps1`：** 这些是作者本地回归测试，断言和 fixture 数据引用了作者的历史 replay 产物（如 `changed_files:` evolution 结果、特定 run-id 目录）。它们需要作者本地的 evidence 树才能实际运行；在别的机器上即使设置了上面的环境变量，缺少对应 fixture 仍会 skip 或失败。这是已知的产品化边界，留给后续 Stage 3（可评测演化）处理。
+
 ## 文件
 
 - `config.yaml`：项目、base/oracle、replay root、目标覆盖率、executor、分阶段模型、熔断阈值配置。
@@ -18,7 +32,7 @@
 - `scripts/Parse-ReplayReport.ps1`：解析 `ROUND_RESULT.md` / `FINAL_REPLAY_REPORT.md`，输出 `AUTOPILOT_SUMMARY.md`。
 - `scripts/Write-ControlPlaneSummary.ps1`：生成文件型控制层输出：`RUN_CONTROL_SUMMARY.md/json`、`BLOCKER_FINGERPRINTS.json`、`STAGNATION_DECISION.json`、`_control/RUN_CONTROL_LATEST.*` 和 `_control/MORNING_BRIEF.md`。
 - `scripts/Write-GoldenDeliverySlice.ps1`：把控制层里的重复 blocker 转换成正向第一刀样板，输出 `GOLDEN_DELIVERY_SLICE.md/json`、`GOLDEN_DELIVERY_SLICE_PROMPT.md` 和最新 replay root 内的 `NEXT_GOLDEN_DELIVERY_SLICE.*`。
-- `scripts/Write-ReplaySessionSummary.ps1`：从 `D:\opt\replay-evidence` 下的 replay 产物生成可迁移恢复入口 `REPLAY_AUTOPILOT_SESSION_SUMMARY.md`，避免依赖某个 Claude/Codex 会话 memory。
+- `scripts/Write-ReplaySessionSummary.ps1`：从 `$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT` 下的 replay 产物生成可迁移恢复入口 `REPLAY_AUTOPILOT_SESSION_SUMMARY.md`，避免依赖某个 Claude/Codex 会话 memory。
 - `scripts/Sync-KnowledgeBackup.ps1`：把 `replay-autopilot` 工具体、`ai-knowledge` 知识版本和轻量证据包同步到个人知识库 Git 仓库，并按白名单提交推送。
 - `scripts/New-EvolutionProposal.ps1`：从 replay 报告抽取可迁移 gap，输出 `EVOLUTION_PROPOSAL.md`。
 - `scripts/Run-ReplayLoop.ps1`：串联准备、执行、slice loop、解析、进化提案和熔断。
@@ -32,7 +46,7 @@
 ## 先校验
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -ValidateOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -ValidateOnly
 ```
 
 ## 可迁移恢复入口
@@ -40,7 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 每次 `Run-ReplayLoop.ps1` 或 `Run-CrossFeatureReplay.ps1` 结束时，都会刷新：
 
 ```text
-D:\opt\replay-evidence\REPLAY_AUTOPILOT_SESSION_SUMMARY.md
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\REPLAY_AUTOPILOT_SESSION_SUMMARY.md
 ```
 
 这个文件只从 replay evidence、`AUTOPILOT_DECISION.md`、`FINAL_REPLAY_REPORT.md`、`EVOLUTION_RESULT.md` 等脚本产物生成，不读取 Claude/Codex 聊天 JSONL，也不绑定固定会话 ID。新会话恢复上下文时，优先读它，再按最新 replay root 深入查看具体报告。
@@ -48,7 +62,7 @@ D:\opt\replay-evidence\REPLAY_AUTOPILOT_SESSION_SUMMARY.md
 手动刷新：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Write-ReplaySessionSummary.ps1 -EvidenceRoot D:\opt\replay-evidence -MaxRoots 80
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Write-ReplaySessionSummary.ps1 -EvidenceRoot $env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT -MaxRoots 80
 ```
 
 ## 控制层摘要
@@ -56,10 +70,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 `Run-ReplayLoop.ps1` 收尾时会刷新控制层文件，目标是让无人值守循环少看、少管、少跑：
 
 ```text
-D:\opt\replay-evidence\_control\RUN_CONTROL_LATEST.md
-D:\opt\replay-evidence\_control\RUN_CONTROL_LATEST.json
-D:\opt\replay-evidence\_control\BLOCKER_REGISTRY.json
-D:\opt\replay-evidence\_control\MORNING_BRIEF.md
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_control\RUN_CONTROL_LATEST.md
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_control\RUN_CONTROL_LATEST.json
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_control\BLOCKER_REGISTRY.json
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_control\MORNING_BRIEF.md
 ```
 
 最新 replay root 内也会写：
@@ -74,9 +88,9 @@ STAGNATION_DECISION.json
 控制层只给一个决策类型：`CONTINUE`、`STOPLINE`、`UPGRADE` 或 `EVOLVE`。它会合并重复 blocker，检查 executor audit，识别长期无实质提升，并给出下一步建议。若判断为长期停滞，收尾阶段还会生成正向第一刀样板：
 
 ```text
-D:\opt\replay-evidence\_golden-samples\GOLDEN_DELIVERY_SLICE.md
-D:\opt\replay-evidence\_golden-samples\GOLDEN_DELIVERY_SLICE.json
-D:\opt\replay-evidence\_golden-samples\GOLDEN_DELIVERY_SLICE_PROMPT.md
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_golden-samples\GOLDEN_DELIVERY_SLICE.md
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_golden-samples\GOLDEN_DELIVERY_SLICE.json
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_golden-samples\GOLDEN_DELIVERY_SLICE_PROMPT.md
 ```
 
 `Start-ReplayRound.ps1` 会在下一轮自动把 `GOLDEN_DELIVERY_SLICE_PROMPT.md` 快照进 replay root，并追加到 Phase0 / Plan / Phase1 prompt。它的定位是正向样板：告诉模型“正确第一刀长什么样”，不是 oracle 事实。
@@ -84,8 +98,8 @@ D:\opt\replay-evidence\_golden-samples\GOLDEN_DELIVERY_SLICE_PROMPT.md
 手动刷新：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Write-ControlPlaneSummary.ps1 -EvidenceRoot D:\opt\replay-evidence -MaxRoots 80
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Write-GoldenDeliverySlice.ps1 -EvidenceRoot D:\opt\replay-evidence
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Write-ControlPlaneSummary.ps1 -EvidenceRoot $env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT -MaxRoots 80
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Write-GoldenDeliverySlice.ps1 -EvidenceRoot $env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT
 ```
 
 ## 知识库备份收口
@@ -93,7 +107,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 `Run-ReplayLoop.ps1` 和 `Run-UntilKnowledgeVersion.ps1` 收尾时默认调用：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Sync-KnowledgeBackup.ps1 -IncludeAutopilot -IncludeKnowledge -EvidenceMode Milestone -Push
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Sync-KnowledgeBackup.ps1 -IncludeAutopilot -IncludeKnowledge -EvidenceMode Milestone -Push
 ```
 
 默认配置：
@@ -122,7 +136,7 @@ knowledge_backup_evidence_mode: Milestone
 Agent Bridge 用文件系统作为两个 Agent 的共享协议层，默认目录：
 
 ```text
-D:\opt\replay-evidence\_agent-bridge\current
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\current
 ```
 
 核心文件：
@@ -149,30 +163,30 @@ events.jsonl
 
 ```powershell
 # 初始化当前 bridge
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-AgentBridge.ps1 -Action Init -InitialPromptPath D:\path\to\first-claude-prompt.md -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action Init -InitialPromptPath D:\path\to\first-claude-prompt.md -Force
 
 # Claude Code 执行完后写 CLAUDE_RESULT.md 和 CLAUDE_DONE.flag，然后推进给 Codex
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-AgentBridge.ps1 -Action ClaudeDone
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action ClaudeDone
 
 # Codex 写 CODEX_REVIEW.md、NEXT_CLAUDE_PROMPT.md、DECISION.json 和 CODEX_DONE.flag 后，推进下一轮
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-AgentBridge.ps1 -Action CodexDone
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action CodexDone
 
 # 查看状态
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-AgentBridge.ps1 -Action Status
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action Status
 ```
 
 可选全自动循环会调用现有 `Invoke-AgentPrompt.ps1`：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-AgentBridge.ps1 -Action RunLoop -ClaudeExecutor claude -CodexExecutor codex -MaxCycles 1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action RunLoop -ClaudeExecutor claude -CodexExecutor codex -MaxCycles 1
 ```
 
 保护边界：
 
 - 默认只用 `ProtectedGitRoots` 的 git dirty watchdog 做 fail-closed 检查，不修改受保护仓库 ACL。
-- `-UseProtectedRootWriteDeny` 属于危险实验开关；脚本会拒绝直接启用，除非同时传 `-AllowUnsafeProtectedRootWriteDeny`。该组合只应在一次性临时目录/测试仓库中使用，不应用于 `D:\opt\claim` 主仓库。
+- `-UseProtectedRootWriteDeny` 属于危险实验开关；脚本会拒绝直接启用，除非同时传 `-AllowUnsafeProtectedRootWriteDeny`。该组合只应在一次性临时目录/测试仓库中使用，不应用于 `<PROJECT_ROOT>` 主仓库。
 
-`RunLoop` 有界执行，不会无限循环。Codex 必须写 `DECISION.json`；若 decision 为 `STOP` 或 `BLOCKED`，bridge 停止；若为 `CONTINUE` / `EVOLVE` / `DEEP_REVIEW`，`NEXT_CLAUDE_PROMPT.md` 会成为下一轮 `CLAUDE_PROMPT.md`，上一轮证据归档到 `D:\opt\replay-evidence\_agent-bridge\runs\`。
+`RunLoop` 有界执行，不会无限循环。Codex 必须写 `DECISION.json`；若 decision 为 `STOP` 或 `BLOCKED`，bridge 停止；若为 `CONTINUE` / `EVOLVE` / `DEEP_REVIEW`，`NEXT_CLAUDE_PROMPT.md` 会成为下一轮 `CLAUDE_PROMPT.md`，上一轮证据归档到 `$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs\`。
 切换到下一轮前，bridge 还会把上一轮的 Claude 结果、Codex 审查、下一步 prompt、decision 和归档路径复制到 `LAST_*` 文件；下一轮 agent 应优先读这些稳定副本，避免 current-cycle 文件被重置为空造成上下文丢失。
 
 ## 收敛口径
@@ -235,13 +249,13 @@ Phase 1 自动模式不再一次性执行完整大 prompt，而是由 `Run-Slice
 校验单个 executor、prompt、worktree 和日志目录：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Invoke-AgentPrompt.ps1 -PromptPath D:\opt\claim-codex-replay-v172-autopilot-20260512-r01\PHASE1_PROMPT.md -WorkDir D:\opt\claim-codex-replay-v172-autopilot-20260512-r01\worktree -LogDir D:\opt\claim-codex-replay-v172-autopilot-20260512-r01\logs\validate -Executor codex -ValidateOnly
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-AgentPrompt.ps1 -PromptPath <REPLAY_RUN_ROOT>\PHASE1_PROMPT.md -WorkDir <REPLAY_RUN_ROOT>\worktree -LogDir <REPLAY_RUN_ROOT>\logs\validate -Executor codex -ValidateOnly
 ```
 
 只准备 prompt 和 worktree，不执行 agent：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 1 -NoExecute
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 1 -NoExecute
 ```
 
 如果 replay root 已存在，必须显式加 `-ReuseExisting`；工具不会自动复用旧目录。
@@ -251,26 +265,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 第 1 轮已经准备过时使用：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 1 -ReuseExisting
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 1 -ReuseExisting
 ```
 
 从第 2 轮开始新建并执行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -StartRound 2 -Rounds 1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 2 -Rounds 1
 ```
 
 技能进化后，直接读取知识库最新变更版本并作为新一版 replay root：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -UseLatestKnowledgeVersion -StartRound 1 -Rounds 1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -UseLatestKnowledgeVersion -StartRound 1 -Rounds 1
 ```
 
 `-UseLatestKnowledgeVersion` 会从 `knowledge_repo\custom-skills-history\v*.md` 和 `guide-sections\changelog.md` 里读取最新 `vNNN`。例如知识库最新记录是 `v173` 时，脚本会在运行时生成临时 effective config，把：
 
 ```text
 v172-autopilot -> v173-autopilot
-D:\opt\claim-codex-replay-v172-autopilot-20260512 -> D:\opt\claim-codex-replay-v173-autopilot-20260512
+<REPLAY_RUN_ROOT> -> <REPLAY_RUN_ROOT>
 ```
 
 原始 `config.yaml` 不会被改写。这样每次完成受控技能进化并写入知识库变更记录后，下一轮 replay 可以直接跟随最新知识库版本启动。
@@ -278,7 +292,7 @@ D:\opt\claim-codex-replay-v172-autopilot-20260512 -> D:\opt\claim-codex-replay-v
 跑最多 3 轮，遇到目标覆盖率或无提升熔断自动停止：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 3 -ReuseExisting
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 1 -Rounds 3 -ReuseExisting
 ```
 
 ## 自动技能进化
@@ -288,7 +302,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 显式允许自动执行进化：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-ReplayLoop.ps1 -StartRound 2 -Rounds 1 -RunEvolution
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 2 -Rounds 1 -RunEvolution
 ```
 
 也可以在 `config.yaml` 中把 `auto_evolution: true` 打开。建议先用默认模式检查 `EVOLUTION_PROPOSAL.md`，确认 gap 是跨项目 workflow gate，而不是 aiClaimV2 项目细节。
@@ -298,7 +312,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 无人值守跑 replay + evolution，直到知识库最新版本达到指定版本，例如目标版本 `v240`：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Run-UntilKnowledgeVersion.ps1 -TargetVersion 240
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-UntilKnowledgeVersion.ps1 -TargetVersion 240
 ```
 
 该脚本每轮都会：
@@ -324,7 +338,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scri
 每轮会生成：
 
 ```text
-D:\opt\claim-codex-replay-v172-autopilot-20260512-rNN
+<REPLAY_RUN_ROOT>
   BASELINE_INDEX.md
   CONTEXT_MANIFEST.md
   PHASE0_PROMPT.md
@@ -372,7 +386,7 @@ D:\opt\claim-codex-replay-v172-autopilot-20260512-rNN
 
 ## 安全边界
 
-- 不在 `D:\opt\claim` 主工作区写生产代码、测试或 replay 产物。
+- 不在 `<PROJECT_ROOT>` 主工作区写生产代码、测试或 replay 产物。
 - Phase 1 prompt 禁止读取 oracle、历史 replay、目标 diff。
 - Phase 2 prompt 只做 oracle 后验评分，禁止继续实现。
 - 技能进化 prompt 禁止把项目路径、类名、表名、commit、replay root 写进通用技能。
@@ -393,13 +407,13 @@ D:\opt\claim-codex-replay-v172-autopilot-20260512-rNN
 The runner can mine historical replay evidence into a portable control layer:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-GoldenSampleMining.ps1 -ConfigPath D:\opt\replay-autopilot\config.yaml
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-GoldenSampleMining.ps1 -ConfigPath <REPLAY_AUTOPILOT_ROOT>\config.yaml
 ```
 
 Default output:
 
 ```text
-D:\opt\replay-evidence\_golden-samples\
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_golden-samples\
   GOLDEN_SAMPLE_LEDGER.json
   GOLDEN_SAMPLE_SOP.md
   GOLDEN_SAMPLE_PROMPT.md
@@ -416,13 +430,13 @@ This layer must stay generic: it may carry recurring gates such as real-entry fi
 Long stagnation should not keep replaying the same local failure. The runner can trigger an external practice search after stop-loss or no-improvement circuit breakers:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Start-ExternalPracticeSearch.ps1 -ConfigPath D:\opt\replay-autopilot\config.yaml -RunAgent
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-ExternalPracticeSearch.ps1 -ConfigPath <REPLAY_AUTOPILOT_ROOT>\config.yaml -RunAgent
 ```
 
 Default output:
 
 ```text
-D:\opt\replay-evidence\_external-practice\
+$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_external-practice\
   EXTERNAL_PRACTICE_RESEARCH_PROMPT.md
   EXTERNAL_PRACTICE_RESEARCH.md
   EXTERNAL_PRACTICE_SOP.md

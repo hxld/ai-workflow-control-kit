@@ -260,7 +260,7 @@ function Write-AutopilotManifest {
     $manifest = @"
 # Replay Autopilot Backup Manifest
 
-- source: D:\opt\replay-autopilot
+- source: <REPLAY_AUTOPILOT_ROOT>
 - backup_target: learning/raw/sources/replay-autopilot
 - generated_at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')
 - included_source_files: $IncludedFiles
@@ -269,7 +269,7 @@ function Write-AutopilotManifest {
 
 ## Restore
 
-Copy this folder back to D:\opt\replay-autopilot on a new machine, then adjust local paths in config.yaml as needed.
+Copy this folder back to <REPLAY_AUTOPILOT_ROOT> on a new machine, then adjust local paths in config.yaml as needed.
 "@
     Set-Content -LiteralPath (Join-Path $Destination 'BACKUP_MANIFEST.md') -Value $manifest -Encoding UTF8
     @"
@@ -295,7 +295,7 @@ function Write-EvidenceManifest {
     $manifest = @"
 # Replay Evidence Lite Manifest
 
-- source: D:\opt\replay-evidence
+- source: <REPLAY_EVIDENCE_ROOT>
 - backup_target: learning/raw/sources/replay-evidence-lite
 - generated_at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')
 - evidence_files: $($evidenceFiles.Count)

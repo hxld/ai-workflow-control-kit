@@ -47,14 +47,14 @@ function Assert-Allow {
     $script:pass++
 }
 
-$renbaoRoot = 'D:\opt\replay-evidence\renbao-tuipiao\claim-codex-replay-v256-cross-20260525-220853-r01'
-$xiebaoRoot = 'D:\opt\replay-evidence\xiebao\claim-codex-replay-v256-cross-20260525-223713-r01'
-$fixtureAllow = 'D:\opt\replay-evidence\_test-fixtures\facade-class-and-method-sig-ALLOW'
-$fixtureNoSig = 'D:\opt\replay-evidence\_test-fixtures\facade-class-no-method-sig-BLOCKED'
-$fixturePushServiceOnly = 'D:\opt\replay-evidence\_test-fixtures\push-service-only-BLOCKED'
-$fixtureOppFacadeNameWithSelectedSig = 'D:\opt\replay-evidence\_test-fixtures\opposite-facade-name-with-selected-sig-BLOCKED'
-$fixtureOppFacadeNameWithUnrelatedSig = 'D:\opt\replay-evidence\_test-fixtures\opposite-facade-name-with-unrelated-sig-BLOCKED'
-$fixtureOppFacadeNoteCellUnbound = 'D:\opt\replay-evidence\_test-fixtures\opposite-facade-note-cell-unbound-BLOCKED'
+$renbaoRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\renbao-tuipiao\claim-codex-replay-v256-cross-20260525-220853-r01"
+$xiebaoRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\xiebao\claim-codex-replay-v256-cross-20260525-223713-r01"
+$fixtureAllow = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\facade-class-and-method-sig-ALLOW"
+$fixtureNoSig = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\facade-class-no-method-sig-BLOCKED"
+$fixturePushServiceOnly = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\push-service-only-BLOCKED"
+$fixtureOppFacadeNameWithSelectedSig = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\opposite-facade-name-with-selected-sig-BLOCKED"
+$fixtureOppFacadeNameWithUnrelatedSig = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\opposite-facade-name-with-unrelated-sig-BLOCKED"
+$fixtureOppFacadeNoteCellUnbound = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_test-fixtures\opposite-facade-note-cell-unbound-BLOCKED"
 
 # Test 1: renbao-tuipiao v256 must be BLOCKED for facade_direction_facade_class_missing
 #         (PushService must NOT satisfy PushFacade evidence)

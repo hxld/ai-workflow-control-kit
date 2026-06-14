@@ -1,3 +1,15 @@
+# Path configuration: config.yaml uses portable relative paths (relative
+# to the working directory you run replay from). Control-plane scripts in
+# scripts/ additionally read these environment variables as their default
+# parameter values, so you can point replay-autopilot at your own project
+# without editing scripts:
+#
+#   AI_WORKFLOW_PROJECT_ROOT          -> your business project root
+#   AI_WORKFLOW_REPLAY_EVIDENCE_ROOT  -> where replay evidence is stored
+#   AI_WORKFLOW_REPLAY_ROOT           -> parent dir (rare; HistoryRoot)
+#
+# Repo-relative resources (templates/, tools/, scripts/) resolve via
+# $PSScriptRoot automatically; they never need configuration.
 project_root: .
 feature_name: example-feature
 requirement_source: README.md

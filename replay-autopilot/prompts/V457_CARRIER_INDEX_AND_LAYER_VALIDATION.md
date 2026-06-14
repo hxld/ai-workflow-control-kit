@@ -20,7 +20,7 @@ BEFORE selecting a carrier for ANY family:
 
 To generate BASELINE_CARRIER_INDEX.json:
 ```powershell
-.\scripts\Build-BaselineCarrierIndex.ps1 -BaselineRoot "D:\opt\claim" -OutputPath "BASELINE_CARRIER_INDEX.json"
+.\scripts\Build-BaselineCarrierIndex.ps1 -BaselineRoot "<PROJECT_ROOT>" -OutputPath "BASELINE_CARRIER_INDEX.json"
 ```
 
 ### Index Schema
@@ -65,7 +65,7 @@ BEFORE confirming carrier selection for ANY family:
 ### Get-CarrierLayer.ps1 Usage
 
 ```powershell
-$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "D:\opt\claim"
+$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "<PROJECT_ROOT>"
 # Returns: @{ layer = "Task"; file = "..."; reason = $null }
 ```
 

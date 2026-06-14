@@ -32,7 +32,7 @@ if ($ValidateOnly) {
 
 $configPath = Join-Path $tempRoot 'config.yaml'
 $replayBase = Join-Path $tempRoot 'claim-codex-replay-v226-snapshot'
-$originalRequirement = 'D:\opt\claim\.doc\xiebao\requirements.md'
+$originalRequirement = "$env:AI_WORKFLOW_PROJECT_ROOT\.doc\xiebao\requirements.md"
 
 Write-Text $configPath @"
 project_root: D:\opt\claim

@@ -1,6 +1,6 @@
 param(
-    [string]$BridgeRoot = 'D:\opt\replay-evidence\_agent-bridge\current',
-    [string]$ArchiveRoot = 'D:\opt\replay-evidence\_agent-bridge\runs',
+    [string]$BridgeRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\current",
+    [string]$ArchiveRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs",
     [string]$ReportRoot = '',
     [int]$IntervalMinutes = 10,
     [int]$MaxReports = 24,
@@ -14,9 +14,9 @@ param(
     [string]$BridgeClaudeExecutor = 'claude',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$BridgeCodexExecutor = 'codex',
-    [string]$BridgeClaudeWorkDir = 'D:\opt\replay-evidence',
-    [string]$BridgeCodexWorkDir = 'D:\opt\replay-evidence',
-    [string[]]$ProtectedGitRoots = @('D:\opt\claim'),
+    [string]$BridgeClaudeWorkDir = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$BridgeCodexWorkDir = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string[]]$ProtectedGitRoots = @("$env:AI_WORKFLOW_PROJECT_ROOT"),
     [int]$BridgeMaxCycles = 4,
     [int]$BridgeTimeoutMinutes = 360,
     [int]$BridgeCompletionQuietSeconds = 30,

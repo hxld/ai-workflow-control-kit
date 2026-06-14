@@ -11,7 +11,7 @@
 
     This prevents false "carrier_search_selected_carrier_not_found_in_codebase"
     errors when the carrier is a real oracle addition that exists in the
-    current project codebase (D:\opt\claim) but not in the replay worktree.
+    current project codebase (<PROJECT_ROOT>) but not in the replay worktree.
 #>
 
 $ErrorActionPreference = 'Stop'

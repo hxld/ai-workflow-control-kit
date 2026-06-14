@@ -61,7 +61,7 @@ try {
     # Test 4: Verify-PlanContract Phase0 still works on real renbao fixture
     # =========================================================================
     Write-Host 'Test 4: Verify-PlanContract Phase0 on real renbao-tuipiao fixture'
-    $renbaoRoot = 'D:\opt\replay-evidence\renbao-tuipiao\claim-codex-replay-v254-cross-20260522-093418-r01'
+    $renbaoRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\renbao-tuipiao\claim-codex-replay-v254-cross-20260522-093418-r01"
     if (Test-Path -LiteralPath $renbaoRoot) {
         $result4 = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $renbaoRoot -Stage Phase0 2>&1
         $verify4 = $result4 | ConvertFrom-Json

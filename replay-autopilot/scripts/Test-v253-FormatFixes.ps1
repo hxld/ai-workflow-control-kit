@@ -95,7 +95,7 @@ Type: core_path
     # Uses real fixture from xiebao v253 which had this format
     # =========================================================================
     Write-Host 'Test 3: Verify-PlanContract Plan - Selected Real Entries plural (real fixture)'
-    $xiebaoRoot = 'D:\opt\replay-evidence\xiebao\claim-codex-replay-v253-cross-20260521-222210-r01'
+    $xiebaoRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\xiebao\claim-codex-replay-v253-cross-20260521-222210-r01"
     if (Test-Path -LiteralPath $xiebaoRoot) {
         $result3 = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $xiebaoRoot -Stage Plan 2>&1
         $verify3 = $result3 | ConvertFrom-Json
@@ -112,7 +112,7 @@ Type: core_path
     # Uses real fixture from skip-task v253 which had 100% coverage
     # =========================================================================
     Write-Host 'Test 4: Parse-ReplayReport - Oracle Coverage (Post-Hoc) real fixture'
-    $skipTaskRoot = 'D:\opt\replay-evidence\skip-task-transform-case\claim-codex-replay-v253-cross-20260521-213505-r01'
+    $skipTaskRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\skip-task-transform-case\claim-codex-replay-v253-cross-20260521-213505-r01"
     if (Test-Path -LiteralPath $skipTaskRoot) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Parse-ReplayReport.ps1') -ReplayRoot $skipTaskRoot | Out-Null
         $summary4 = Get-Content -LiteralPath (Join-Path $skipTaskRoot 'AUTOPILOT_SUMMARY.md') -Raw -Encoding UTF8
@@ -154,7 +154,7 @@ Phase 0 analysis complete.
     # Test 6: Verify-PlanContract Phase0 on real renbao-tuipiao fixture
     # =========================================================================
     Write-Host 'Test 6: Verify-PlanContract Phase0 - real renbao-tuipiao fixture (## Decision: PROCEED)'
-    $renbaoRoot = 'D:\opt\replay-evidence\renbao-tuipiao\claim-codex-replay-v253-cross-20260521-222210-r01'
+    $renbaoRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\renbao-tuipiao\claim-codex-replay-v253-cross-20260521-222210-r01"
     if (Test-Path -LiteralPath $renbaoRoot) {
         $result6 = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $renbaoRoot -Stage Phase0 2>&1
         $verify6 = $result6 | ConvertFrom-Json
@@ -171,10 +171,10 @@ Phase 0 analysis complete.
     # =========================================================================
     Write-Host 'Test 7: ValidateOnly for real fixtures'
     $fixtureRoots = @(
-        'D:\opt\replay-evidence\policy-num-extension\claim-codex-replay-v252-cross-20260521-213505-r01',
-        'D:\opt\replay-evidence\skip-task-transform-case\claim-codex-replay-v253-cross-20260521-213505-r01',
-        'D:\opt\replay-evidence\xiebao\claim-codex-replay-v253-cross-20260521-222210-r01',
-        'D:\opt\replay-evidence\renbao-tuipiao\claim-codex-replay-v253-cross-20260521-222210-r01'
+        "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\policy-num-extension\claim-codex-replay-v252-cross-20260521-213505-r01",
+        "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\skip-task-transform-case\claim-codex-replay-v253-cross-20260521-213505-r01",
+        "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\xiebao\claim-codex-replay-v253-cross-20260521-222210-r01",
+        "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\renbao-tuipiao\claim-codex-replay-v253-cross-20260521-222210-r01"
     )
     foreach ($fixture in $fixtureRoots) {
         if (Test-Path -LiteralPath $fixture) {

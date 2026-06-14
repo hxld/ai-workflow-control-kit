@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReplayRoot,
-    [string]$RequirementSource = 'D:\opt\claim\.doc\policy-num-extension\requirements.md',
+    [string]$RequirementSource = "$env:AI_WORKFLOW_PROJECT_ROOT\.doc\policy-num-extension\requirements.md",
     [switch]$ValidateOnly
 )
 

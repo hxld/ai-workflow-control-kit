@@ -1,7 +1,7 @@
 # Debug script for first_slice_proof_invalid:contract_only_first_slice issue
 
 param(
-    [string]$ReplayRoot = "D:\opt\replay-evidence\aiClaimV2\claim-codex-replay-v330-autopilot-20260517-r01"
+    [string]$ReplayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\aiClaimV2\claim-codex-replay-v330-autopilot-20260517-r01"
 )
 
 $ErrorActionPreference = 'Stop'

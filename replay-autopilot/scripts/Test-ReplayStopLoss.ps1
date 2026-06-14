@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReplayRoot,
-    [string]$HistoryRoot = 'D:\opt',
+    [string]$HistoryRoot = "$env:AI_WORKFLOW_REPLAY_ROOT",
     [int]$TargetCoverage = 90,
     [int]$Lookback = 4,
     [int]$MinOracleImprovement = 8,

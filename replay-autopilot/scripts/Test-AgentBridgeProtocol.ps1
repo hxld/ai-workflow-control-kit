@@ -96,7 +96,7 @@ try {
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_RESULT.md') -Value @'
 # Claude Result
 
-Replay root: D:\opt\replay-evidence\sample
+Replay root: <REPLAY_EVIDENCE_ROOT>\sample
 Phase0: PASS
 Plan: PASS
 Phase1: DONE

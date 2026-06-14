@@ -12,7 +12,7 @@
 #>
 
 param(
-    [string]$ReplayRoot = "D:\opt\replay-evidence\aiClaimV2\claim-codex-replay-v355-autopilot-20260517-r01"
+    [string]$ReplayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\aiClaimV2\claim-codex-replay-v355-autopilot-20260517-r01"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,7 +105,7 @@ Remove-Item -LiteralPath $testPlanPath2 -Force -ErrorAction SilentlyContinue
 # Test 3: Verify actual verifier script has the fixes
 Write-Host "`n[Test 3] Verify-PlanContract.ps1 contains fixes..." -ForegroundColor Yellow
 
-$verifierPath = "D:\opt\replay-autopilot\scripts\Verify-PlanContract.ps1"
+$verifierPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts\Verify-PlanContract.ps1'
 $verifierContent = Get-Content -LiteralPath $verifierPath -Raw -Encoding UTF8
 
 $fix1Present = $verifierContent -match 'new_service_created'

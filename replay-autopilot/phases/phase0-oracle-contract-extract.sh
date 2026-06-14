@@ -15,7 +15,7 @@ fi
 
 # Default repo path
 if [ -z "$REPO_PATH" ]; then
-    REPO_PATH="D:\opt\claim"
+    REPO_PATH="$AI_WORKFLOW_PROJECT_ROOT"
 fi
 
 CONTRACTS_CACHE="$REPLAY_ROOT/../../ORACLE_CONTRACTS_CACHE.json"
@@ -66,5 +66,5 @@ cat > "$OUTPUT_FILE" <<'EOF'
 EOF
 
 echo "ORACLE_CONTRACT_EXTRACTION: INCOMPLETE (placeholder created)"
-echo "Please run: python3 D:\opt\replay-autopilot\scripts\extract_oracle_contracts.py \"$REPO_PATH\" \"$ORACLE_COMMIT\" > \"$OUTPUT_FILE\""
+echo "Please run: python3 $AI_WORKFLOW_REPLAY_AUTOPILOT_ROOT\scripts\extract_oracle_contracts.py \"$REPO_PATH\" \"$ORACLE_COMMIT\" > \"$OUTPUT_FILE\""
 exit 1

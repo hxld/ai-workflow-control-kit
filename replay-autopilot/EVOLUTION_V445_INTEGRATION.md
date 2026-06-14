@@ -4,11 +4,11 @@
 
 ### Modified Files
 
-1. **D:\opt\replay-autopilot\scripts\Verify-PlanContract.ps1**
+1. **.\scripts\Verify-PlanContract.ps1**
    - Lines 784-803: Removed invalid regex patterns for table format
    - Lines 840-873: Added table format validation logic
 
-2. **D:\opt\replay-autopilot\tests\Test-v445-PlanTableFormat.ps1** (new)
+2. **<REPLAY_AUTOPILOT_ROOT>\tests\Test-v445-PlanTableFormat.ps1** (new)
    - Regression test for table format recognition
    - Tests table format is recognized
    - Tests empty carriers are still detected

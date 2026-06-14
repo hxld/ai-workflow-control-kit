@@ -6,8 +6,8 @@ Describe "v317-StopAndEvolve-Tooling" {
         $ScriptRoot = $PSScriptRoot
         $ScriptsRoot = Join-Path $ScriptRoot ".." -Resolve
         $Python = "python"
-        $TestRepo = "D:\opt\claim"
-        $TestWorktree = "D:\opt\claim\.git\worktrees\test-worktree"
+        $TestRepo = "$env:AI_WORKFLOW_PROJECT_ROOT"
+        $TestWorktree = "$env:AI_WORKFLOW_PROJECT_ROOT\.git\worktrees\test-worktree"
     }
 
     Context "Priority 1: Exact Contract Pre-Binding" {

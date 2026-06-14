@@ -1,7 +1,7 @@
 param(
     [string]$BaseConfigPath = (Join-Path $PSScriptRoot '..\config.yaml'),
     [string]$FeatureName = '',
-    [string]$EvidenceRoot = 'D:\opt\replay-evidence',
+    [string]$EvidenceRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
     [string]$OutPath = '',
     [switch]$ValidateOnly
 )

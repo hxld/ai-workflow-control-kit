@@ -965,7 +965,7 @@ if ($Stage -eq 'Phase0') {
                 # Try common project root locations
                 $replayRootParent = Split-Path $replayRootFull -Parent
                 $projectRootCandidates = @(
-                    'D:\opt\claim',
+                    "$env:AI_WORKFLOW_PROJECT_ROOT",
                     'C:\projects\claim'
                 )
                 # Add inferred parent if valid

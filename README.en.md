@@ -44,7 +44,7 @@ flowchart LR
     CcSwitch["cc-switch common config"] --> Host
 ```
 
-For a detailed explanation of the directory model, skill routing, hook lifecycle, cc-switch integration, and unattended replay control plane, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For a detailed explanation of the directory model, skill routing, hook lifecycle, cc-switch integration, and unattended replay control plane, see [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md).
 
 ```text
 agents/              Canonical skills, hooks, rules, and templates

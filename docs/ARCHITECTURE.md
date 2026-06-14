@@ -1,40 +1,42 @@
-# AI Workflow Control Kit Architecture
+**简体中文** | [English](./ARCHITECTURE.en.md)
 
-This document explains how AI Workflow Control Kit is assembled, what it installs, how skills are routed, how hooks run, and how the unattended replay control system is organized.
+# AI Workflow Control Kit 架构
 
-The short version:
+本文档说明 AI Workflow Control Kit 的组装方式、安装内容、技能路由机制、hook 运行方式，以及无人值守回放控制系统的组织结构。
 
-- `agents/` is the canonical source for custom skills, hooks, rules, and templates.
-- `codex/` and `claude/` are host adapters that make the same workflow available in Codex and Claude Code.
-- `cc-switch/` stores portable common config templates for people who switch providers through cc-switch.
-- `replay-autopilot/` is the unattended evaluation and control plane.
-- `workflow-history/` is the repository-local changelog used by replay and workflow automation.
-- `scripts/` contains the Node-first installer, verifier, cc-switch updater, and secret scanner.
+快速概览：
 
-## System Overview
+- `agents/` 是自定义技能、hooks、规则和模板的规范源。
+- `codex/` 和 `claude/` 是宿主适配器，使同一工作流在 Codex 和 Claude Code 中可用。
+- `cc-switch/` 为使用 cc-switch 切换供应商的用户存储可移植的通用配置模板。
+- `replay-autopilot/` 是无人值守评估和控制平面。
+- `workflow-history/` 是仓库本地的变更日志，用于回放和工作流自动化。
+- `scripts/` 包含 Node 优先的安装、校验、cc-switch 更新和密钥扫描脚本。
+
+## 系统概览
 
 ```mermaid
 flowchart LR
-    User["User prompt or code task"] --> Host["Codex or Claude Code"]
+    User["用户 prompt 或代码任务"] --> Host["Codex 或 Claude Code"]
     Host --> Rules["skills-rules.json"]
-    Host --> Hooks["Host hooks"]
-    Rules --> SkillLoader["Skill discovery"]
+    Host --> Hooks["宿主 hooks"]
+    Rules --> SkillLoader["技能发现"]
     Hooks --> AgentsHooks[".agents/hooks"]
     SkillLoader --> AgentsSkills[".agents/skills"]
-    AgentsSkills --> Workflow["Guided AI workflow"]
+    AgentsSkills --> Workflow["引导式 AI 工作流"]
     AgentsHooks --> Workflow
-    Workflow --> Evidence["Receipts, state, and evidence"]
+    Workflow --> Evidence["回执、状态和证据"]
     Workflow --> Replay["replay-autopilot"]
     Replay --> History["workflow-history"]
-    Scripts["Node-first install and verify scripts"] --> AgentsHooks
+    Scripts["Node 优先的安装和校验脚本"] --> AgentsHooks
     Scripts --> AgentsSkills
     Scripts --> Host
-    CcSwitch["cc-switch common config"] --> Host
+    CcSwitch["cc-switch 通用配置"] --> Host
 ```
 
-AI Workflow Control Kit is not a model or a single agent. It is a control plane around AI coding hosts. The repository provides the local files that teach a host how to route work, which skills to load, which lifecycle hooks to run, and how to replay a workflow for evaluation.
+AI Workflow Control Kit 不是一个模型或单一 agent。它是一个围绕 AI 编码宿主构建的控制平面。仓库提供本地文件，教会宿主如何路由工作、加载哪些技能、运行哪些生命周期 hooks，以及如何回放工作流进行评估。
 
-## Repository Layout
+## 仓库布局
 
 ```text
 agents/
@@ -92,84 +94,84 @@ scripts/
   test-no-secrets.js
 ```
 
-`custom-skills-history/` keeps historical skill material. It is useful when comparing or recovering previous skill behavior, but the active skill source is `agents/skills/`.
+`custom-skills-history/` 保存历史技能材料。在比较或恢复之前的技能行为时有用，但当前活跃的技能源是 `agents/skills/`。
 
-## Installed Directory Model
+## 安装目录模型
 
-The installer copies the portable source tree into the user's host directories and links both host skill folders back to the same canonical skill directory.
+安装程序将可移植的源树复制到用户的宿主目录，并将两个宿主技能文件夹链接回同一规范技能目录。
 
 ```mermaid
 flowchart TD
-    Repo["Cloned repository"] --> Install["node scripts/install-ai-workflow-kit.js"]
+    Repo["克隆仓库"] --> Install["node scripts/install-ai-workflow-kit.js"]
 
     Install --> AgentsHome["$HOME/.agents"]
     Install --> CodexHome["$HOME/.codex"]
     Install --> ClaudeHome["$HOME/.claude"]
     Install --> ReplayHome["$HOME/.ai-workflow-control-kit/replay-autopilot"]
-    Install --> CcSwitchDb["$HOME/.cc-switch/cc-switch.db, if present"]
+    Install --> CcSwitchDb["$HOME/.cc-switch/cc-switch.db（如存在）"]
 
     AgentsHome --> AgentsHooks["hooks/"]
     AgentsHome --> AgentsSkills["skills/"]
     AgentsHome --> AgentsTemplates["templates/"]
 
-    CodexHome --> CodexAdapters["AGENTS.md, RTK.md, config example, hooks, rules"]
-    ClaudeHome --> ClaudeAdapters["config, settings example, hooks, rules, commands"]
+    CodexHome --> CodexAdapters["AGENTS.md、RTK.md、配置示例、hooks、rules"]
+    ClaudeHome --> ClaudeAdapters["配置、设置示例、hooks、rules、commands"]
 
-    CodexHome --> CodexSkills["skills junction"]
-    ClaudeHome --> ClaudeSkills["skills junction"]
+    CodexHome --> CodexSkills["skills 链接"]
+    ClaudeHome --> ClaudeSkills["skills 链接"]
     CodexSkills --> AgentsSkills
     ClaudeSkills --> AgentsSkills
 ```
 
-Default install targets:
+默认安装目标：
 
-| Target | Purpose |
+| 目标 | 用途 |
 | --- | --- |
-| `$HOME/.agents` | Canonical workflow files shared by hosts. |
-| `$HOME/.agents/hooks` | Node-first hook scripts and legacy compatibility scripts. |
-| `$HOME/.agents/skills` | Canonical custom skill source. |
-| `$HOME/.codex` | Codex global adapter files and Codex hook scripts. |
-| `$HOME/.codex/skills` | Junction or symlink to `$HOME/.agents/skills`. |
-| `$HOME/.claude` | Claude Code adapter files and example settings. |
-| `$HOME/.claude/skills` | Junction or symlink to `$HOME/.agents/skills`. |
-| `$HOME/.ai-workflow-control-kit/replay-autopilot` | Default replay-autopilot install target. |
-| `$HOME/.cc-switch/cc-switch.db` | Optional cc-switch database updated with common config templates. |
+| `$HOME/.agents` | 宿主共享的规范工作流文件。 |
+| `$HOME/.agents/hooks` | Node 优先的 hook 脚本和遗留兼容性脚本。 |
+| `$HOME/.agents/skills` | 规范的自定义技能源。 |
+| `$HOME/.codex` | Codex 全局适配器文件和 Codex hook 脚本。 |
+| `$HOME/.codex/skills` | 指向 `$HOME/.agents/skills` 的链接。 |
+| `$HOME/.claude` | Claude Code 适配器文件和示例设置。 |
+| `$HOME/.claude/skills` | 指向 `$HOME/.agents/skills` 的链接。 |
+| `$HOME/.ai-workflow-control-kit/replay-autopilot` | replay-autopilot 默认安装目标。 |
+| `$HOME/.cc-switch/cc-switch.db` | 可选的 cc-switch 数据库，通过通用配置模板更新。 |
 
-The installer supports `--dry-run` and `--backup-existing` so a new machine can preview writes before any local host files are replaced.
+安装程序支持 `--dry-run` 和 `--backup-existing`，以便新机器在替换本地宿主文件之前预览写入内容。
 
-## Canonical Skill Model
+## 规范技能模型
 
-`agents/skills/` contains the reusable workflow capabilities. Each skill is a directory with a `SKILL.md` file. The front matter provides the name and trigger summary; the body provides the operating procedure.
+`agents/skills/` 包含可重用的工作流能力。每个技能是一个包含 `SKILL.md` 文件的目录。前置元数据提供名称和触发摘要；正文提供操作流程。
 
 ```mermaid
 flowchart TD
-    SkillRules["agents/skills/skill-rules.json"] --> HostSkillList["Host-visible skill list"]
+    SkillRules["agents/skills/skill-rules.json"] --> HostSkillList["宿主可见技能列表"]
     AgentsSkills["agents/skills/*/SKILL.md"] --> HostSkillList
-    HostSkillList --> Model["AI host model context"]
-    Model --> ReadSkill["Read selected SKILL.md"]
-    ReadSkill --> ExecuteWorkflow["Follow skill workflow"]
+    HostSkillList --> Model["AI 宿主模型上下文"]
+    Model --> ReadSkill["读取选中 SKILL.md"]
+    ReadSkill --> ExecuteWorkflow["遵循技能工作流"]
 ```
 
-Skill groups:
+技能分组：
 
-| Group | Skills | Purpose |
+| 分组 | 技能 | 用途 |
 | --- | --- | --- |
-| Entry and context | `workflow-router`, `restore-context`, `pre-flight-check` | Route vague requests, restore context, and gate writes or verification. |
-| Requirements and planning | `requirement-assessment`, `req-alignment-check`, `ideate`, `deep-plan` | Evaluate requirements, align scope, explore options, and create technical plans. |
-| Implementation | `dev-workflow`, `auto-complete`, `add-comments` | Drive end-to-end implementation, high-autonomy execution, and useful code comments. |
-| Testing and quality | `gen-tests`, `quality-check`, `deep-review`, `resolve-feedback` | Add tests, score quality, review changes, and handle review feedback. |
-| Learning and memory | `compound-learning`, `dialogue-learning`, `knowledge-refresh`, `sync-progress`, `retro` | Capture repeated lessons, refresh knowledge, sync progress, and run retrospectives. |
-| Release and collaboration | `ship-release`, `rdc-git` | Ship changes and support company-specific Git/MR workflow when manually invoked. |
-| Skill governance | `skill-platform-maintenance`, `skill-audit`, `skill-evolution` | Maintain host integrations, audit skills, and evolve the skill set. |
-| Content ingestion | `article-to-obsidian`, `video-to-obsidian`, `yuque-to-markdown`, `obsidian-wiki` | Convert source material into local knowledge artifacts. |
-| Operations and domain tools | `log-investigator`, `backend-effort-estimate` | Investigate logs and fill backend effort estimates when enough scope is known. |
-| Replay control | `replay-pre-flight-check`, `replay-tdd-enforcer`, `replay-test-charter-validator` | Enforce replay-specific environment, TDD, and test-charter gates. |
+| 入口和上下文 | `workflow-router`、`restore-context`、`pre-flight-check` | 路由模糊请求、恢复上下文、把关写入或验证。 |
+| 需求和规划 | `requirement-assessment`、`req-alignment-check`、`ideate`、`deep-plan` | 评估需求、对齐范围、探索选项、创建技术方案。 |
+| 实现 | `dev-workflow`、`auto-complete`、`add-comments` | 端到端实现驱动、高自主性执行、补充有意义的注释。 |
+| 测试和质量 | `gen-tests`、`quality-check`、`deep-review`、`resolve-feedback` | 添加测试、评分质量、审查变更、处理审查反馈。 |
+| 学习和记忆 | `compound-learning`、`dialogue-learning`、`knowledge-refresh`、`sync-progress`、`retro` | 捕获反复出现的教训、刷新知识、同步进度、开展回顾。 |
+| 发布和协作 | `ship-release`、`rdc-git` | 发布变更，在手动调用时支持公司特定的 Git/MR 工作流。 |
+| 技能治理 | `skill-platform-maintenance`、`skill-audit`、`skill-evolution` | 维护宿主集成、审计技能、演进技能集。 |
+| 内容入库 | `article-to-obsidian`、`video-to-obsidian`、`yuque-to-markdown`、`obsidian-wiki` | 将源材料转换为本地知识工件。 |
+| 运维和领域工具 | `log-investigator`、`backend-effort-estimate` | 调查日志，在范围足够明确时填写后端工作量评估。 |
+| 回放控制 | `replay-pre-flight-check`、`replay-tdd-enforcer`、`replay-test-charter-validator` | 强制回放专属的环境、TDD 和 test-charter 门禁。 |
 
-`rdc-git` is intentionally marked as unmanaged by the generic auto-trigger registry because it is company-specific. It can still be used manually when the environment and team conventions match.
+`rdc-git` 被明确标记为不归通用自动触发注册表管理，因其是公司特定的。在环境和团队约定匹配时仍可手动使用。
 
-## How `skills-rules.json` Routes Work
+## `skills-rules.json` 的路由机制
 
-`agents/skills/skill-rules.json` is the managed auto-trigger registry. Its top-level structure is:
+`agents/skills/skill-rules.json` 是受管理的自动触发注册表。其顶层结构如下：
 
 ```json
 {
@@ -194,50 +196,50 @@ Skill groups:
 }
 ```
 
-Routing flow:
+路由流程：
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Host as Codex or Claude Code
+    participant User as 用户
+    participant Host as Codex 或 Claude Code
     participant Hook as UserPromptSubmit hook
     participant Rules as skills-rules.json
     participant Skill as SKILL.md
 
-    User->>Host: Submit prompt
-    Host->>Hook: Send prompt payload
-    Hook->>Rules: Read managed trigger registry
-    Rules-->>Hook: Matching skills by keyword or tool context
-    Hook-->>Host: Print skill hint and visible expected effect
-    Host->>Skill: Read selected SKILL.md when a skill applies
-    Skill-->>Host: Workflow gates, commands, outputs, and completion criteria
+    User->>Host: 提交 prompt
+    Host->>Hook: 发送 prompt 载荷
+    Hook->>Rules: 读取受管理的自动触发注册表
+    Rules-->>Hook: 根据关键词或工具上下文匹配技能
+    Hook-->>Host: 输出技能提示和可见预期效果
+    Host->>Skill: 当技能适用时读取对应的 SKILL.md
+    Skill-->>Host: 工作流门禁、命令、输出和完成标准
 ```
 
-Important behavior:
+重要行为说明：
 
-- Keyword triggers are hints, not blind automation. The host still reads the relevant `SKILL.md` and applies the workflow to the current request.
-- `priority` helps the host treat some skills as gates, such as `pre-flight-check` before writes.
-- `scope_tier` distinguishes generic skills from host-workflow skills that depend on this kit's local memory, hooks, or replay conventions.
-- `auto_apply` marks skills that can be suggested without an explicit slash command when the trigger is clear.
-- `feedback_summary` is used by hooks to show the user what effect a matched skill should have.
-- `triggers.tools` can identify cases where a tool class, such as file editing, should imply a pre-flight gate.
+- 关键词触发只是提示，不是盲目的自动化。宿主仍然会读取相关的 `SKILL.md` 并将工作流应用于当前请求。
+- `priority` 帮助宿主将某些技能视为门禁，如写入前的 `pre-flight-check`。
+- `scope_tier` 区分通用技能和依赖本套件本地记忆、hooks 或回放约定的宿主工作流技能。
+- `auto_apply` 标记在触发条件明确时无需显式斜杠命令即可建议的技能。
+- `feedback_summary` 由 hooks 使用，向用户展示匹配技能应有的效果。
+- `triggers.tools` 可以识别某些工具类别（如文件编辑）是否应触发前置门禁。
 
-The same rules file is copied to host adapter locations so Codex and Claude Code see a consistent routing contract:
+同一规则文件被复制到宿主适配器位置，以便 Codex 和 Claude Code 看到一致的路由契约：
 
 ```text
 agents/skills/skill-rules.json
 codex/skill-rules.json
-claude/skills/skill-rules.json -> via installed skills link
+claude/skills/skill-rules.json -> 通过安装的技能链接
 ```
 
-## Hook Architecture
+## Hook 架构
 
-Hooks attach workflow logic to host lifecycle events. The default high-frequency path is Node-first.
+Hooks 将工作流逻辑附加到宿主生命周期事件。默认的高频路径是 Node 优先的。
 
 ```mermaid
 flowchart TD
     SessionStart["SessionStart"] --> Restore["workflow-sync-state.js"]
-    UserPromptSubmit["UserPromptSubmit"] --> Activation["skill-activation-prompt.js or skill-tracker.js"]
+    UserPromptSubmit["UserPromptSubmit"] --> Activation["skill-activation-prompt.js 或 skill-tracker.js"]
     PreToolUse["PreToolUse"] --> RTK["rtk hook claude"]
     FileChanged["FileChanged"] --> Sync["workflow-sync-state.js"]
     Stop["Stop"] --> Receipt["skill-execution-receipt.js"]
@@ -246,62 +248,62 @@ flowchart TD
     Activation --> Rules["skills-rules.json"]
     Sync --> State["workflow state"]
     Receipt --> Feedback["skill feedback receipt"]
-    Tracker --> SkillTelemetry["skill invocation telemetry"]
+    Tracker --> SkillTelemetry["技能调用遥测"]
 ```
 
-Hook responsibilities:
+Hook 职责：
 
-| Event | Default command | Purpose |
+| 事件 | 默认命令 | 用途 |
 | --- | --- | --- |
-| `SessionStart` | `node .../workflow-sync-state.js` | Restore or refresh per-project workflow state at startup or resume. |
-| `UserPromptSubmit` | `node .../skill-activation-prompt.js` or `node .../skill-tracker.js codex_user_prompt_submit` | Match prompt text against skill rules and emit concise skill hints. |
-| `PreToolUse` | `rtk hook claude` | Route Claude shell usage through RTK before Bash-style tool execution. |
-| `FileChanged` | `node .../workflow-sync-state.js` | Track recent edits by category so later receipts can explain what changed. |
-| `Stop` | `node .../skill-execution-receipt.js` and/or `node .../skill-tracker.js codex_stop` | Summarize skill effects, capture receipts, and report session stop events. |
+| `SessionStart` | `node .../workflow-sync-state.js` | 在启动或恢复时恢复或刷新每项目的工作流状态。 |
+| `UserPromptSubmit` | `node .../skill-activation-prompt.js` 或 `node .../skill-tracker.js codex_user_prompt_submit` | 将 prompt 文本与技能规则匹配，输出简洁的技能提示。 |
+| `PreToolUse` | `rtk hook claude` | 在 Bash 风格工具执行前，将 Claude shell 使用路由到 RTK。 |
+| `FileChanged` | `node .../workflow-sync-state.js` | 按分类跟踪最近编辑，以便后续回执能解释变更内容。 |
+| `Stop` | `node .../skill-execution-receipt.js` 和/或 `node .../skill-tracker.js codex_stop` | 总结技能效果、捕获回执、报告会话停止事件。 |
 
-Node-first scripts:
+Node 优先脚本：
 
-| Script | Role |
+| 脚本 | 角色 |
 | --- | --- |
-| `agents/hooks/skill-activation-prompt.js` | Reads the prompt payload and `skill-rules.json`, then prints matched skill hints. |
-| `agents/hooks/workflow-sync-state.js` | Tracks project edits and workflow state without blocking the host. |
-| `agents/hooks/skill-execution-receipt.js` | Produces end-of-turn skill receipts and checks whether expected artifacts were updated. |
-| `codex/hooks/scripts/skill-tracker.js` | Tracks Codex skill mentions and stop events for telemetry-style receipts. |
+| `agents/hooks/skill-activation-prompt.js` | 读取 prompt 载荷和 `skill-rules.json`，输出匹配的技能提示。 |
+| `agents/hooks/workflow-sync-state.js` | 跟踪项目编辑和工作流状态，不阻塞宿主。 |
+| `agents/hooks/skill-execution-receipt.js` | 生成回合结束的技能回执，检查预期工件是否已更新。 |
+| `codex/hooks/scripts/skill-tracker.js` | 跟踪 Codex 技能提及和停止事件，用于遥测风格的回执。 |
 
-Legacy PowerShell files still exist for compatibility and replay tooling, but Windows PowerShell 5.1 should not be placed in high-frequency prompt hooks. The Node-first installer and verifier enforce this expectation for live Claude/Codex hook paths.
+遗留的 PowerShell 文件仍然存在以保持兼容性和回放工具链，但 Windows PowerShell 5.1 不应放置在高频 prompt hooks 中。Node 优先的安装和校验程序对实时的 Claude/Codex hook 路径强制执行这一期望。
 
-## Host Adapters
+## 宿主适配器
 
 ### Codex
 
-Codex adapter files:
+Codex 适配器文件：
 
-| File | Purpose |
+| 文件 | 用途 |
 | --- | --- |
-| `codex/AGENTS.md` | Global Codex instructions that point to RTK and workflow conventions. |
-| `codex/RTK.md` | Token-aware shell guidance. |
-| `codex/config.toml.example` | Example hook and global config block. |
-| `codex/hooks/scripts/skill-tracker.js` | Codex hook-side skill tracker. |
-| `codex/skill-rules.json` | Host adapter copy of the managed routing rules. |
-| `codex/rules/` | Additional Codex rule files. |
+| `codex/AGENTS.md` | 全局 Codex 指令，指向 RTK 和工作流约定。 |
+| `codex/RTK.md` | Token 感知的 shell 使用指引。 |
+| `codex/config.toml.example` | 示例 hook 和全局配置块。 |
+| `codex/hooks/scripts/skill-tracker.js` | Codex hook 端的技能追踪器。 |
+| `codex/skill-rules.json` | 宿主适配器副本的管理路由规则。 |
+| `codex/rules/` | 额外的 Codex 规则文件。 |
 
-Codex should use hook definitions in `config.toml`. Do not keep both active `hooks.json` and hook definitions in `config.toml`, because mixed hook sources can create duplicate-source warnings and unpredictable maintenance behavior.
+Codex 应在 `config.toml` 中使用 hook 定义。不要同时保留 `hooks.json` 和 `config.toml` 中的 hook 定义，因为混合 hook 源可能造成重复源警告和不可预测的维护行为。
 
 ### Claude Code
 
-Claude adapter files:
+Claude 适配器文件：
 
-| File or directory | Purpose |
+| 文件或目录 | 用途 |
 | --- | --- |
-| `claude/settings.example.json` | Example settings with Node-first hooks and RTK integration. |
-| `claude/config.json` | Portable base config placeholder. |
-| `claude/agents/` | Claude agent definitions. |
-| `claude/commands/` | Claude command adapters. |
-| `claude/hooks/` | Legacy compatibility hooks and helper scripts. |
-| `claude/rules/` | Claude rule files. |
-| `claude/output-styles/` | Claude output style definitions. |
+| `claude/settings.example.json` | 示例设置，包含 Node 优先的 hooks 和 RTK 集成。 |
+| `claude/config.json` | 可移植基础配置占位符。 |
+| `claude/agents/` | Claude agent 定义。 |
+| `claude/commands/` | Claude 命令适配器。 |
+| `claude/hooks/` | 遗留兼容性 hooks 和辅助脚本。 |
+| `claude/rules/` | Claude 规则文件。 |
+| `claude/output-styles/` | Claude 输出风格定义。 |
 
-The installed live Claude settings should use:
+已安装的实时 Claude 设置应使用：
 
 ```text
 node "$HOME/.agents/hooks/skill-activation-prompt.js"
@@ -310,22 +312,22 @@ node "$HOME/.agents/hooks/workflow-sync-state.js"
 rtk hook claude
 ```
 
-## cc-switch Integration
+## cc-switch 集成
 
-`cc-switch/` contains provider-neutral common config templates:
+`cc-switch/` 包含供应商中立的通用配置模板：
 
-| Template | Target |
+| 模板 | 目标 |
 | --- | --- |
-| `common_config_codex.toml.template` | cc-switch `common_config_codex` setting. |
-| `common_config_claude.json.template` | cc-switch `common_config_claude` setting. |
+| `common_config_codex.toml.template` | cc-switch `common_config_codex` 设置。 |
+| `common_config_claude.json.template` | cc-switch `common_config_claude` 设置。 |
 
-The Node updater writes these templates into `$HOME/.cc-switch/cc-switch.db` when the database exists:
+Node 更新器在数据库存在时将这些模板写入 `$HOME/.cc-switch/cc-switch.db`：
 
 ```bash
 node scripts/install-cc-switch-common-config.js
 ```
 
-The templates use placeholders such as:
+模板使用占位符如：
 
 ```text
 <USERPROFILE>
@@ -336,142 +338,142 @@ The templates use placeholders such as:
 <REPLAY_AUTOPILOT_ROOT_SLASH>
 ```
 
-They must not contain:
+不得包含：
 
-- real API keys
-- real provider tokens
-- local auth JSON
-- SQLite runtime state
-- machine-specific private project lists, unless the user explicitly chooses to trust a local project
+- 真实的 API 密钥
+- 真实的供应商 token
+- 本地认证 JSON
+- SQLite 运行时状态
+- 特定机器的私有项目列表（除非用户明确选择信任某个本地项目）
 
-Project trust is intentionally minimal. Users should add trusted projects when they actually use a project, not as part of a generic installation.
+项目信任被有意控制在最低限度。用户应在实际使用项目时才添加信任项目，而不是作为通用安装的一部分。
 
-## Node-First Tooling
+## Node 优先工具
 
-The default operational scripts are Node-first:
+默认操作脚本是 Node 优先的：
 
-| Script | Purpose |
+| 脚本 | 用途 |
 | --- | --- |
-| `scripts/install-ai-workflow-kit.js` | Install adapters, skills, hooks, cc-switch common config, and replay-autopilot. |
-| `scripts/install-cc-switch-common-config.js` | Update cc-switch common config from templates. |
-| `scripts/verify-ai-workflow-kit.js` | Verify live host config, links, hooks, and replay controller presence. |
-| `scripts/diagnose-powershell-r6016.js` | Classify live `powershell.exe` processes as Codex AST parser, RTK wrapper, build command, or unknown source. |
-| `scripts/test-no-secrets.js` | Scan the repository for credentials and runtime state before commit or publish. |
+| `scripts/install-ai-workflow-kit.js` | 安装适配器、技能、hooks、cc-switch 通用配置和 replay-autopilot。 |
+| `scripts/install-cc-switch-common-config.js` | 从模板更新 cc-switch 通用配置。 |
+| `scripts/verify-ai-workflow-kit.js` | 验证实时的宿主配置、链接、hooks 和 replay 控制器存在性。 |
+| `scripts/diagnose-powershell-r6016.js` | 将正在运行的 `powershell.exe` 进程分类为 Codex AST 解析器、RTK 包装器、构建命令或未知来源。 |
+| `scripts/test-no-secrets.js` | 在提交或推送前扫描仓库中的凭证和运行时状态。 |
 
-When these scripts need another executable, they call it directly with `execFile` instead of invoking a shell interpreter. This is deliberate: shell-backed high-frequency paths are fragile on Windows and previously caused `R6016 - not enough space for thread data` failures when Windows PowerShell 5.1 was used in prompt hooks.
+当这些脚本需要另一个可执行文件时，它们直接通过 `execFile` 调用，而不是通过 shell 解释器。这是有意为之：基于 shell 的高频路径在 Windows 上很脆弱，之前当 Windows PowerShell 5.1 在 prompt hooks 中使用时曾导致 `R6016 - not enough space for thread data` 故障。
 
-`codex/RTK.md` intentionally says to use RTK selectively. Do not wrap Windows commands as `rtk proxy powershell ...`; use direct executables such as `git.exe`, `node.exe`, `python.exe`, or `mvn.cmd` for build and test commands.
+`codex/RTK.md` 有意说明要选择性地使用 RTK。不要将 Windows 命令包装为 `rtk proxy powershell ...`；对构建和测试命令使用直接可执行文件，如 `git.exe`、`node.exe`、`python.exe` 或 `mvn.cmd`。
 
-## Unattended Replay Control Plane
+## 无人值守回放控制平面
 
-`replay-autopilot/` is a control system for evaluating whether the workflow can drive AI coding tasks through repeatable gates.
+`replay-autopilot/` 是一个控制系统，用于评估工作流是否能通过可重复的门禁驱动 AI 编码任务。
 
-The directory contains generic control-plane scripts plus benchmark-derived configs, requirements, and fixtures used as regression cases. Treat those benchmark files as evaluation inputs for the control plane. They are not installed credentials, runtime logs, private oracle diffs, or business source code, and new projects should add their own local configs instead of treating the bundled benchmark case as the default project.
+该目录包含通用的控制平面脚本，以及来自基准测试的配置、需求和 fixture，用作回归测试用例。将这些基准测试文件视为控制平面的评估输入。它们不是已安装的凭证、运行时日志、私有的 oracle diff 或业务源代码，新项目应添加自己的本地配置，而不是将附带的基准测试用例当作默认项目。
 
 ```mermaid
 flowchart TD
-    Input["Requirement, branch, commit, or replay case"] --> Controller["Run-UnattendedReplayControl.ps1"]
-    Controller --> Preflight["Pre-flight checks"]
-    Preflight --> Plan["Plan and contract generation"]
-    Plan --> Slice["Slice selection"]
-    Slice --> TDD["TDD cycle enforcement"]
-    TDD --> Charter["Test-charter validation"]
-    Charter --> Evidence["Evidence collection"]
-    Evidence --> Score["Coverage, quality, and failure scoring"]
-    Score --> StopEvolve{"Stop and evolve?"}
-    StopEvolve -->|continue| Slice
-    StopEvolve -->|evolve| Evolution["Evolution proposal and validation"]
-    StopEvolve -->|complete| Report["Replay report"]
+    Input["需求、分支、commit 或回放用例"] --> Controller["Run-UnattendedReplayControl.ps1"]
+    Controller --> Preflight["前置检查"]
+    Preflight --> Plan["方案和契约生成"]
+    Plan --> Slice["切片选择"]
+    Slice --> TDD["TDD 周期强制"]
+    TDD --> Charter["Test-charter 验证"]
+    Charter --> Evidence["证据收集"]
+    Evidence --> Score["覆盖率、质量和失败评分"]
+    Score --> StopEvolve{"停止并演进？"}
+    StopEvolve -->|继续| Slice
+    StopEvolve -->|演进| Evolution["演进提案和验证"]
+    StopEvolve -->|完成| Report["回放报告"]
     Report --> History["workflow-history"]
 ```
 
-Major replay components:
+主要回放组件：
 
-| Component | Directory or scripts | Role |
+| 组件 | 目录或脚本 | 角色 |
 | --- | --- | --- |
-| Controller | `scripts/Run-UnattendedReplayControl.ps1`, `scripts/Start-UnattendedReplayControl.ps1` | Orchestrate unattended cycles and stop conditions. |
-| Pre-flight | `scripts/Invoke-PreflightComprehensive.ps1`, `scripts/pre_flight_check.py` | Validate environment, project state, and test readiness. |
-| Planning | `prompts/`, `scripts/generate_plan.ps1`, `scripts/plan_contract_verify.py` | Convert a replay target into a bounded plan and machine-checkable contract. |
-| Slice control | `scripts/Select-NextReplaySlice.ps1`, `scripts/Run-SliceLoop.ps1` | Choose the next implementation slice and run it. |
-| TDD gates | `replay-tdd-enforcer` skill, `scripts/enforce_red_phase_gate.py` | Require meaningful RED and GREEN phases. |
-| Test-charter gates | `replay-test-charter-validator` skill, `scripts/Invoke-TestCharterPrevalidator.ps1` | Require tests to prove side effects, not just helper behavior. |
-| Carrier and oracle checks | `scripts/*Carrier*`, `scripts/*Oracle*` | Bind implementation to real entry points and source-of-truth evidence. |
-| Evaluation | `scripts/evaluate_slice_result.py`, `scripts/calculate-coverage-penalty.py` | Score results and cap overclaiming. |
-| Evolution | `scripts/New-EvolutionProposal.ps1`, `scripts/Invoke-V419StopAndEvolveExperiments.ps1` | Turn repeated failure patterns into workflow improvements. |
-| Regression tests | `scripts/Test-v*.ps1`, `test/`, `tests/` | Validate replay-control behavior across historical workflow changes. |
+| 控制器 | `scripts/Run-UnattendedReplayControl.ps1`、`scripts/Start-UnattendedReplayControl.ps1` | 编排无人值守周期和停止条件。 |
+| 前置检查 | `scripts/Invoke-PreflightComprehensive.ps1`、`scripts/pre_flight_check.py` | 验证环境、项目状态和测试就绪性。 |
+| 方案规划 | `prompts/`、`scripts/generate_plan.ps1`、`scripts/plan_contract_verify.py` | 将回放目标转换为有边界的方案和机器可检查的契约。 |
+| 切片控制 | `scripts/Select-NextReplaySlice.ps1`、`scripts/Run-SliceLoop.ps1` | 选择下一个实现切片并执行。 |
+| TDD 门禁 | `replay-tdd-enforcer` 技能、`scripts/enforce_red_phase_gate.py` | 要求有意义的 RED 和 GREEN 阶段。 |
+| Test-charter 门禁 | `replay-test-charter-validator` 技能、`scripts/Invoke-TestCharterPrevalidator.ps1` | 要求测试证明副作用，而不仅仅是辅助行为。 |
+| 载波和 oracle 检查 | `scripts/*Carrier*`、`scripts/*Oracle*` | 将实现绑定到真实入口点和可信证据。 |
+| 评估 | `scripts/evaluate_slice_result.py`、`scripts/calculate-coverage-penalty.py` | 评分结果，限制过度宣称。 |
+| 演进 | `scripts/New-EvolutionProposal.ps1`、`scripts/Invoke-V419StopAndEvolveExperiments.ps1` | 将重复失败模式转化为工作流改进。 |
+| 回归测试 | `scripts/Test-v*.ps1`、`test/`、`tests/` | 跨历史工作流变更验证回放控制行为。 |
 
-Replay currently retains many PowerShell controller scripts. They are not the default high-frequency prompt hook path. Prefer PowerShell 7 (`pwsh`) for manual replay validation when available.
+回放目前仍保留许多 PowerShell 控制器脚本。它们不是默认的高频 prompt hook 路径。当可用时，手动回放验证推荐使用 PowerShell 7（`pwsh`）。
 
-## Workflow History
+## 工作流历史
 
-`workflow-history/` makes the repository self-contained. It replaces the need to read a personal knowledge vault just to know the latest workflow version.
+`workflow-history/` 使仓库自包含。它消除了读取个人知识库以了解最新工作流版本的需求。
 
 ```mermaid
 flowchart LR
-    Change["New workflow change"] --> Record["workflow-history/changes/vNNN-*.md"]
+    Change["新的工作流变更"] --> Record["workflow-history/changes/vNNN-*.md"]
     Record --> Changelog["workflow-history/CHANGELOG.md"]
     Record --> Latest["workflow-history/latest.json"]
-    Latest --> Replay["replay-autopilot discovery"]
-    Changelog --> Human["Human audit trail"]
+    Latest --> Replay["replay-autopilot 发现"]
+    Changelog --> Human["人工审计跟踪"]
 ```
 
-Files:
+文件：
 
-| File | Purpose |
+| 文件 | 用途 |
 | --- | --- |
-| `workflow-history/CHANGELOG.md` | Human-readable master index. |
-| `workflow-history/latest.json` | Machine-readable pointer to the newest change. |
-| `workflow-history/changes/*.md` | Concrete change records with summary, artifacts, and verification. |
+| `workflow-history/CHANGELOG.md` | 人类可读的主索引。 |
+| `workflow-history/latest.json` | 机器可读的指向最新变更的指针。 |
+| `workflow-history/changes/*.md` | 具体的变更记录，包含摘要、工件和验证。 |
 
-When reusable workflow behavior changes, update all three.
+当可重用的工作流行为发生变化时，三者都需要更新。
 
-## Security Boundaries
+## 安全边界
 
-This repository must stay portable and clean. It should never contain:
+本仓库必须保持可移植和干净。它不应包含：
 
-- provider tokens
-- API keys
-- local auth files
-- session transcripts
-- SQLite databases
-- runtime logs
-- local memories
-- private business source code
-- oracle diffs or production data
+- 供应商 token
+- API 密钥
+- 本地认证文件
+- 会话记录
+- SQLite 数据库
+- 运行时日志
+- 本地记忆
+- 私有业务源代码
+- oracle diff 或生产数据
 
-`.memory/` is intentionally ignored because it is local to one user's machine and should not be pushed as general workflow truth.
+`.memory/` 被有意忽略，因为它是特定用户机器的本地内容，不应作为通用工作流真理推送。
 
-Before publishing:
+在发布前：
 
 ```bash
 node scripts/test-no-secrets.js
 node scripts/verify-ai-workflow-kit.js
 ```
 
-## New User Mental Model
+## 新用户心智模型
 
-A new user should be able to clone the repository, ask an AI host to read `README.md` and this document, run the installer in dry-run mode, install with backups, verify, and then begin using the workflow.
+新用户应能够克隆仓库，让 AI 宿主阅读 `README.md` 和本文档，以 dry-run 模式运行安装程序，安装并备份，验证，然后开始使用工作流。
 
-The expected installation story is:
+预期的安装流程：
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Repo
-    participant Installer
-    participant Host as Codex or Claude Code
+    participant User as 用户
+    participant Repo as 仓库
+    participant Installer as 安装程序
+    participant Host as Codex 或 Claude Code
     participant Workflow as AI Workflow Control Kit
 
-    User->>Repo: Clone repository
-    User->>Installer: Run dry-run with backups enabled
-    Installer-->>User: Show planned writes
-    User->>Installer: Run install
-    Installer->>Host: Install adapters, hooks, skills links
-    Installer->>Workflow: Install replay-autopilot and history index
-    User->>Installer: Run verifier
-    Installer-->>User: Report ready state and manual credential gaps
-    User->>Host: Start real project work
-    Host->>Workflow: Route skills and run hooks
+    User->>Repo: 克隆仓库
+    User->>Installer: 以 dry-run 模式运行，启用备份
+    Installer-->>User: 显示计划写入的内容
+    User->>Installer: 执行安装
+    Installer->>Host: 安装适配器、hooks、技能链接
+    Installer->>Workflow: 安装 replay-autopilot 和历史索引
+    User->>Installer: 运行校验
+    Installer-->>User: 报告就绪状态和手动凭证缺口
+    User->>Host: 开始真实项目工作
+    Host->>Workflow: 路由技能并运行 hooks
 ```
 
-The core promise is not that the AI always knows what to do. The promise is that the workflow makes decisions more explicit, gates risky work, records evidence, and provides a replayable path for improving the workflow itself.
+核心承诺不是 AI 永远知道该做什么。承诺是工作流让决策更加明确、把关有风险的工作、记录证据，并提供一条可回放的路径来改进工作流本身。

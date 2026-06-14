@@ -2996,7 +2996,7 @@ Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If reject
         $initialVerifyText = Read-TextIfExists $planContractVerify
         $contractRepairPromptPath = Join-Path $replayRoot 'PLAN_CONTRACT_REPAIR_PROMPT.md'
         $contractRepairResultPath = Join-Path $replayRoot 'PLAN_CONTRACT_REPAIR_RESULT.md'
-        $planContractRepairPrompt = @"
+        $planContractRepairPrompt = @'
 # Plan Contract Repair Pass
 
 You are performing a targeted repair of existing Plan artifacts. Do NOT enter Phase 1. Do NOT write production code or tests.
@@ -3006,7 +3006,7 @@ You are performing a targeted repair of existing Plan artifacts. Do NOT enter Ph
 The Plan verifier failed with:
 
 ```
-$initialVerifyText
+__INITIAL_VERIFY_TEXT__
 ```
 
 ## Golden Delivery Slice recovery
@@ -3134,10 +3134,13 @@ You may modify ONLY these files under the replay root:
 10. If carrier search proves the selected carrier is not derived from existing production carriers, revise the selected carrier or set `plan_status: BLOCKED` and `blocker: carrier_search_unproven`.
 11. After updating artifacts, write a concise completion note to this exact file path:
 
-$contractRepairResultPath
+__CONTRACT_REPAIR_RESULT_PATH__
 
 Do not create new production files, test files, or worktree changes.
-"@
+'@
+        $planContractRepairPrompt = $planContractRepairPrompt.
+            Replace('__INITIAL_VERIFY_TEXT__', $initialVerifyText).
+            Replace('__CONTRACT_REPAIR_RESULT_PATH__', $contractRepairResultPath)
         Set-Content -LiteralPath $contractRepairPromptPath -Value $planContractRepairPrompt -Encoding UTF8
 
         $contractRepairLogDir = Join-Path $logs 'plan-contract-repair'

@@ -1,6 +1,11 @@
 .DS_Store
 Thumbs.db
 
+# IDE
+.idea/
+.vscode/
+*.swp
+
 # Secrets and local auth
 .env
 *.env

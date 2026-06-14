@@ -106,9 +106,9 @@ knowledge_backup_evidence_mode: Milestone
 
 同步范围：
 
-- `D:\opt\replay-autopilot` -> `learning/raw/sources/replay-autopilot`
-- `D:\study\hxld_vault\learning\raw\sources\ai-knowledge` 原地提交
-- `D:\opt\replay-evidence` -> `learning/raw/sources/replay-evidence-lite`，只保留报告、汇总、决策、深度审查和 `_reports` 汇报材料
+- `<REPLAY_AUTOPILOT_ROOT>` -> `learning/raw/sources/replay-autopilot`
+- `<AI_KNOWLEDGE_ROOT>` 原地提交
+- `<REPLAY_EVIDENCE_ROOT>` -> `learning/raw/sources/replay-evidence-lite`，只保留报告、汇总、决策、深度审查和 `_reports` 汇报材料
 
 保护边界：
 

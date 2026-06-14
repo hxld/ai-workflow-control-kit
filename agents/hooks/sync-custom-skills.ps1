@@ -124,8 +124,6 @@ function Get-KnowledgeBackupRoot {
         $candidates += $scriptParent
     }
 
-    $candidates += "D:\study\hxld_vault\learning\raw\sources\ai-knowledge"
-
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
         if ([string]::IsNullOrWhiteSpace($candidate)) {
             continue

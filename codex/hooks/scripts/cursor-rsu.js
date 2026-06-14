@@ -23,11 +23,17 @@ const QUEUE_PATH = path.join(CACHE_DIR, 'pending-events.jsonl');
 const DISABLE_FILE = path.join(AGENTS_DIR, '.hz-tracking-disabled');
 const SESSION_SKILLS_PATH = path.join(CACHE_DIR, 'cursor-session-skills.json');
 const RSU_PATH = path.join(__dirname, 'rsu.min.js');
+const SKILL_NAMESPACE = (process.env.AI_WORKFLOW_SKILL_NAMESPACE || 'local').replace(/^\/+|\/+$/g, '') || 'local';
 
 /** Windows Cursor 可能向 stdin 写入带 UTF-8 BOM 的 JSON */
 function stripUtf8Bom(s) {
   if (typeof s !== 'string' || s.length === 0) return s;
   return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+function normalizeSkillId(skillId) {
+  const raw = String(skillId || 'unknown').trim() || 'unknown';
+  return raw.includes('/') ? raw : `${SKILL_NAMESPACE}/${raw}`;
 }
 
 function ensureDir(dir) {
@@ -97,12 +103,12 @@ function clearSessionSkills() {
 
 
 /**
- * Extract huize/<skill-id> from a slash command prompt.
+ * Extract <namespace>/<skill-id> from a slash command prompt.
  * Validates against ~/.agents/skills/ to avoid false positives on
  * Cursor built-in commands (/explain, /fix, etc.).
  *
  * Examples:
- *   "/rdc-git 帮我提交"  → huize/rdc-git  (if dir exists)
+ *   "/rdc-git 帮我提交"  → local/rdc-git  (if dir exists)
  *   "/explain ..."       → null            (not an installed skill)
  */
 function extractSkillIdFromPrompt(prompt) {
@@ -111,7 +117,7 @@ function extractSkillIdFromPrompt(prompt) {
   const name = m[1];
   const skillDir = path.join(AGENTS_DIR, 'skills', name);
   if (!fs.existsSync(skillDir)) return null;
-  return `huize/${name}`;
+  return normalizeSkillId(name);
 }
 
 // ── main ────────────────────────────────────────────────────────────────────

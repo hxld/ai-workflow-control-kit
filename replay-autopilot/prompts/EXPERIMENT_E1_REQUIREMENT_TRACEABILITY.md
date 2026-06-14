@@ -9,8 +9,8 @@ Before selecting any strategy or carrier, you MUST establish traceability betwee
 ### 1. Extract Action Phrases
 
 Extract action verbs from requirements, for example:
-- "AI核赔申请" → Apply, Application
-- "自动理算" → Calculate, Settlement
+- "AI处理申请" → Apply, Application
+- "自动计算" → Calculate, Settlement
 - "免复核金额配置" → Config, Field
 
 ### 2. Search the Codebase
@@ -19,13 +19,13 @@ For each action phrase, use ripgrep to find matching carriers:
 
 ```bash
 # Search for TaskProcessor classes
-rg -i "Apply" --glob="*TaskProcessor.java" claim-core/
+rg -i "Apply" --glob="*TaskProcessor.java" example-core/
 
 # Search for Service classes
-rg -i "AutoFlow" --glob="*Service.java" claim-core/
+rg -i "AutoFlow" --glob="*Service.java" example-core/
 
 # Search for Config handlers
-rg -i "ModuleConfig" --glob="*Service.java" claim-core/
+rg -i "ModuleConfig" --glob="*Service.java" example-core/
 ```
 
 ### 3. Record Bindings
@@ -34,15 +34,15 @@ Create `REQUIREMENT_CARRIER_BINDINGS.json`:
 
 ```json
 {
-  "AI核赔申请": {
-    "file": "claim-core/.../AiApplyClaimApiTaskProcessor.java",
-    "class": "AiApplyClaimApiTaskProcessor",
+  "AI处理申请": {
+    "file": "example-core/.../ExampleApplyTaskProcessor.java",
+    "class": "ExampleApplyTaskProcessor",
     "method": "handleTaskResponse",
     "line": 442
   },
-  "自动理算": {
-    "file": "claim-core/.../AiCalculateLossApiTaskProcessor.java",
-    "class": "AiCalculateLossApiTaskProcessor",
+  "自动计算": {
+    "file": "example-core/.../ExampleCalculateTaskProcessor.java",
+    "class": "ExampleCalculateTaskProcessor",
     "method": "handle",
     "line": 320
   }
@@ -63,9 +63,9 @@ Create `REQUIREMENT_CARRIER_BINDINGS.json`:
 
 | Requirement Phrase | Wrong Carrier | Correct Carrier | Reason |
 |-------------------|---------------|------------------|--------|
-| AI核赔申请 | AiCalculateLossApiTaskProcessor | AiApplyClaimApiTaskProcessor | Calculate=理算, Apply=申请 |
-| 免复核金额 | AiClaimFlowService | AiClaimModuleConfigService | Flow=流程, Config=配置 |
-| 自动流转 | AiApplyClaimService | AiAutoClaimFlowService | Apply=申请, AutoFlow=自动流转 |
+| AI处理申请 | ExampleCalculateTaskProcessor | ExampleApplyTaskProcessor | Calculate=计算, Apply=申请 |
+| 免复核金额 | ExampleFlowService | ExampleModuleConfigService | Flow=流程, Config=配置 |
+| 自动流转 | ExampleApplyService | ExampleFlowService | Apply=申请, AutoFlow=自动流转 |
 
 ## Gate Enforcement
 

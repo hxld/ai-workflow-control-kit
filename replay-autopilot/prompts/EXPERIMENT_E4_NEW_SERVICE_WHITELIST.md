@@ -7,9 +7,9 @@ When implementing a feature that requires **NEW services** (not present in basel
 ## When to Use
 
 Use this when your feature requires creating a new:
-- Service class (e.g., `AiAutoClaimFlowService`)
+- Service class (e.g., `ExampleFlowService`)
 - Processor/Task handler (e.g., `AiNewFlowProcessor`)
-- Facade/Controller (e.g., `AiClaimFlowController`)
+- Facade/Controller (e.g., `ExampleFlowController`)
 
 ## How to Declare
 
@@ -18,7 +18,7 @@ Add the following section to your `FIRST_SLICE_PROOF_PLAN.md` or `IMPLEMENTATION
 ```markdown
 ## NEW_SERVICE_WHITELIST
 
-- AiAutoClaimFlowService
+- ExampleFlowService
 - AiNewFlowProcessor
 ```
 
@@ -40,21 +40,21 @@ When `NEW_SERVICE_WHITELIST` is declared:
 
 ### Scenario
 
-Feature requires `AiAutoClaimFlowService` which doesn't exist in baseline.
+Feature requires `ExampleFlowService` which doesn't exist in baseline.
 
 ### Plan Declaration
 
 ```markdown
 ## FIRST_SLICE_PROOF_PLAN.md
 
-selected_carrier: AiAutoClaimFlowService.handle
-selected_real_entry: AiAutoClaimFlowService.executeAutoFlow
+selected_carrier: ExampleFlowService.handle
+selected_real_entry: ExampleFlowService.executeAutoFlow
 
 ## NEW_SERVICE_WHITELIST
 
-- AiAutoClaimFlowService
+- ExampleFlowService
 
-first_red_test: AiAutoClaimFlowServiceTest#testExecuteAutoFlow_CaseNotShanpei_Block
+first_red_test: ExampleFlowServiceTest#testExecuteAutoFlow_CaseNotShanpei_Block
 ```
 
 ### Result
@@ -70,7 +70,7 @@ first_red_test: AiAutoClaimFlowServiceTest#testExecuteAutoFlow_CaseNotShanpei_Bl
 ```markdown
 ## FIRST_SLICE_PROOF_PLAN.md
 
-selected_carrier: AiAutoClaimFlowService.handle
+selected_carrier: ExampleFlowService.handle
 # ❌ Missing NEW_SERVICE_WHITELIST section
 ```
 
@@ -81,7 +81,7 @@ selected_carrier: AiAutoClaimFlowService.handle
 ```markdown
 ## NEW_SERVICE_WHITELIST
 
-- AiApplyClaimApiTaskProcessor  # ❌ This exists in baseline!
+- ExampleApplyTaskProcessor  # ❌ This exists in baseline!
 ```
 
 **Result**: Warning, but still works (unnecessary whitelist)

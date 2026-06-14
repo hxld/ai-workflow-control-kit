@@ -33,7 +33,7 @@ assertThat(capturedDetail.get()).hasSize(1);
 - ❌ Test passes without DB state assertions
 - ❌ Mock-only tests that don't verify actual DB operations
 
-## Required Effects for aiClaimV2
+## Required Effects for example-feature
 
 From `REQUIREMENT_FAMILY_LEDGER.json`, the following side effects MUST be verified:
 
@@ -81,7 +81,7 @@ A slice with side effects is COMPLETE only when:
 public void testHandle_Success_AllSideEffectsVerified() {
     // GIVEN
     Long fixtureCaseId = Long.valueOf(Math.abs("CarrierUnderTest".hashCode()));
-    AiApplyClaimApiTask task = setupFlashCase();
+    ExampleApplyTask task = setupFlashCase();
 
     // Capture CompensateInfo
     AtomicReference<CompensateInfo> capturedInfo = new AtomicReference<>();
@@ -137,8 +137,8 @@ public void testHandle_Success() {
 ```java
 // WRONG - No actual verification
 @Service
-public class AiAutoClaimFlowService {
-    public boolean handle(Long caseId, AiApplyClaimApiTask task) {
+public class ExampleFlowService {
+    public boolean handle(Long caseId, ExampleApplyTask task) {
         // TODO: Insert compensate info
         // TODO: Insert compensate details
         // TODO: Update case status

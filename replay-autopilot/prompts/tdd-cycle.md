@@ -7,9 +7,9 @@ You are FORBIDDEN from writing ANY implementation code until ALL of these condit
 ### Pre-Flight Check (Before RED)
 
 1. Ensure all dependency modules compile:
-   - claim-domain must compile
-   - claim-api must compile
-   - claim-common must compile
+   - example-domain must compile
+   - example-api must compile
+   - example-common must compile
 
 2. If compilation fails:
    - STOP IMMEDIATELY
@@ -68,7 +68,7 @@ public void testHandle_ServiceExists() {
 public void testHandle_ShouldWriteCompensateDataWhenConditionsMet() {
     // GIVEN: Flash case with beneficiary data
     Long caseId = 123L;
-    AiApplyClaimApiTask task = setupFlashCaseWithBeneficiary();
+    ExampleApplyTask task = setupFlashCaseWithBeneficiary();
 
     // WHEN: Handle is called
     boolean result = aiAutoClaimFlowService.handle(caseId, task);
@@ -195,7 +195,7 @@ The following are FATAL violations that INVALIDATE the entire slice:
 
 **What to do instead**:
 1. Fix compilation errors first
-2. Ensure dependencies compile (claim-domain, claim-api, claim-common)
+2. Ensure dependencies compile (example-domain, example-api, example-common)
 3. Re-run RED test to confirm meaningful failure
 4. Only then proceed to implementation
 

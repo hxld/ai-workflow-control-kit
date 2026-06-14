@@ -114,10 +114,10 @@ If you proceed WITHOUT carrier validation:
 1. 测试必须绑定 `PLAN_RESULT.md` / `FIRST_SLICE_PROOF_PLAN.md` 中的 `first_red_test`、`expected_test_class`、`expected_test_method`、`selected_carrier`。禁止运行或新增与这些字段无关的历史测试、memory/progress 示例测试、其他 replay 的测试。
 2. 测试 harness 模块由当前 worktree 的实际测试依赖和既有测试风格决定。先用 `rg` 搜索计划测试类、同包 TaskProcessor/Service 测试、`@Test`、Mockito/JUnit import，再决定测试路径和 `-pl` 模块；同时读取候选模块 `pom.xml`，确认该模块已有 JUnit/Mockito/Spring Test 依赖或已有可编译测试基类。
 3. 测试 harness 模块必须与验证器规则一致：默认把测试放在生产文件同一 Maven 模块的 `src/test/java`。只有当同模块缺少可用测试依赖，且某个既有测试模块的 `pom.xml` 明确依赖目标生产模块 artifactId 时，才允许使用这个既有跨模块 test harness；必须在 `behavior_test_charter` / `closure_proof` 中写明 `cross_module_test_harness_depends_on_production_module` 和读取过的两个 `pom.xml` 证据。禁止仅凭“某个外层模块能编译”就跨模块放测试；禁止通过修改任何 `pom.xml` 或新增测试依赖来制造 harness。若同模块和可证明的跨模块 harness 都不可用，写 BLOCKED JSON，`coverage_delta=0`，不要先写 GREEN。
-4. 对 `TaskProcessor` / `rebuildTaskData` / backend-only source-chain slice，Service/TaskProcessor 层是允许的真实生产承载点；不要因为不是 Facade/Controller 而改选入口、改测其他业务、或跑通用 claim-server 历史测试。
+4. 对 `TaskProcessor` / `rebuildTaskData` / backend-only source-chain slice，Service/TaskProcessor 层是允许的真实生产承载点；不要因为不是 Facade/Controller 而改选入口、改测其他业务、或跑通用历史测试。
 5. 对 `TaskProcessor` / `rebuildTaskData` / source-chain slice，禁止用会启动完整 Spring 容器的测试形态：不得继承 `AbstractTestClass`，不得新增 `@RunWith(SpringJUnit4ClassRunner.class)`、`@SpringBootTest`、`@ContextConfiguration` 或 `@Resource` 注入目标 processor。必须使用 no-Spring JUnit + Mockito/反射风格：手工 `new` 真实 processor，反射或 `ReflectionTestUtils.setField` 注入 mock 依赖，只运行目标测试类。
-6. 对本轮 policyNum/insureNum rebuild source-chain，RED 必须是确定性的，不得依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext 或 `taskData == null` 时打印 WARN 后通过。必须 mock `AiClaimDataAssemblyHelper.buildRequestCommon(...)`，在 Mockito `thenAnswer` 中取得最后一个参数 `AiClaimDataAssemblyHelper.RequestBuildFunction`，构造 `RequestBuildContext` 并设置 `caseId`、`productName`、`liabilityType`、`insuredName`、`policyPeriod`、`policyNum`、`insureNum`、`reportInfo`、`materialInfo`、`nowTime`，然后调用真实 builder lambda。Mockito 1.x 或未知版本时必须用 `Object[] args = invocation.getArguments();` 再从最后一个参数强转，不得用 `invocation.getArgument(...)`。禁止在 `thenAnswer` 中直接 `return new AiApplyClaimRequest(...)`、`return new AiCalculateLossRequest(...)` 或直接返回手工 set 好字段的 request；这会绕过 production builder lambda，属于 synthetic carrier。断言 `rebuildTaskData` 返回非空，并断言 `taskData.getPolicyNum()` 与 `taskData.getInsureNum()` 等于 mock context 值；当前基线 RED 应因为 builder lambda 未把 context 字段复制到 request 而失败。GREEN 必须在两个 sibling processor 的 builder lambda 中补 `req.setPolicyNum(buildContext.getPolicyNum())` 和 `req.setInsureNum(buildContext.getInsureNum())`。
-7. 本轮 sibling surface 是强制项：`AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)` 与 `AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)` 必须在同一个测试类中各有业务断言，或用同一个 helper 分别驱动两个 processor。只覆盖 apply-claim、只覆盖 calculate-loss、只证明 terminal DTO getter/setter、或只验证 mock 被调用，均不能授权 GREEN，`coverage_delta` 必须为 0。
+6. 对本轮 primaryId/secondaryId rebuild source-chain，RED 必须是确定性的，不得依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext 或 `taskData == null` 时打印 WARN 后通过。必须 mock `ExampleDataAssemblyHelper.buildRequestCommon(...)`，在 Mockito `thenAnswer` 中取得最后一个参数 `ExampleDataAssemblyHelper.RequestBuildFunction`，构造 `RequestBuildContext` 并设置 `caseId`、`productName`、`liabilityType`、`insuredName`、`policyPeriod`、`primaryId`、`secondaryId`、`reportInfo`、`materialInfo`、`nowTime`，然后调用真实 builder lambda。Mockito 1.x 或未知版本时必须用 `Object[] args = invocation.getArguments();` 再从最后一个参数强转，不得用 `invocation.getArgument(...)`。禁止在 `thenAnswer` 中直接 `return new ExampleApplyRequest(...)`、`return new ExampleCalculateRequest(...)` 或直接返回手工 set 好字段的 request；这会绕过 production builder lambda，属于 synthetic carrier。断言 `rebuildTaskData` 返回非空，并断言 `taskData.getPrimaryId()` 与 `taskData.getSecondaryId()` 等于 mock context 值；当前基线 RED 应因为 builder lambda 未把 context 字段复制到 request 而失败。GREEN 必须在两个 sibling processor 的 builder lambda 中补 `req.setPrimaryId(buildContext.getPrimaryId())` 和 `req.setSecondaryId(buildContext.getSecondaryId())`。
+7. 本轮 sibling surface 是强制项：`ExampleApplyTaskProcessor.rebuildTaskData(Long caseId)` 与 `ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)` 必须在同一个测试类中各有业务断言，或用同一个 helper 分别驱动两个 processor。只覆盖 apply-claim、只覆盖 calculate-loss、只证明 terminal DTO getter/setter、或只验证 mock 被调用，均不能授权 GREEN，`coverage_delta` 必须为 0。
 8. 正确 import、JUnit/Mockito 版本、注入方式必须从当前 worktree 的既有测试文件中确认。不要照抄 unrelated memory 示例。JUnit 断言优先用项目已存在风格，如 `org.junit.Assert`；Mockito 版本若是 1.x，则使用项目现有 `Matchers` 风格。
    - 写测试前必须建立 `MOCKITO_COMPATIBILITY_PROFILE`：读取目标测试模块 `pom.xml` 中的 Mockito 版本，并用 `rg "org.mockito.(runners.MockitoJUnitRunner|junit.MockitoJUnitRunner|Matchers|ArgumentMatchers)|invocation.getArgument|getArguments"` 搜索同模块既有测试。
    - 若版本 `< 2.0`、既有测试使用 `org.mockito.runners.MockitoJUnitRunner` / `org.mockito.Matchers`，或无法确认版本，必须使用 legacy-compatible 写法：`org.mockito.runners.MockitoJUnitRunner`、`org.mockito.Matchers`、`Object[] args = invocation.getArguments();` 后强转参数。禁止使用 `org.mockito.junit.MockitoJUnitRunner`、`org.mockito.ArgumentMatchers`、`invocation.getArgument(...)`。
@@ -134,7 +134,7 @@ If you proceed WITHOUT carrier validation:
 11. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若无法在现有 harness 中写出业务 RED，写 BLOCKED JSON，并说明 `red_business_assertion_not_observed`。
 12. 对本轮 `SOURCE_CHAIN_CONTRACT.json.next_required_slice` 指定的 source-chain，测试必须从真实 carrier 链路产生值；手工构造 terminal DTO、只断言字段存在、只跑旧测试都不能授权 GREEN。
 13. 如果 `PLAN_RESULT.md`、`FIRST_SLICE_PROOF_PLAN.md` 或 `TEST_CHARTER.md` 写了 "oracle changes already present"、"implementation already present"、"tests should pass with proper setup"，不要把这些话当成授权。你必须读取当前 worktree 源码并判断 source-chain 是否真的闭合；如果缺少 upstream assignment，就先写 RED，再补最小 GREEN 生产 diff。
-14. 对 source-chain / rebuild-path slice，已有的 downstream copy（例如 `taskData.setPolicyNum(request.getPolicyNum())`、`taskData.setInsureNum(request.getInsureNum())`）不是闭合证据。必须验证并实现 source/buildContext -> request 的赋值，再由 request -> taskData/payload 验证业务断言。
+14. 对 source-chain / rebuild-path slice，已有的 downstream copy（例如 `taskData.setPrimaryId(request.getPrimaryId())`、`taskData.setSecondaryId(request.getSecondaryId())`）不是闭合证据。必须验证并实现 source/buildContext -> request 的赋值，再由 request -> taskData/payload 验证业务断言。
 
 【Test Contract Verification (MANDATORY)】
 写测试前必须核对 FIRST_SLICE_PROOF_PLAN 和 IMPLEMENTATION_CONTRACT 中的接口契约：
@@ -161,10 +161,10 @@ BEHAVIORAL 测试断言期望的业务结果：副作用、状态变化、输出
 **关键词**: assert、verify、equals、populate、insert、update、generate、create、status、progress、compensate、select、mapper、dao、repository、transaction、rollback、persist、save、delete
 
 **有效示例**:
-- ✅ "When executeAutoFlow is called with valid flash case, 理算表 is populated with AI settlement_details"
+- ✅ "When executeAutoFlow is called with valid flash case, 计算表 is populated with AI settlement_details"
 - ✅ "When amount threshold is met, case status changes to 35"
 - ✅ "When beneficiary data is complete, task is created with 1-day timeout"
-- ✅ "When flow completes, 理算明细.png is generated at expected path"
+- ✅ "When flow completes, 计算明细.png is generated at expected path"
 
 ## STRUCTURAL 测试（禁止作为 RED）
 
@@ -173,9 +173,9 @@ STRUCTURAL 测试只验证代码结构存在性，不足以驱动生产实现。
 **关键词**: exists、notexist、ClassNotFoundException、NoSuchMethodException、file、not、file、missing
 
 **禁止示例**:
-- ❌ "Class AiAutoClaimFlowService does not exist yet"
+- ❌ "Class ExampleFlowService does not exist yet"
 - ❌ "Method executeAutoFlow throws ClassNotFoundException"
-- ❌ "File claim-server/src/main/java/.../AiAutoClaimFlowService.java is missing"
+- ❌ "File <module>/src/main/java/.../ExampleFlowService.java is missing"
 
 ## 测试分类规则
 
@@ -287,7 +287,7 @@ runner 执行以下检查（通过 `calculate-coverage-penalty.py`）：
 
 ❌ **错误**：用 TODO 标记未实现功能
 ```java
-public void handle(Long caseId, AiApplyClaimApiTask task) {
+public void handle(Long caseId, ExampleApplyTask task) {
     // TODO: 验证参数
     // TODO: 写入补偿信息
     // TODO: 更新状态
@@ -297,7 +297,7 @@ public void handle(Long caseId, AiApplyClaimApiTask task) {
 
 ✅ **正确**：增量实现，每个步骤对应测试断言
 ```java
-public void handle(Long caseId, AiApplyClaimApiTask task) {
+public void handle(Long caseId, ExampleApplyTask task) {
     // Test 1 验证：参数校验
     if (!isSupportedScope(task)) {
         return;  // 测试验证提前返回
@@ -347,7 +347,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
     - `{{CARRIER_RANK}}` 中 rank 1 的 required OPEN/PARTIAL family 是本 slice 的最高优先级生产承载点。若 forced family/sibling 与 rank 1 冲突，必须以 runner 给出的 forced sibling 为准；禁止自行降级到 helper、DTO、常量、静态枚举或非边界 sibling。
     - 必须重新核对 `FIRST_SLICE_PROOF_PLAN.md` 中的 `real_carrier_kind`、`minimum_side_effect_or_blocker`、`forbidden_substitute_check`。`real_carrier_kind` 不是生产入口/服务/controller/mapper/payload/template/lifecycle 承载点，或 `forbidden_substitute_check` 不是 `passed` 时，不得写生产 diff。
     - 第一片必须从 `FIRST_SLICE_PROOF_PLAN.md` / `IMPLEMENTATION_CONTRACT.md` 原样复制 `selected_real_entry`、`selected_carrier`、`first_red_test`。如果计划写明 `TaskServiceTransformCaseTaskPolicyTest`，就必须创建/运行这个测试；测试文件不存在时创建 RED 测试或写 `BLOCKED_PLAN_MISMATCH`，禁止替换成另一个需求/另一个 family 的测试类。
-    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `AiClaimDataAssemblyHelper`、`InputData.policy_num`、`InputData.insure_num`、`AiPolicyNumSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
+    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `ExampleDataAssemblyHelper`、`InputData.primary_id`、`InputData.secondary_id`、`ExampleSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
     - `selected_carrier -> production_boundary -> expected failing assertion -> command -> fail_closed_condition` 五项必须能连起来；如果只能新增日志型、委托型、占位型或 helper-only carrier，直接写 `PARTIAL/BLOCKED`，`coverage_delta=0`。
    - exact-contract 只允许业务可断言项：页码/窗口数、请求字段、响应字段、payload shape、展示值、状态写入、顺序、must-not side effect。规划文件名、路径、模块名、phase/status、branch/commit/hash、generic gap flag 都不是 literal。
    - 如果本 slice 触碰 exact-contract family，必须在 `SLICE_RESULT` 写 `exact_contract_assertions`，每项包含 `literal`、`symbol_or_field`、`db_or_wire_or_display`、`boundary_type`、`production_boundary`、`closure_proof`、`production_predicate`、`forbidden_extra_predicate`、`test_assertion`、`source_type=requirement|code_fact`、`status=CLOSED|BLOCKED`。`production_predicate` 只能包含需求字面量要求的判断；若新增状态、渠道、类型、环境、旧链路等额外谓词，必须在 `forbidden_extra_predicate` 写出并提供“该谓词由生产入口逻辑必然推出”的可执行证明，否则本 slice 只能 `PARTIAL/BLOCKED`，不得关闭 family。
@@ -561,8 +561,8 @@ Your TEST_CHARTER.md must contain ALL of the following sections:
 
 1. **Entry Point**: Exact planned production entry/carrier to test
    - Format: `Entry Point: YourCarrier.yourMethod(paramTypes)`
-   - Example for public flow: `Entry Point: AiAutoClaimFlowFacade.executeAutoFlow(AiApplyClaimApiTask)`
-   - Example for backend-only replay: `Entry Point: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)`
+   - Example for public flow: `Entry Point: ExampleFlowFacade.executeAutoFlow(ExampleApplyTask)`
+   - Example for backend-only replay: `Entry Point: ExampleApplyTaskProcessor.rebuildTaskData(Long caseId)`
 
 2. **Test Surface**: Test class must match the planned carrier layer
    - Public/deploy/API flows should prefer Facade/Controller tests.
@@ -647,7 +647,7 @@ compensateService.batchInsertCompensateDetail(list);
 
 #### Example correct pattern:
 ```java
-// Step 1: Read claim-core/.../CompensateService.java
+// Step 1: Read example-core/.../CompensateService.java
 // Step 2: Find: public void rewriteCompensateData(Long caseId, List<DetailBundle> bundles)
 // Step 3: Use verified signature
 compensateService.rewriteCompensateData(caseId, bundles);
@@ -677,7 +677,7 @@ If you cannot find the exact method signature, **declare BLOCKED** and do not pr
 // TODO: 验证受益人数据
 
 // ❌ FORBIDDEN
-// TODO: 写入理算明细
+// TODO: 写入计算明细
 
 // ❌ FORBIDDEN
 public void process() {

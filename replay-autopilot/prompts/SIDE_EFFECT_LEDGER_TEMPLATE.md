@@ -129,7 +129,7 @@ A slice with side effects is COMPLETE only when:
 public void testHandleAutoClaim_AllSideEffectsVerified() {
     // GIVEN
     Long fixtureCaseId = Long.valueOf(Math.abs("CarrierUnderTest".hashCode()));
-    AiApplyClaimApiTask task = setupFlashCase();
+    ExampleApplyTask task = setupFlashCase();
 
     // Capture CompensateInfo
     AtomicReference<CompensateInfo> capturedInfo = new AtomicReference<>();
@@ -150,7 +150,7 @@ public void testHandleAutoClaim_AllSideEffectsVerified() {
     }).when(compensateDetailMapper).insertList(any());
 
     // WHEN
-    boolean result = aiClaimFacade.handleAutoClaim(caseId, task);
+    boolean result = exampleFacade.handleExample(caseId, task);
 
     // THEN: Side effects verified
     assertThat(result).isTrue();

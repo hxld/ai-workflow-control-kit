@@ -24,7 +24,7 @@
 A Service layer carrier is valid when ALL three conditions are met:
 
 1. **Async Task Trigger**: Carrier is triggered by existing async task processor
-   - Examples: AiApplyClaimApiTaskProcessor, AiAutoClaimFlowService
+   - Examples: ExampleApplyTaskProcessor, ExampleFlowService
    - Evidence: Method reference or inheritance from async processor
 
 2. **High Oracle Weight**: Oracle analysis shows HIGH weight
@@ -41,7 +41,7 @@ A Service layer carrier is valid when ALL three conditions are met:
 
 ```powershell
 # Validate layer rule change
-$layerResult = Invoke-LayerValidation -ReplayRoot $replayRoot -SelectedCarrier "AiAutoClaimFlowService"
+$layerResult = Invoke-LayerValidation -ReplayRoot $replayRoot -SelectedCarrier "ExampleFlowService"
 if ($layerResult.status -eq "PASS" -and $layerResult.service_layer_exception -eq $true) {
     Write-Output "Experiment 2 SUCCESS: Service layer exception working"
 } else {
@@ -53,7 +53,7 @@ if ($layerResult.status -eq "PASS" -and $layerResult.service_layer_exception -eq
 
 ## Expected Metric Delta
 
-- Coverage: 0% → >60% (core_entry family can be targeted via AiAutoClaimFlowService)
+- Coverage: 0% → >60% (core_entry family can be targeted via ExampleFlowService)
 - Layer validation pass rate: 0% → 80% (Service layer orchestrators accepted)
 - Oracle overlap: 0% → >50% (can target HIGH-weight carriers)
 
@@ -61,7 +61,7 @@ if ($layerResult.status -eq "PASS" -and $layerResult.service_layer_exception -eq
 
 ## Rollback Condition
 
-- Layer validation still rejects AiAutoClaimFlowService
+- Layer validation still rejects ExampleFlowService
 - service_layer_exception not set to true
 - Coverage remains 0%
 
@@ -69,7 +69,7 @@ if ($layerResult.status -eq "PASS" -and $layerResult.service_layer_exception -eq
 
 ## Success Threshold
 
-Layer validation passes for AiAutoClaimFlowService with service_layer_exception=true
+Layer validation passes for ExampleFlowService with service_layer_exception=true
 
 ---
 

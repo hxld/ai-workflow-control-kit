@@ -6,14 +6,14 @@
     "skip-task-transform-case",
     "xiebao",
     "renbao-tuipiao",
-    "aiClaimV2"
+    "example-feature"
   ],
   "features": [
     {
       "feature_name": "xmlpSlowFix",
       "enabled": false,
       "category": "small-performance-hotfix",
-      "requirement_source": "D:\\opt\\claim\\.doc\\xmlpSlowFix\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/xmlpSlowFix/requirements.md",
       "base_commit": "ecb98957bb98a51056db243a798f4a3f1215a0bc",
       "oracle_branch": "master-XmlpSlowFix-wcl",
       "oracle_commit": "0fc5802d335e48941494133a4c54749ddd853777",
@@ -25,9 +25,9 @@
       "feature_name": "policy-num-extension",
       "enabled": true,
       "category": "small-api-field-extension",
-      "requirement_source": "D:\\opt\\claim\\.doc\\policy-num-extension\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/policy-num-extension/requirements.md",
       "base_commit": "2bb95992ea8b706ff3ccd3c9dd795380541ea7b2",
-      "oracle_branch": "ai_claim",
+      "oracle_branch": "example_oracle",
       "oracle_commit": "42aa7e0559988dd6972793db1569d59277a56de1",
       "phase1_max_slices": 4,
       "notes": "Policy/insure number extension; use final repeated feature commit as oracle."
@@ -36,7 +36,7 @@
       "feature_name": "skip-task-transform-case",
       "enabled": true,
       "category": "medium-business-rule",
-      "requirement_source": "D:\\opt\\claim\\.doc\\skip-task-transform-case\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/skip-task-transform-case/requirements.md",
       "base_commit": "f7b277c3875a6933ef65a4603ff430f48b695327",
       "oracle_branch": "master-filterTask-wcl",
       "oracle_commit": "94562a8481229c9ba056809b39f419d1b8be202a",
@@ -47,7 +47,7 @@
       "feature_name": "xiebao",
       "enabled": true,
       "category": "medium-mq-state-transition",
-      "requirement_source": "D:\\opt\\claim\\.doc\\xiebao\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/xiebao/requirements.md",
       "base_commit": "4ef00669ea2909fc77324d433cb4fbac34929e01",
       "oracle_branch": "master_xiebao_wcl",
       "oracle_commit": "f7cbcb7b20b7c861d46f438773d713f2c2204d3f",
@@ -58,7 +58,7 @@
       "feature_name": "renbao-tuipiao",
       "enabled": true,
       "category": "large-external-integration",
-      "requirement_source": "D:\\opt\\claim\\.doc\\renbao-tuipiao\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/renbao-tuipiao/requirements.md",
       "base_commit": "31c38b935bc8e4c8de3ddb927d68a10a4d4286f8",
       "oracle_branch": "master_renbao_wcl",
       "oracle_commit": "d1e5c590e261673465604c5a50790ba0e02545d1",
@@ -66,18 +66,18 @@
       "base_must_not_contain_commits": [
         {
           "commit": "932a4d10abbe4d2810e814f4b37dcfcb9d9ae7df",
-          "reason": "Implementation commit 'feat：新增人保财深分退票接口' contaminates base; must use earlier clean commit"
+          "reason": "Implementation commit 'feat：新增人保财深分回调接口' contaminates base; must use earlier clean commit"
         }
       ],
       "notes": "External return-ticket integration; broader canary after small/medium probes. Base moved to 31c38b93 (clean, before 932a4d10)."
     },
     {
-      "feature_name": "aiClaimV2",
+      "feature_name": "example-feature",
       "enabled": true,
       "category": "large-reference-mainline",
-      "requirement_source": "D:\\opt\\claim\\.doc\\aiClaimV2\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/example-feature/requirements.md",
       "base_commit": "e19c16c5a8096c8d36938f2c469a7980deea71d4",
-      "oracle_branch": "ai_claim_V2",
+      "oracle_branch": "example_oracle_v2",
       "oracle_commit": "07d37b6c30d42f0737a2629f051b9d7b76baf78e",
       "phase1_max_slices": 12,
       "notes": "Main stress scenario; schedule only after other feature probes."
@@ -86,15 +86,15 @@
       "feature_name": "ai-case-batch-query",
       "enabled": false,
       "category": "candidate-api",
-      "requirement_source": "D:\\opt\\claim\\.doc\\ai-case-batch-query\\requirements.md",
-      "exclude_reason": "oracle window not yet audited; commit candidates overlap aiClaim changes",
+      "requirement_source": "<PROJECT_ROOT>/.doc/ai-case-batch-query/requirements.md",
+      "exclude_reason": "oracle window not yet audited; commit candidates overlap example-feature changes",
       "notes": "Keep out of automatic rotation until oracle boundary is reviewed."
     },
     {
       "feature_name": "京东安联广分（闪赔）",
       "enabled": false,
       "category": "excluded",
-      "requirement_source": "D:\\opt\\claim\\.doc\\京东安联广分（闪赔）\\requirements.md",
+      "requirement_source": "<PROJECT_ROOT>/.doc/京东安联广分（闪赔）/requirements.md",
       "exclude_reason": "no oracle commit",
       "notes": "Explicitly excluded by user."
     }

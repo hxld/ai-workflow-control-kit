@@ -135,7 +135,7 @@ docs/
 - 本仓库必须能在没有 `hxld_vault` 的新电脑上安装。
 - `KnowledgeRepo` 只能作为可选参数。
 - 如果 `KnowledgeRepo` 不存在，安装脚本应该跳过或提示，而不是失败。
-- README 中不要把 `D:\study\hxld_vault` 写成必需路径。
+- README 中不要把 `<KNOWLEDGE_ROOT>` 这类本机知识库路径写成必需路径。
 
 推荐安装语义：
 

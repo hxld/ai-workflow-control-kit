@@ -193,7 +193,7 @@ function parseTranscript(transcriptPath) {
 }
 
 function addSkillName(result, skillName) {
-  const normalized = String(skillName || '').replace(/^huize\//, '').trim();
+  const normalized = String(skillName || '').replace(/^[^/]+\//, '').trim();
   if (normalized) result.add(normalized);
 }
 

@@ -67,15 +67,15 @@
 
 1. 读取 `{{ORACLE_DIFF_ANALYSIS}}`，提取 oracle 文件路径中的功能域关键词：
    - `examine/` / `ExamineFlow` / `ExamineFacade` → 审核流程域
-   - `push/` / `InsureCompanyPush` / `PushService` → 保司推送域
-   - `ai/` / `AiClaim` / `AiAuto` / `AiReview` → AI核赔域
-   - `compensate/` / `CompensateTable` → 理算域
+   - `push/` / `ExamplePush` / `PushService` → 外部推送域
+   - `ai/` / `Example` / `ExampleAuto` / `AiReview` → AI处理域
+   - `compensate/` / `CompensateTable` → 计算域
    - `route/` / `CaseRoute` → 案件流转域
-   - `refund/` / `RefundTicket` / `ReturnTicket` → 退票域
+   - `refund/` / `RefundTicket` / `ExampleTicket` → 回调域
 
 2. 读取 `{{REQUIREMENT_SOURCE}}`，提取需求的功能描述关键词：
-   - 标题中的功能名称 (e.g., "AI核赔自动流转", "退票处理")
-   - 核心业务术语 (e.g., "免复核金额", "退票原因")
+   - 标题中的功能名称 (e.g., "AI处理自动流转", "回调处理")
+   - 核心业务术语 (e.g., "免复核金额", "回调原因")
 
 3. **域兼容性判断**：
    - 统计 oracle 文件中各功能域的文件数量
@@ -107,7 +107,7 @@
 5. **First Slice Rule**：第一刀 MUST 指向 oracle 中最高 weight 的 production 文件。如果 oracle 有 Service 层改动，不得以 DTO/Enum 作为第一刀。
 6. **Domain-Aware Oracle Overlap Calculation (v423)**：在计算 oracle overlap 之前，必须先应用域过滤。
    - 首先确定 `oracle_primary_domain`（从 ORACLE_DIFF_ANALYSIS.json 提取）
-   - 应用域过滤：只保留路径包含 `oracle_primary_domain` 相关目录的 oracle 文件（例如 AI核赔自动化 → ai/claim/calculation/auto-flow）
+   - 应用域过滤：只保留路径包含 `oracle_primary_domain` 相关目录的 oracle 文件（例如 AI处理自动化 → ai/claim/calculation/auto-flow）
    - 在域过滤后的文件集上计算 overlap：`overlap = |plan_files ∩ domain_filtered_oracle_files| / |domain_filtered_oracle_files|`
    - 要求：overlap MUST >= 50%，HIGH-weight overlap MUST >= 70%
    - 在 `PLAN_RESULT.md` 中报告 `oracle_primary_domain` 和域过滤后的文件数量
@@ -136,8 +136,8 @@ Machine-readable requirements:
 3. The binding value must name at least one Golden Slice fingerprint such as `side_effect_ledger_gap`, `exact_contract_gap`, `schema_contract_discovery_gap`, `low_verification_cap`, `oracle_overlap`, or `positive_first_slice`.
 4. If oracle overlap is below threshold, map at least one missing HIGH-weight oracle file to the binding: requirement literal -> real production carrier -> first RED -> minimum GREEN production diff -> executable side-effect proof.
 5. Oracle diff metadata is a target shape, not proof that the current worktree already contains the implementation. Do not write "oracle changes already present", "implementation already present", or "tests should pass with proper setup" unless you cite a current-worktree source line that implements the exact missing source-chain assignment and `git diff`/source inspection proves no production diff is needed.
-6. For source-chain / rebuild-path requirements, terminal setters or payload readers are not enough. Existing code such as `taskData.setPolicyNum(request.getPolicyNum())`, `taskData.setInsureNum(request.getInsureNum())`, or `input_data` key mapping only proves the downstream copy exists. The plan must inspect and bind the upstream source assignment into the request object. If the upstream assignment from build context/source into the request is missing, `expected_production_diff` and `green_minimum_implementation` must add that assignment in the selected production carriers.
-7. If `ORACLE_DIFF_ANALYSIS.json` reports production additions, do not claim `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, or test-only completion for those oracle production files. For policyNum/insureNum rebuild, the first slice must be a `core_entry` production LOGIC_FIX in both oracle HIGH-weight TaskProcessor files, not a DTO/contract/test-only slice.
+6. For source-chain / rebuild-path requirements, terminal setters or payload readers are not enough. Existing code such as `taskData.setPrimaryId(request.getPrimaryId())`, `taskData.setSecondaryId(request.getSecondaryId())`, or `input_data` key mapping only proves the downstream copy exists. The plan must inspect and bind the upstream source assignment into the request object. If the upstream assignment from build context/source into the request is missing, `expected_production_diff` and `green_minimum_implementation` must add that assignment in the selected production carriers.
+7. If `ORACLE_DIFF_ANALYSIS.json` reports production additions, do not claim `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, or test-only completion for those oracle production files. For primaryId/secondaryId rebuild, the first slice must be a `core_entry` production LOGIC_FIX in both oracle HIGH-weight TaskProcessor files, not a DTO/contract/test-only slice.
 8. Even when no Golden Delivery Slice sample file exists, do not write `NONE`, `TBD`, `unknown`, `placeholder`, `none_with_reason`, or "no golden delivery slice files exist". Use a concrete verifier fingerprint binding such as `exact_contract_gap -> ... -> stateful_side_effect`. If no honest binding exists, set `plan_status: BLOCKED` and write a concrete blocker.
 
 【EXACT Oracle Signatures (Phase 2 Pre-Binding, MANDATORY)】
@@ -175,19 +175,19 @@ Machine-readable requirements:
 如果 `ORACLE_CONTRACTS.json` 包含：
 ```json
 {
-  "AiAutoClaimFlowService": {
+  "ExampleFlowService": {
     "method": "handle",
-    "signature": "public void handle(Long caseId, AiApplyClaimApiTask task)",
-    "parameter_types": ["Long", "AiApplyClaimApiTask"],
+    "signature": "public void handle(Long caseId, ExampleApplyTask task)",
+    "parameter_types": ["Long", "ExampleApplyTask"],
     "return_type": "void"
   }
 }
 ```
 
 你的计划 MUST 使用：
-- ✅ `AiAutoClaimFlowService.handle(Long caseId, AiApplyClaimApiTask task)`
-- ❌ NOT `AiAutoClaimFlowService.executeAutoFlow(Long caseId)`
-- ❌ NOT `AiAutoClaimFlowService.processAiResult(Long caseId, AiResult result)`
+- ✅ `ExampleFlowService.handle(Long caseId, ExampleApplyTask task)`
+- ❌ NOT `ExampleFlowService.executeAutoFlow(Long caseId)`
+- ❌ NOT `ExampleFlowService.processAiResult(Long caseId, AiResult result)`
 
 **Verification:**
 
@@ -257,9 +257,9 @@ Status: PROCEED  # ❌ FORBIDDEN
 
 **CORRECT** (carrier verified):
 ```
-Selected Carrier: AiAutoClaimFlowService.handle
-Verification: rg "class AiAutoClaimFlowService" --type java
-Result: Found in claim-core/src/main/java/.../AiAutoClaimFlowService.java
+Selected Carrier: ExampleFlowService.handle
+Verification: rg "class ExampleFlowService" --type java
+Result: Found in example-core/src/main/java/.../ExampleFlowService.java
 Status: PROCEED  # ✅ ALLOWED
 ```
 
@@ -447,18 +447,18 @@ pattern_return_type: <return type>
 pattern_error_handling: <response_codes or exception_propagation>
 pattern_evidence_source: <rg command + file path>
 ```
-   - **测试 harness 选择规则（v289/v473/v475/v476）**：`first_red_test` 必须指向已有测试依赖的模块。当前 claim replay 默认使用 `claim-server/src/test/...` + `-pl claim-server -am` 作为测试 harness，但测试目标可以是 `claim-core` 中的真实 Service/TaskProcessor carrier。`claim-core` 若无 JUnit/Mockito/Spring Test 依赖，不得规划 `claim-core/src/test/...` 测试；必须规划 `claim-server/src/test/...` 测试并通过依赖调用 `claim-core` 生产 carrier。所有 Maven RED/GREEN 命令必须包含 `-am`，PowerShell 下带 `-Dtest`/`#` 时使用 `mvn --% ...` 形态。禁止通过修改任何 `pom.xml` 或新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
+   - **测试 harness 选择规则（v289/v473/v475/v476）**：`first_red_test` 必须指向已有测试依赖的模块。默认使用当前 worktree 中真实存在的 `<test-module>/src/test/...` + `-pl <test-module> -am` 作为测试 harness；测试目标可以是 `<production-module>` 中的真实 Service/TaskProcessor carrier。`<production-module>` 若无 JUnit/Mockito/Spring Test 依赖，不得规划 `<production-module>/src/test/...` 测试；必须选择一个已证明依赖生产模块的既有 `<test-module>`，并通过依赖调用生产 carrier。所有 Maven RED/GREEN 命令必须包含 `-am`，PowerShell 下带 `-Dtest`/`#` 时使用 `mvn --% ...` 形态。禁止通过修改任何 `pom.xml` 或新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
      - **测试模块策略预检（v478/v479）**：在最终确定 plan 前，必须完成并记录 test infrastructure check：
-       1. 识别生产目标模块与实际测试 harness 模块，例如 `claim-core` 生产 carrier 可由 `claim-server/src/test/...` 覆盖。
+       1. 识别生产目标模块与实际测试 harness 模块，例如 `<production-module>` 生产 carrier 可由 `<test-module>/src/test/...` 覆盖。
        2. 读取候选测试模块 `pom.xml` 与已有 `src/test` 文件，确认 JUnit/TestNG、Mockito/Spring Test 等依赖和 import 风格真实存在。
        3. 确认测试模块能 import 目标生产类，不能靠修改任何 `pom.xml` 或新增测试依赖解决。
        4. **Do not execute Maven in Plan.** Plan 只能声明 intended isolated dry-run command：`mvn {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile`，其中 `{{MAVEN_SETTINGS_ARG}}` 仅在 replay config 定义 `maven_settings` 时填入 `-s <settings.xml>`；并把 `compilation_dry_run_evidence_file` 设为 replay root 下的 `TEST_INFRASTRUCTURE_DRY_RUN.json`。runner 会在 Plan 返回后、schema gate 前 materialize `TEST_INFRASTRUCTURE_DRY_RUN.json`，并只允许使用隔离 worktree root POM。
-       5. `PLAN_RESULT.json.test_infrastructure_check.compilation_dry_run_evidence_file` 必须引用该 replay-root 内证据文件；不得要求 Plan agent 自行运行 Maven 或写 stdout/stderr 摘要。所选 `<test-module>` 必须存在 `src/test` 且已有测试源；`claim-core` 没有 `src/test` 时不能作为测试 harness。
+       5. `PLAN_RESULT.json.test_infrastructure_check.compilation_dry_run_evidence_file` 必须引用该 replay-root 内证据文件；不得要求 Plan agent 自行运行 Maven 或写 stdout/stderr 摘要。所选 `<test-module>` 必须存在 `src/test` 且已有测试源；无测试依赖的生产模块不能作为测试 harness。
        6. 如果静态检查已经确认测试模块不可导入生产类、harness 不存在、或只能依赖 protected project root dry-run，`plan_status=BLOCKED`，`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`，不得进入 Phase 1。
-     - **policyNum/insureNum rebuild 专用测试 harness 硬规则（v480/v481）**：如果需求、Phase0 事实、source-chain 合同、候选 carrier 或 oracle 文件涉及 `policyNum`、`insureNum`、`rebuildTaskData`、`AiApplyClaimApiTaskProcessor`、`AiCalculateLossApiTaskProcessor` 任一关键词，则 `PLAN_RESULT.json.test_infrastructure_check.test_module_for_target` 必须是 `claim-server`，`compilation_dry_run_command` 必须包含 `-pl claim-server -am test-compile`，`expected_test_class` 必须规划在 `claim-server/src/test/...` 的现有测试 harness 下。此类需求中 `claim-core` 只能作为生产 carrier 模块，不能作为测试 harness；如果只能选择 `claim-core` 或 dry-run 输出 `No sources to compile`，必须写 `plan_status=BLOCKED`、`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`，禁止输出 `PROCEED`。不得把 `claim-core/src/main` 生产类、DTO getter/setter 或 terminal payload reader 当作测试 harness 证据。`manual verification`、`manual check`、`manual inspection`、`none_with_manual_verification` 只能作为 BLOCKED 原因，绝不能出现在 `PROCEED` 的 `first_red_test`、`blocker_reason`、`next_action` 或 test infrastructure 字段中。
-   - **TaskProcessor rebuild no-Spring 规则（v476/v477）**：当第一刀是 `TaskProcessor` / `rebuildTaskData` / source-chain，计划必须指定 no-Spring JUnit + Mockito/反射测试形态；不得规划继承 `AbstractTestClass`、`@SpringBootTest`、`@RunWith(SpringJUnit4ClassRunner.class)`、`@ContextConfiguration` 或 `@Resource` 注入 processor 的测试。对 policyNum/insureNum rebuild，计划必须要求 mock `AiClaimDataAssemblyHelper.buildRequestCommon(...)` 并在 `thenAnswer` 中调用真实 `AiClaimDataAssemblyHelper.RequestBuildFunction`，用 `RequestBuildContext` 注入 `policyNum`/`insureNum`，断言 `rebuildTaskData` 输出 taskData 字段等于 context 值。禁止依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext、`taskData == null` 后打印 WARN 继续通过、只测 terminal DTO getter/setter、只测 mock verify，或在 `thenAnswer` 中直接返回手工构造/手工 set 字段的 request。第一刀必须同时覆盖 `AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)` 与 `AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)` 两个 sibling carrier；否则 `plan_status=BLOCKED` 或 `coverage_delta=0`。
+     - **profile 专用测试 harness 硬规则（v480/v481）**：如果 replay profile 定义了 source-chain/rebuild 专用关键词和固定 test harness，则 `PLAN_RESULT.json.test_infrastructure_check.test_module_for_target` 必须等于 profile 声明的 `<required-test-module>`，`compilation_dry_run_command` 必须包含 `-pl <required-test-module> -am test-compile`，`expected_test_class` 必须规划在该模块的现有测试 harness 下。此类需求中 `<production-module>` 只能作为生产 carrier 模块，不能作为测试 harness；如果只能选择无测试依赖的生产模块或 dry-run 输出 `No sources to compile`，必须写 `plan_status=BLOCKED`、`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`，禁止输出 `PROCEED`。不得把生产类、DTO getter/setter 或 terminal payload reader 当作测试 harness 证据。`manual verification`、`manual check`、`manual inspection`、`none_with_manual_verification` 只能作为 BLOCKED 原因，绝不能出现在 `PROCEED` 的 `first_red_test`、`blocker_reason`、`next_action` 或 test infrastructure 字段中。
+   - **TaskProcessor rebuild no-Spring 规则（v476/v477）**：当第一刀是 `TaskProcessor` / `rebuildTaskData` / source-chain，计划必须指定 no-Spring JUnit + Mockito/反射测试形态；不得规划继承 `AbstractTestClass`、`@SpringBootTest`、`@RunWith(SpringJUnit4ClassRunner.class)`、`@ContextConfiguration` 或 `@Resource` 注入 processor 的测试。对 primaryId/secondaryId rebuild，计划必须要求 mock `ExampleDataAssemblyHelper.buildRequestCommon(...)` 并在 `thenAnswer` 中调用真实 `ExampleDataAssemblyHelper.RequestBuildFunction`，用 `RequestBuildContext` 注入 `primaryId`/`secondaryId`，断言 `rebuildTaskData` 输出 taskData 字段等于 context 值。禁止依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext、`taskData == null` 后打印 WARN 继续通过、只测 terminal DTO getter/setter、只测 mock verify，或在 `thenAnswer` 中直接返回手工构造/手工 set 字段的 request。第一刀必须同时覆盖 `ExampleApplyTaskProcessor.rebuildTaskData(Long caseId)` 与 `ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)` 两个 sibling carrier；否则 `plan_status=BLOCKED` 或 `coverage_delta=0`。
    - **公共入口证明规则（机器校验）**：如果 `selected_real_entry` 是 facade/controller/API/endpoint/route 等公共入口，则以下全部必须满足，否则 runner 拒绝 FIRST_SLICE_PROOF_PLAN 并 early stop：
-     1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `AiClaimModuleConfigController` → carrier 必须包含 `AiClaimModuleConfigController` 或 `AiClaimModuleConfigFacade`，不能只写 `TAiClaimModuleConfig entity` 或 `AiClaimModuleConfigMapper`。
+     1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `ExampleModuleConfigController` → carrier 必须包含 `ExampleModuleConfigController` 或 `ExampleModuleConfigFacade`，不能只写 `TExampleModuleConfig entity` 或 `ExampleModuleConfigMapper`。
      2. `first_red_test` 必须通过该公共入口或其直接调用链发起，不能只测 Mapper/DAO 层。
      3. `public_entry_contract_coverage:` 必须写明请求参数、响应字段、状态码或错误分支中至少一个的可执行证明。仅写 "Full" 或 "existing contract accepts DTO" 不够，必须写具体断言内容（如 "assert ResultModel.success contains exemptReviewAmount field"、"assert POST /ai/claim/config/add returns 200 with updated config JSON"、"assert invalid param returns ResultModel.error with message"）。
      4. `real_carrier_kind` 必须写 `production_entry_or_service` 或 `production_controller_or_route`，不能写 `production_mapper_or_query`、`production_dto`、`production_enum`。
@@ -576,8 +576,8 @@ pattern_evidence_source: <rg command + file path>
 
    | Oracle File | Diff Type | Lines Added | Lines Deleted | Validation | Closure |
    |-------------|-----------|-------------|---------------|------------|---------|
-   | claim-domain/.../TAiClaimModuleConfig.java | FIELD_ADD | 3 | 0 | type_match | S1 |
-   | claim-core/.../AiAutoClaimFlowService.java | NEW_STUB | 20 | 0 | signature_only | S1 |
+   | example-domain/.../TExampleModuleConfig.java | FIELD_ADD | 3 | 0 | type_match | S1 |
+   | example-core/.../ExampleFlowService.java | NEW_STUB | 20 | 0 | signature_only | S1 |
    ```
 
    - "Closure" 列必须说明该 diff 在哪个 slice 闭合（如 S1, S2, S3）或为何无法闭合（如 BLOCKED:reason）

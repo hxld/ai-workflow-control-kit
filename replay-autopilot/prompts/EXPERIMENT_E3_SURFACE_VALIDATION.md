@@ -16,11 +16,11 @@ Real entry points (Facade/Controller) are the preferred surfaces for testing bus
 
 **Facade Layer**
 - Classes ending with `Facade`, `FacadeImpl`
-- Examples: `AiClaimFacade`, `ExamineFlowFacadeImpl`, `ClaimDataFacade`
+- Examples: `ExampleFacade`, `ExamineFlowFacadeImpl`, `ClaimDataFacade`
 
 **Controller Layer**
 - Classes ending with `Controller`, `ApiController`
-- Examples: `AiClaimController`, `ExamineFlowController`, `ClaimApiController`
+- Examples: `ExampleController`, `ExamineFlowController`, `ClaimApiController`
 
 **Api Layer**
 - Classes ending with `Api`
@@ -30,7 +30,7 @@ Real entry points (Facade/Controller) are the preferred surfaces for testing bus
 
 **Service Layer**
 - Classes ending with `Service`, `Task`, `Processor`
-- Examples: `AiAutoClaimFlowService`, `AiApplyClaimApiTaskProcessor`
+- Examples: `ExampleFlowService`, `ExampleApplyTaskProcessor`
 
 **Data Layer**
 - Classes ending with `Mapper`, `Dao`, `Repository`
@@ -50,7 +50,7 @@ When testing a business requirement that enters through a web request or externa
 @Test
 public void testHandleClaim_AutoFlowTriggered_CompensateInfoInserted() {
     // Calling facade method
-    boolean result = aiClaimFacade.handleAiClaim(caseId, task);
+    boolean result = exampleFacade.handleExample(caseId, task);
     // Assert side effects
 }
 ```
@@ -76,9 +76,9 @@ Service layer tests are ONLY valid when:
 ```markdown
 ## Why Service Layer Testing
 
-The AiAutoClaimFlowService has no Facade or Controller boundary because:
+The ExampleFlowService has no Facade or Controller boundary because:
 1. It's triggered by internal task queue (not HTTP)
-2. The task processor (AiApplyClaimApiTaskProcessor) is the real entry
+2. The task processor (ExampleApplyTaskProcessor) is the real entry
 3. Testing at Service layer validates the complete flow
 ```
 
@@ -114,8 +114,8 @@ The `Authorize-PreSliceEvidence.ps1` script automatically validates surface:
     "target_layer": "Service",
     "recommended_layer": "Facade/Controller",
     "gap": "wrong_test_surface",
-    "reason": "Target carrier 'AiApplyClaimApiTaskProcessor' is in Service layer, but real entries should be in Facade/Controller layer per architecture.",
-    "correction": "Move test target to Facade layer (e.g., AiClaimFacade or ExamineFlowController)"
+    "reason": "Target carrier 'ExampleApplyTaskProcessor' is in Service layer, but real entries should be in Facade/Controller layer per architecture.",
+    "correction": "Move test target to Facade layer (e.g., ExampleFacade or ExamineFlowController)"
   }
 }
 ```
@@ -145,8 +145,8 @@ If surface validation fails:
 ## Common Mistakes
 
 1. **Testing Task/Processor directly when Facade exists**
-   - Wrong: `AiApplyClaimApiTaskProcessorTest`
-   - Right: `AiClaimFacadeTest` or `ExamineFlowControllerTest`
+   - Wrong: `ExampleApplyTaskProcessorTest`
+   - Right: `ExampleFacadeTest` or `ExamineFlowControllerTest`
 
 2. **Not documenting why Service layer is used**
    - Always add justification when using Service layer

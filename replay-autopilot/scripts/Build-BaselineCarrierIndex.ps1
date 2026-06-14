@@ -13,7 +13,7 @@
     Path to output JSON file (default: .\BASELINE_CARRIER_INDEX.json).
 
 .PARAMETER BaselineCommit
-    Git commit hash for baseline verification (default: e19c16c).
+    Optional Git commit hash for baseline verification.
 
 .EXAMPLE
     .\Build-BaselineCarrierIndex.ps1 -BaselineRoot "<PROJECT_ROOT>" -OutputPath "BASELINE_CARRIER_INDEX.json"
@@ -23,7 +23,7 @@
 param(
     [string]$BaselineRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
     [string]$OutputPath = ".\BASELINE_CARRIER_INDEX.json",
-    [string]$BaselineCommit = "e19c16c"
+    [string]$BaselineCommit = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,75 +63,69 @@ if (-not $rgAvailable) {
     exit 1
 }
 
-# Scan claim-core for Task processors and @Remote/@CatfishRemote annotations
-Write-Host "Scanning claim-core..."
-$corePath = Join-Path $BaselineRoot "claim-core\src\main\java"
+function Get-RelativePath {
+    param([string]$Path)
+    return ($Path -replace [regex]::Escape($BaselineRoot), '' -replace '^\\+', '' -replace '^/+', '')
+}
 
-if (Test-Path -LiteralPath $corePath) {
-    $rgResult = rg "@CatfishRemote|@Remote" --type java --files-with-matching $corePath 2>&1
+function Get-ModuleNameForSourceRoot {
+    param([string]$SourceRoot)
+    $srcMain = Split-Path -Parent $SourceRoot
+    $src = Split-Path -Parent $srcMain
+    $modulePath = Split-Path -Parent $src
+    if ($modulePath -eq $BaselineRoot) {
+        return (Split-Path -Leaf $BaselineRoot)
+    }
+    return (Split-Path -Leaf $modulePath)
+}
+
+function Get-CarrierLayer {
+    param([string]$File)
+    if ($File -match "Facade") { return "Facade" }
+    if ($File -match "Controller|Resource|Endpoint") { return "Controller" }
+    if ($File -match "TaskProcessor|\.task\.|Task\.java") { return "Task" }
+    if ($File -match "Service") { return "Service" }
+    if ($File -match "Mapper|Repository|Dao") { return "Persistence" }
+    return "Service"
+}
+
+function Get-JavaSourceRoots {
+    $roots = New-Object System.Collections.Generic.List[string]
+    $directRoot = Join-Path $BaselineRoot "src\main\java"
+    if (Test-Path -LiteralPath $directRoot) {
+        $roots.Add($directRoot) | Out-Null
+    }
+    Get-ChildItem -LiteralPath $BaselineRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        $candidate = Join-Path $_.FullName "src\main\java"
+        if (Test-Path -LiteralPath $candidate) {
+            $roots.Add($candidate) | Out-Null
+        }
+    }
+    return @($roots)
+}
+
+$sourceRoots = @(Get-JavaSourceRoots)
+if ($sourceRoots.Count -eq 0) {
+    Write-Warning "No Java source roots found under $BaselineRoot"
+}
+
+$carrierPattern = "@CatfishRemote|@Remote|@Controller|@RestController|@RequestMapping|class.*Facade|class.*Controller|class.*Service|class.*TaskProcessor|class.*Repository|class.*Mapper|class.*Dao"
+foreach ($sourceRoot in $sourceRoots) {
+    $moduleName = Get-ModuleNameForSourceRoot -SourceRoot $sourceRoot
+    Write-Host "Scanning $moduleName..."
+    $rgResult = rg $carrierPattern --type java --files-with-matching $sourceRoot 2>&1
     foreach ($file in $rgResult) {
-        if ([string]::IsNullOrWhiteSpace($file)) { continue }
-        $relativeFile = $file -replace [regex]::Escape($BaselineRoot), '' -replace '^\\+', '' -replace '^/+', ''
+        if ([string]::IsNullOrWhiteSpace($file) -or -not (Test-Path -LiteralPath $file)) { continue }
+        $relativeFile = Get-RelativePath -Path $file
         $className = [System.IO.Path]::GetFileNameWithoutExtension($file)
-
-        $layer = if ($file -match "(\\|/)claim-api(\\|/)|Facade") { "Facade" }
-                  elseif ($file -match "(\\|/)claim-web(\\|/)|Controller") { "Controller" }
-                  elseif ($file -match "TaskProcessor|\.task\.|Task\.java") { "Task" }
-                  elseif ($file -match "Service") { "Service" }
-                  else { "Service" }
+        $layer = Get-CarrierLayer -File $file
 
         $carriers[$className] = @{
             layer = $layer
-            module = "claim-core"
+            module = $moduleName
             file = $relativeFile
             baseline_commit = $BaselineCommit
-            type = "Task"
-        }
-    }
-}
-
-# Scan claim-api for Facade implementations
-Write-Host "Scanning claim-api..."
-$apiPath = Join-Path $BaselineRoot "claim-api\src\main\java"
-
-if (Test-Path -LiteralPath $apiPath) {
-    $rgResult = rg "class.*Facade|class.*Controller" --type java --files-with-matching $apiPath 2>&1
-    foreach ($file in $rgResult) {
-        if ([string]::IsNullOrWhiteSpace($file)) { continue }
-        $relativeFile = $file -replace [regex]::Escape($BaselineRoot), '' -replace '^\\+', '' -replace '^/+', ''
-        $className = [System.IO.Path]::GetFileNameWithoutExtension($file)
-
-        $layer = if ($file -match "Facade") { "Facade" }
-                  elseif ($file -match "Controller") { "Controller" }
-                  else { "Service" }
-
-        $carriers[$className] = @{
-            layer = $layer
-            module = "claim-api"
-            file = $relativeFile
-            baseline_commit = $BaselineCommit
-            type = "Facade"
-        }
-    }
-}
-
-# Scan claim-web for Controller implementations
-Write-Host "Scanning claim-web..."
-$webPath = Join-Path $BaselineRoot "claim-web\src\main\java"
-
-if (Test-Path -LiteralPath $webPath) {
-    $rgResult = rg "@Controller|@RestController|@RequestMapping" --type java --files-with-matching $webPath 2>&1
-    foreach ($file in $rgResult) {
-        if ([string]::IsNullOrWhiteSpace($file)) { continue }
-        $relativeFile = $file -replace [regex]::Escape($BaselineRoot), '' -replace '^\\+', '' -replace '^/+', ''
-        $className = [System.IO.Path]::GetFileNameWithoutExtension($file)
-
-        $carriers[$className] = @{
-            layer = "Controller"
-            module = "claim-web"
-            file = $relativeFile
-            baseline_commit = $BaselineCommit
-            type = "Controller"
+            type = $layer
         }
     }
 }
@@ -146,6 +140,10 @@ $output = @{
 }
 
 $outputJson = $output | ConvertTo-Json -Depth 4
+$outputDir = Split-Path -Parent $OutputPath
+if (-not [string]::IsNullOrWhiteSpace($outputDir) -and -not (Test-Path -LiteralPath $outputDir)) {
+    New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+}
 $outputJson | Out-File -LiteralPath $OutputPath -Encoding UTF8
 
 Write-Host "`nIndex complete!"

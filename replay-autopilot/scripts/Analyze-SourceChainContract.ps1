@@ -58,8 +58,8 @@ function Get-OracleTaskProcessorFiles {
 
     if ($taskFiles.Count -eq 0) {
         foreach ($fallback in @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            '<production-module>/src/main/java/com/example/project/core/task/ExampleApplyTaskProcessor.java',
+            '<production-module>/src/main/java/com/example/project/core/task/ExampleCalculateTaskProcessor.java'
         )) {
             Add-Unique -List $taskFiles -Value $fallback
         }
@@ -98,34 +98,34 @@ $targetFields = New-Object System.Collections.Generic.List[string]
 $mustTouchFiles = New-Object System.Collections.Generic.List[string]
 $assertions = New-Object System.Collections.Generic.List[string]
 
-$hasPolicySource = $text -match '(?i)\b(CaseRoute\.policyNo|policyNo|policy_no|policyNum)\b'
-$hasInsureSource = $text -match '(?i)\b(Insure\.insureNo|insureNo|insure_no|insureNum)\b'
-$hasPolicyTarget = $text -match '(?i)\b(policy_num)\b'
-$hasInsureTarget = $text -match '(?i)\b(insure_num)\b'
-$hasAiPayloadContext = $text -match '(?i)\b(InputData|input_data|AI request|AiClaim|AIClaim|AiApplyClaim|AiCalculateLoss)\b'
+$hasPrimarySource = $text -match '(?i)\b(CaseRoute\.primaryId|primaryId|primary_id|primaryId)\b'
+$hasSecondarySource = $text -match '(?i)\b(Secondary\.secondaryId|secondaryId|secondary_id|secondaryId)\b'
+$hasPrimaryTarget = $text -match '(?i)\b(primary_id)\b'
+$hasSecondaryTarget = $text -match '(?i)\b(secondary_id)\b'
+$hasAiPayloadContext = $text -match '(?i)\b(InputData|input_data|AI request|Example|Example|ExampleApply|ExampleCalculate)\b'
 $rebuildPathRequirement = $text -match '(?i)\b(rebuildTaskData|rebuild|rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
 $oracleTaskProcessorFiles = @(Get-OracleTaskProcessorFiles -ReplayRoot $root)
 
-if ($hasPolicySource -and $hasPolicyTarget -and $hasAiPayloadContext) {
-    Add-Unique $sourceFields 'CaseRoute.policyNo'
-    Add-Unique $targetFields 'policy_num'
-    Add-Unique $assertions 'captured InputData.policy_num equals CaseRoute.policyNo from backend source extraction'
+if ($hasPrimarySource -and $hasPrimaryTarget -and $hasAiPayloadContext) {
+    Add-Unique $sourceFields 'SourceRecord.primaryId'
+    Add-Unique $targetFields 'primary_id'
+    Add-Unique $assertions 'captured InputData.primary_id equals SourceRecord.primaryId from backend source extraction'
 }
-if ($hasInsureSource -and $hasInsureTarget -and $hasAiPayloadContext) {
-    Add-Unique $sourceFields 'Insure.insureNo'
-    Add-Unique $targetFields 'insure_num'
-    Add-Unique $assertions 'captured InputData.insure_num equals Insure.insureNo queried by policy number'
+if ($hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
+    Add-Unique $sourceFields 'SecondaryRecord.secondaryId'
+    Add-Unique $targetFields 'secondary_id'
+    Add-Unique $assertions 'captured InputData.secondary_id equals SecondaryRecord.secondaryId queried by policy number'
 }
 
 foreach ($file in @(
-    'claim-core/src/main/java/com/huize/claim/core/ai/helper/AiClaimDataAssemblyHelper.java',
-    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiApplyClaimService.java',
-    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiCalculateLossService.java',
-    'claim-domain/src/main/java/com/huize/claim/domain/ai/dto/RequestBuildContext.java',
-    'claim-domain/src/main/java/com/huize/claim/domain/ai/dto/AiClaimBaseRequest.java',
-    'claim-domain/src/main/java/com/huize/claim/domain/ai/dto/AiClaimBaseTaskData.java',
-    'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-    'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+    '<production-module>/src/main/java/com/example/project/core/helper/ExampleDataAssemblyHelper.java',
+    '<production-module>/src/main/java/com/example/project/core/service/ExampleApplyService.java',
+    '<production-module>/src/main/java/com/example/project/core/service/ExampleCalculateService.java',
+    '<domain-module>/src/main/java/com/example/project/domain/dto/RequestBuildContext.java',
+    '<domain-module>/src/main/java/com/example/project/domain/dto/ExampleBaseRequest.java',
+    '<domain-module>/src/main/java/com/example/project/domain/dto/ExampleBaseTaskData.java',
+    '<production-module>/src/main/java/com/example/project/core/task/ExampleApplyTaskProcessor.java',
+    '<production-module>/src/main/java/com/example/project/core/task/ExampleCalculateTaskProcessor.java'
 )) {
     if ($text -match [regex]::Escape(([System.IO.Path]::GetFileNameWithoutExtension($file)))) {
         Add-Unique $mustTouchFiles $file
@@ -146,9 +146,9 @@ $activationReason = if ($hasNamedSource) {
     } else {
         'source and wire target fields are both present with AI InputData context'
     }
-} elseif (($hasPolicySource -or $hasInsureSource) -and -not ($hasPolicyTarget -or $hasInsureTarget)) {
-    'source-like terms found, but no exact wire target field policy_num/insure_num; source-chain gate not applicable'
-} elseif (($hasPolicyTarget -or $hasInsureTarget) -and -not $hasAiPayloadContext) {
+} elseif (($hasPrimarySource -or $hasSecondarySource) -and -not ($hasPrimaryTarget -or $hasSecondaryTarget)) {
+    'source-like terms found, but no exact wire target field primary_id/secondary_id; source-chain gate not applicable'
+} elseif (($hasPrimaryTarget -or $hasSecondaryTarget) -and -not $hasAiPayloadContext) {
     'wire-like target terms found without AI InputData context; source-chain gate not applicable'
 } else {
     'no named source-chain contract detected'
@@ -156,17 +156,17 @@ $activationReason = if ($hasNamedSource) {
 $requiredFamilies = @()
 if ($hasNamedSource -and $sourceChainMode -eq 'task_processor_rebuild') {
     $requiredFamilies = @(
-        [ordered]@{ family = 'task_processor_rebuild'; carrier = 'AiApplyClaimApiTaskProcessor and AiCalculateLossApiTaskProcessor'; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
-        [ordered]@{ family = 'wire_payload'; carrier = 'AiApplyClaimApiTaskProcessor and AiCalculateLossApiTaskProcessor'; reason = 'rebuilt task data must still reach outgoing InputData policy_num/insure_num keys' }
+        [ordered]@{ family = 'task_processor_rebuild'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
+        [ordered]@{ family = 'wire_payload'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'rebuilt task data must still reach outgoing InputData primary_id/secondary_id keys' }
     )
 } elseif ($hasNamedSource) {
     $requiredFamilies = @(
-        [ordered]@{ family = 'source_helper'; carrier = 'AiClaimDataAssemblyHelper'; reason = 'named source fields must be read from backend source carriers' },
+        [ordered]@{ family = 'source_helper'; carrier = 'ExampleDataAssemblyHelper'; reason = 'named source fields must be read from backend source carriers' },
         [ordered]@{ family = 'build_context'; carrier = 'RequestBuildContext'; reason = 'source values must survive request-build context' },
-        [ordered]@{ family = 'request_dto'; carrier = 'AiClaimBaseRequest'; reason = 'service request must carry nullable source values' },
-        [ordered]@{ family = 'service_entry'; carrier = 'AiApplyClaimService and AiCalculateLossService'; reason = 'deploy-facing backend service entries must copy context/request/task data' },
-        [ordered]@{ family = 'task_data'; carrier = 'AiClaimBaseTaskData'; reason = 'persisted/rebuilt task data must carry source values' },
-        [ordered]@{ family = 'wire_payload'; carrier = 'AiApplyClaimApiTaskProcessor and AiCalculateLossApiTaskProcessor'; reason = 'outgoing InputData must include exact wire keys' }
+        [ordered]@{ family = 'request_dto'; carrier = 'ExampleBaseRequest'; reason = 'service request must carry nullable source values' },
+        [ordered]@{ family = 'service_entry'; carrier = 'ExampleApplyService and ExampleCalculateService'; reason = 'deploy-facing backend service entries must copy context/request/task data' },
+        [ordered]@{ family = 'task_data'; carrier = 'ExampleBaseTaskData'; reason = 'persisted/rebuilt task data must carry source values' },
+        [ordered]@{ family = 'wire_payload'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'outgoing InputData must include exact wire keys' }
     )
 }
 
@@ -174,27 +174,27 @@ $nextRequiredSlice = if ($hasNamedSource) {
     if ($sourceChainMode -eq 'task_processor_rebuild') {
         [ordered]@{
             family = 'source_chain'
-            entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-            carrier = 'TaskProcessor rebuildTaskData -> AiClaimBaseTaskData.policyNum/insureNum -> InputData.policy_num/InputData.insure_num'
+            entry = 'ExampleApplyTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)'
+            carrier = 'TaskProcessor rebuildTaskData -> ExampleBaseTaskData.primaryId/secondaryId -> InputData.primary_id/InputData.secondary_id'
             slice_type = 'exact_contract_slice'
-            test_name = 'AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
+            test_name = 'ExampleApplyTaskProcessorTest.testRebuildTaskData_PreservesPrimaryNumAndSecondaryNum'
             must_touch_files = @($oracleTaskProcessorFiles)
             required_assertions = @(
-                'apply-claim rebuildTaskData preserves policyNum',
-                'apply-claim rebuildTaskData preserves insureNum',
-                'calculate-loss rebuildTaskData preserves policyNum',
-                'calculate-loss rebuildTaskData preserves insureNum',
-                'final AI input_data includes policy_num and insure_num after rebuild'
+                'apply-example rebuildTaskData preserves primaryId',
+                'apply-example rebuildTaskData preserves secondaryId',
+                'calculate-example rebuildTaskData preserves primaryId',
+                'calculate-example rebuildTaskData preserves secondaryId',
+                'final AI input_data includes primary_id and secondary_id after rebuild'
             )
             forbidden_proof = @('synthetic_carrier', 'hand_built_task_data_only', 'reflection_setter_only', 'terminal_payload_only', 'dto_existence_only', 'helper_chain_expansion_without_oracle_proof')
         }
     } else {
         [ordered]@{
             family = 'source_chain'
-            entry = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
-            carrier = 'CaseRoute.policyNo / Insure.insureNo -> RequestBuildContext -> AiClaimBaseRequest -> AiClaimBaseTaskData -> InputData.policy_num/InputData.insure_num'
+            entry = 'ExampleDataAssemblyHelper + ExampleApplyService + ExampleCalculateService'
+            carrier = 'SourceRecord.primaryId / SecondaryRecord.secondaryId -> RequestBuildContext -> ExampleBaseRequest -> ExampleBaseTaskData -> InputData.primary_id/InputData.secondary_id'
             slice_type = 'exact_contract_slice'
-            test_name = 'AiPolicyNumSourceChainTest.shouldFillPolicyAndInsureFromBackendSources'
+            test_name = 'ExamplePrimaryIdSourceChainTest.shouldFillPrimaryAndSecondaryFromBackendSources'
             must_touch_files = @($mustTouchFiles)
             required_assertions = @($assertions)
             forbidden_proof = @('synthetic_carrier', 'hand_built_task_data_only', 'reflection_setter_only', 'terminal_payload_only', 'dto_existence_only')

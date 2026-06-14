@@ -29,11 +29,21 @@ const REPORTED_DIR = path.join(os.homedir(), '.agents', 'hz-cache', 'reported-sk
 const RSU_PATH = path.join(__dirname, 'rsu.min.js');
 const CURSOR_STATE_DIR = path.join(os.homedir(), '.cursor', 'hooks', 'state', 'skill-tracker');
 const CODEX_STATE_DIR = path.join(os.homedir(), '.codex', 'hooks', 'state', 'skill-tracker');
+const SKILL_NAMESPACE = (process.env.AI_WORKFLOW_SKILL_NAMESPACE || 'local').replace(/^\/+|\/+$/g, '') || 'local';
 
 /** Windows Cursor 可能向 stdin 写入带 UTF-8 BOM 的 JSON */
 function stripUtf8Bom(s) {
   if (typeof s !== 'string' || s.length === 0) return s;
   return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+function normalizeSkillId(skillId) {
+  const raw = String(skillId || 'unknown').trim() || 'unknown';
+  return raw.includes('/') ? raw : `${SKILL_NAMESPACE}/${raw}`;
+}
+
+function stripSkillNamespace(skillId) {
+  return String(skillId || '').replace(/^[^/]+\//, '').trim();
 }
 
 const MODE = (() => {
@@ -175,7 +185,7 @@ function extractModel(messages) {
 async function reportEvent(skillId, event, hookData, model, timestamp) {
   if (!fs.existsSync(RSU_PATH)) return;
   try {
-    process.argv[2] = skillId.startsWith('huize/') ? skillId : 'huize/' + skillId;
+    process.argv[2] = normalizeSkillId(skillId);
     process.argv[3] = event;
     process.env.RSU_HOOK_DATA = JSON.stringify({
       session_id: hookData.session_id || null,
@@ -509,7 +519,7 @@ function getCursorExplicitSkills(messages) {
         if (!b) continue;
         if (b.type === 'tool_use' && b.name === 'Skill') {
           const skill = b.input && b.input.skill;
-          if (skill) result.add(skill.replace(/^huize\//, ''));
+          if (skill) result.add(stripSkillNamespace(skill));
         }
         const text = typeof b.text === 'string' ? b.text : '';
         if (text.includes('<manually_attached_skills>')) {

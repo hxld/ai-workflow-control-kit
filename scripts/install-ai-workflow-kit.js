@@ -146,25 +146,26 @@ function copyTree(source, destination, options, replace = true, preserveSystemSk
 const PLATFORM = os.platform(); // 'win32', 'linux', 'darwin', ...
 
 function linkDirectory(target, destination, options) {
-  if (!fs.existsSync(target)) throw new Error(`Link target does not exist: ${target}`);
-  const targetReal = fs.realpathSync(target).toLowerCase();
+  const linkTarget = path.resolve(target);
+  if (!fs.existsSync(linkTarget)) throw new Error(`Link target does not exist: ${target}`);
+  const targetReal = fs.realpathSync(linkTarget).toLowerCase();
   if (fs.existsSync(destination)) {
     const destinationReal = fs.realpathSync(destination).toLowerCase();
     if (destinationReal === targetReal) {
-      step(`Link already exists ${destination} -> ${target}`);
+      step(`Link already exists ${destination} -> ${linkTarget}`);
       return;
     }
     backupPath(destination, options);
   }
-  step(`Link ${destination} -> ${target}`);
+  step(`Link ${destination} -> ${linkTarget}`);
   if (options.dryRun) return;
   ensureParent(destination, options);
   // Windows: junction is the safe default for directories (no admin required).
   // Linux/macOS: use standard symlink.
   if (PLATFORM === 'win32') {
-    fs.symlinkSync(target, destination, 'junction');
+    fs.symlinkSync(linkTarget, destination, 'junction');
   } else {
-    fs.symlinkSync(target, destination, 'dir');
+    fs.symlinkSync(linkTarget, destination, 'dir');
   }
 }
 

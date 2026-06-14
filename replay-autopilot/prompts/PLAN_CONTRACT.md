@@ -42,7 +42,7 @@ When `replay_mode != strict-blind`:
 
 The verifier filters oracle files to the primary domain before overlap calculation:
 - Extract domain keywords from oracle file paths (e.g., `ai/`, `push/`, `examine/`)
-- Map domain keywords to directory patterns (e.g., AI核赔自动化 → ai/claim/calculation/auto-flow)
+- Map domain keywords to directory patterns (e.g., AI处理自动化 → ai/claim/calculation/auto-flow)
 - Calculate overlap on domain-filtered subset only
 - This prevents cross-domain oracle files from inflating/deflating overlap percentage
 
@@ -61,8 +61,8 @@ If SERVICE_LAYER_ALLOWLIST.json exists in replay root, it contains allowed Servi
   "schema_version": 1,
   "source": "oracle_post_hoc_analysis",
   "patterns": [
-    "AiAutoClaimFlowService",
-    "AiApplyClaimApiTaskProcessor",
+    "ExampleFlowService",
+    "ExampleApplyTaskProcessor",
     "*TaskProcessor",
     "*FlowService"
   ],

@@ -37,7 +37,7 @@ Confirm the target paths before installing. The default replay-autopilot target 
 $HOME\.ai-workflow-control-kit\replay-autopilot
 ```
 
-Use `-ReplayAutopilotRoot D:\opt\replay-autopilot` only if that is your intended local convention.
+Use `-ReplayAutopilotRoot <REPLAY_AUTOPILOT_ROOT>` or `AI_WORKFLOW_REPLAY_AUTOPILOT_ROOT` when you need an explicit local convention.
 
 ## 4. Install With Backup
 

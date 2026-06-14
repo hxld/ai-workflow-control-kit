@@ -1,13 +1,19 @@
+param(
+    [string]$TestRoot = (Join-Path $PSScriptRoot '.tmp\v315-evolution-result-strictness'),
+    [switch]$ValidateOnly
+)
+
 $ErrorActionPreference = 'Stop'
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
+    if (-not $Condition) { throw "FAIL: $Message" }
 }
 
 function New-TestRoot {
     param([string]$Name)
-    $root = Join-Path $env:TEMP ("replay-evolution-strict-{0}-{1}" -f $Name, ([guid]::NewGuid().ToString('N')))
+    $root = Join-Path $TestRoot $Name
+    if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $root | Out-Null
     @"
 # Autopilot Decision
@@ -19,8 +25,31 @@ function New-TestRoot {
     return $root
 }
 
-$scriptRoot = Split-Path -Parent $PSCommandPath
-$validator = Join-Path $scriptRoot 'Validate-EvolutionResult.ps1'
+$testDir = $PSScriptRoot
+$scriptsDir = Join-Path $testDir '..\..'
+$promptsDir = Join-Path $testDir '..\..\..\prompts'
+$validator = Join-Path $scriptsDir 'Validate-EvolutionResult.ps1'
+
+if ($ValidateOnly) {
+    $v = New-TestRoot 'validate-only'
+    @"
+# Evolution Result
+
+- final_status: VALIDATED_TOOLING_EVOLUTION
+- tooling_changes_applied: true
+- stop_and_evolve_satisfied: true
+- verification_results: PASS
+- changed_files: replay-autopilot/scripts\Validate-EvolutionResult.ps1
+- pushed_commit: abcdef1234567890
+- actual_knowledge_version_after_push: v315
+"@ | Set-Content -LiteralPath (Join-Path $v 'EVOLUTION_RESULT.md') -Encoding UTF8
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $validator -ReplayRoot $v *> $null
+    [ordered]@{ status = 'VALID'; test_root = $TestRoot } | ConvertTo-Json -Depth 4
+    exit 0
+}
+
+if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
 
 $invalid = New-TestRoot 'invalid'
 @"
@@ -67,13 +96,30 @@ $valid = New-TestRoot 'valid'
 & powershell -NoProfile -ExecutionPolicy Bypass -File $validator -ReplayRoot $valid *> $null
 Assert-True ($LASTEXITCODE -eq 0) 'valid pushed evolution result should pass'
 
-$runLoopText = Get-Content -LiteralPath (Join-Path $scriptRoot 'Run-ReplayLoop.ps1') -Raw -Encoding UTF8
+$runLoopText = Get-Content -LiteralPath (Join-Path $scriptsDir 'Run-ReplayLoop.ps1') -Raw -Encoding UTF8
 Assert-True ($runLoopText.Contains('- pushed_commit: <knowledge repo commit hash>')) 'repair prompt must require pushed_commit'
 Assert-True ($runLoopText.Contains('commit/push is blocked')) 'repair prompt must reject blocked commit as VALIDATED'
 
-$promptText = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $scriptRoot) 'prompts\skill-evolution.prompt.md') -Raw -Encoding UTF8
+$promptText = Get-Content -LiteralPath (Join-Path $promptsDir 'skill-evolution.prompt.md') -Raw -Encoding UTF8
 Assert-True ($promptText.Contains('actual_knowledge_version_after_push')) 'evolution prompt must require actual knowledge version after push'
 Assert-True ($promptText.Contains('runner/verifier')) 'evolution prompt must require runner-invoked tooling changes'
 Assert-True ($promptText.Contains('manual review')) 'evolution prompt must reject manual-only verification'
 
-Write-Host 'v315 EvolutionResultStrictness tests passed'
+[ordered]@{
+    status = 'PASS'
+    assertions = 8
+    cases = @(
+        'invalid_stop_blocked_fails',
+        'missing_pushed_commit_reported',
+        'commit_push_blocker_reported',
+        'knowledge_version_mismatch_reported',
+        'tooling_not_runner_invoked_reported',
+        'deferred_integration_reported',
+        'valid_pushed_evolution_passes',
+        'repair_prompt_requires_pushed_commit',
+        'repair_prompt_rejects_blocked_commit',
+        'evolution_prompt_requires_actual_version',
+        'evolution_prompt_requires_runner_invoked',
+        'evolution_prompt_rejects_manual_only'
+    )
+} | ConvertTo-Json -Depth 5

@@ -8,7 +8,7 @@
 
 ## P0: TEST FILE REQUIREMENT (CRITICAL BLOCKER)
 
-RED 阶段开始前，测试文件必须存在。
+Before the RED phase begins, the test file must exist.
 
 ### 自动生成测试文件（如不存在）
 

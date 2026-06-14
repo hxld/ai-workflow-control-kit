@@ -1,13 +1,19 @@
+param(
+    [string]$TestRoot = (Join-Path $PSScriptRoot '.tmp\v322-green-phase-gate-integration'),
+    [switch]$ValidateOnly
+)
+
 $ErrorActionPreference = 'Stop'
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
+    if (-not $Condition) { throw "FAIL: $Message" }
 }
 
 function New-TestRoot {
     param([string]$Name, [string]$KnowledgeRoot, [string]$ExpectedVersion = 'v322')
-    $root = Join-Path $env:TEMP ("replay-v322-{0}-{1}" -f $Name, ([guid]::NewGuid().ToString('N')))
+    $root = Join-Path $TestRoot $Name
+    if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $root | Out-Null
     @"
 # Autopilot Decision
@@ -26,11 +32,11 @@ function New-TestRoot {
     return $root
 }
 
-$scriptRoot = Split-Path -Parent $PSCommandPath
-$autopilotRoot = Split-Path -Parent $scriptRoot
-$runSliceLoop = Join-Path $scriptRoot 'Run-SliceLoop.ps1'
-$validator = Join-Path $scriptRoot 'Validate-EvolutionResult.ps1'
-$greenScript = Join-Path $scriptRoot 'verify_green_phase.py'
+$testDir = $PSScriptRoot
+$scriptsDir = Join-Path $testDir '..\..'
+$runSliceLoop = Join-Path $scriptsDir 'Run-SliceLoop.ps1'
+$validator = Join-Path $scriptsDir 'Validate-EvolutionResult.ps1'
+$greenScript = Join-Path $scriptsDir 'verify_green_phase.py'
 
 $runSliceText = Get-Content -LiteralPath $runSliceLoop -Raw -Encoding UTF8
 Assert-True ($runSliceText.Contains('Invoke-GreenPhaseNoMockGate')) 'Run-SliceLoop must call the green phase no-mock gate'
@@ -38,7 +44,15 @@ Assert-True ($runSliceText.Contains('verify_green_phase.py')) 'Run-SliceLoop mus
 Assert-True ($runSliceText.Contains('GREEN_PHASE_VERIFY_{0:D2}.json')) 'Run-SliceLoop must persist GREEN_PHASE_VERIFY evidence'
 Assert-True ($runSliceText.Contains('mock_only_implementation_gap')) 'Run-SliceLoop must convert green-gate failure into verifier gap flags'
 
-$mockFile = Join-Path $env:TEMP ("mock-only-{0}.java" -f ([guid]::NewGuid().ToString('N')))
+if ($ValidateOnly) {
+    [ordered]@{ status = 'VALID'; test_root = $TestRoot } | ConvertTo-Json -Depth 4
+    exit 0
+}
+
+if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
+
+$mockFile = Join-Path $TestRoot 'mock-only.java'
 @"
 class MockOnly {
     Object run() {
@@ -49,13 +63,12 @@ class MockOnly {
 "@ | Set-Content -LiteralPath $mockFile -Encoding UTF8
 & python $greenScript check $mockFile *> $null
 Assert-True ($LASTEXITCODE -ne 0) 'verify_green_phase.py must reject TODO/mock-only implementation'
-Remove-Item -LiteralPath $mockFile -Force
 
-$validKnowledge = Join-Path $env:TEMP ("knowledge-v322-valid-{0}" -f ([guid]::NewGuid().ToString('N')))
+$validKnowledge = Join-Path $TestRoot 'knowledge-valid'
 New-Item -ItemType Directory -Force -Path $validKnowledge | Out-Null
 "**Version**: v322" | Set-Content -LiteralPath (Join-Path $validKnowledge 'CURRENT_VERSION.md') -Encoding UTF8
 
-$mismatchKnowledge = Join-Path $env:TEMP ("knowledge-v322-mismatch-{0}" -f ([guid]::NewGuid().ToString('N')))
+$mismatchKnowledge = Join-Path $TestRoot 'knowledge-mismatch'
 New-Item -ItemType Directory -Force -Path $mismatchKnowledge | Out-Null
 "**Version**: v321" | Set-Content -LiteralPath (Join-Path $mismatchKnowledge 'CURRENT_VERSION.md') -Encoding UTF8
 
@@ -76,7 +89,7 @@ Assert-True ($LASTEXITCODE -ne 0) 'validator must reject EVOLUTION_RESULT when C
 $mismatchVerify = Get-Content -LiteralPath (Join-Path $mismatchRoot 'EVOLUTION_RESULT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-True ($mismatchVerify.issues -contains 'actual_knowledge_version_file_not_expected:v322') 'validator must report CURRENT_VERSION mismatch'
 
-$probeScript = Join-Path $scriptRoot 'zz_unintegrated_v322_probe.py'
+$probeScript = Join-Path $scriptsDir 'zz_unintegrated_v322_probe.py'
 try {
     'print("probe")' | Set-Content -LiteralPath $probeScript -Encoding UTF8
     $uninvokedRoot = New-TestRoot -Name 'uninvoked-tool' -KnowledgeRoot $validKnowledge
@@ -114,4 +127,17 @@ $validRoot = New-TestRoot -Name 'valid' -KnowledgeRoot $validKnowledge
 & powershell -NoProfile -ExecutionPolicy Bypass -File $validator -ReplayRoot $validRoot *> $null
 Assert-True ($LASTEXITCODE -eq 0) 'valid integrated tooling evolution should pass validation'
 
-Write-Host 'v322 GreenPhaseGateIntegration tests passed'
+[ordered]@{
+    status = 'PASS'
+    assertions = 8
+    cases = @(
+        'run_slice_loop_calls_green_phase_no_mock_gate',
+        'run_slice_loop_invokes_verify_green_phase',
+        'run_slice_loop_persists_green_phase_verify_evidence',
+        'run_slice_loop_converts_mock_only_gap',
+        'green_script_rejects_mock_only',
+        'validator_rejects_version_mismatch',
+        'validator_rejects_uninvoked_tooling',
+        'valid_integrated_evolution_passes'
+    )
+} | ConvertTo-Json -Depth 5

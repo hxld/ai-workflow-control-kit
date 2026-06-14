@@ -1,4 +1,8 @@
-#!/usr/bin/env pwsh
+param(
+    [string]$TestRoot = (Join-Path $PSScriptRoot '.tmp\v395-carrier-oracle-fallback'),
+    [switch]$ValidateOnly
+)
+
 <#
 .SYNOPSIS
     Regression test for v395 carrier oracle path fallback enhancement
@@ -15,9 +19,8 @@
 #>
 
 $ErrorActionPreference = 'Stop'
-# Both test file and Verify-PlanContract.ps1 are in scripts/ directory
-$scriptsDir = $PSScriptRoot
-$tempRoot = Join-Path $scriptsDir '.tmp\v395-carrier-oracle-fallback'
+$testDir = $PSScriptRoot
+$scriptsDir = Join-Path $testDir '..\..'
 
 function New-MinimalOracleDiff {
     param([string]$Path, [string]$CarrierName)
@@ -70,25 +73,24 @@ function New-MinimalPlanResult {
 
 function Invoke-CarrierOracleCheck {
     param(
-        [string]$TestRoot,
+        [string]$TestDir,
         [string]$CarrierName,
         [bool]$CreateOracleDiff = $true,
         [bool]$UseEnvProjectRoot = $false
     )
 
-    $testDir = Join-Path $tempRoot $TestRoot
-    New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $TestDir | Out-Null
 
     # Create oracle diff
     if ($CreateOracleDiff) {
-        New-MinimalOracleDiff -Path (Join-Path $testDir 'ORACLE_DIFF_ANALYSIS.json') -CarrierName $CarrierName
+        New-MinimalOracleDiff -Path (Join-Path $TestDir 'ORACLE_DIFF_ANALYSIS.json') -CarrierName $CarrierName
     }
 
     # Create plan result
-    New-MinimalPlanResult -Path (Join-Path $testDir 'PLAN_RESULT.md') -CarrierName $CarrierName
+    New-MinimalPlanResult -Path (Join-Path $TestDir 'PLAN_RESULT.md') -CarrierName $CarrierName
 
     # Create worktree (empty - carrier not present)
-    $worktree = Join-Path $testDir 'worktree'
+    $worktree = Join-Path $TestDir 'worktree'
     New-Item -ItemType Directory -Force -Path $worktree | Out-Null
 
     # For test 3, create an isolated PROJECT_ROOT that contains the carrier.
@@ -96,7 +98,7 @@ function Invoke-CarrierOracleCheck {
     $originalEnv = $null
     if ($UseEnvProjectRoot) {
         $originalEnv = $env:PROJECT_ROOT
-        $projectRoot = Join-Path $testDir 'project-root'
+        $projectRoot = Join-Path $TestDir 'project-root'
         $projectSourceDir = Join-Path $projectRoot 'example-core\src\main\java\com\example\project\core\ai\service'
         New-Item -ItemType Directory -Force -Path $projectSourceDir | Out-Null
         Set-Content -LiteralPath (Join-Path $projectSourceDir "$CarrierName.java") -Value @"
@@ -111,7 +113,7 @@ public class $CarrierName {
     try {
         # Run verification
         $verifyScript = Join-Path $scriptsDir 'Verify-PlanContract.ps1'
-        $verifyResult = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ReplayRoot $testDir -Stage Plan 2>&1
+        $verifyResult = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ReplayRoot $TestDir -Stage Plan 2>&1
         $verifyExit = $LASTEXITCODE
     } finally {
         if ($null -ne $originalEnv) {
@@ -122,7 +124,7 @@ public class $CarrierName {
     }
 
     # Read verification result
-    $verifyJson = Join-Path $testDir 'PLAN_CONTRACT_VERIFY.json'
+    $verifyJson = Join-Path $TestDir 'PLAN_CONTRACT_VERIFY.json'
     if (Test-Path -LiteralPath $verifyJson) {
         $verifyData = Get-Content -LiteralPath $verifyJson -Raw -Encoding UTF8 | ConvertFrom-Json
         return @{
@@ -141,11 +143,20 @@ public class $CarrierName {
     }
 }
 
-# Clean up temp directory
-if (Test-Path -LiteralPath $tempRoot) {
-    Remove-Item -LiteralPath $tempRoot -Recurse -Force
+if ($ValidateOnly) {
+    $d = Join-Path $TestRoot 'validate-only'
+    New-Item -ItemType Directory -Force -Path $d | Out-Null
+    New-MinimalOracleDiff -Path (Join-Path $d 'ORACLE_DIFF_ANALYSIS.json') -CarrierName 'ValidateOnlyService'
+    New-MinimalPlanResult -Path (Join-Path $d 'PLAN_RESULT.md') -CarrierName 'ValidateOnlyService'
+    [ordered]@{ status = 'VALID'; test_root = $TestRoot } | ConvertTo-Json -Depth 4
+    exit 0
 }
-New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+
+# Clean up and recreate test root
+if (Test-Path -LiteralPath $TestRoot) {
+    Remove-Item -LiteralPath $TestRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
 
 $passCount = 0
 $failCount = 0
@@ -157,7 +168,7 @@ Write-Host ""
 # Test 1: Carrier in ORACLE_DIFF_ANALYSIS.json => PASS
 Write-Host 'Test 1: Carrier in ORACLE_DIFF_ANALYSIS.json => PASS'
 $testCount++
-$result1 = Invoke-CarrierOracleCheck -TestRoot 'test1-oracle-diff' -CarrierName 'ExampleFlowService' -CreateOracleDiff $true
+$result1 = Invoke-CarrierOracleCheck -TestDir (Join-Path $TestRoot 'test1-oracle-diff') -CarrierName 'ExampleFlowService' -CreateOracleDiff $true
 $hasNotFoundError = $result1.Issues -contains 'carrier_search_selected_carrier_not_found_in_codebase'
 $hasOracleWarning = $result1.Warnings | Where-Object { $_ -like '*ORACLE_DIFF_ANALYSIS.json*' }
 if (-not $hasNotFoundError -and $hasOracleWarning) {
@@ -171,7 +182,7 @@ if (-not $hasNotFoundError -and $hasOracleWarning) {
 # Test 2: Carrier not in oracle, not in worktree, not in project root => FAIL
 Write-Host 'Test 2: Carrier not in oracle, not in worktree, not in project root => FAIL'
 $testCount++
-$result2 = Invoke-CarrierOracleCheck -TestRoot 'test2-not-found' -CarrierName 'NonExistentService' -CreateOracleDiff $false
+$result2 = Invoke-CarrierOracleCheck -TestDir (Join-Path $TestRoot 'test2-not-found') -CarrierName 'NonExistentService' -CreateOracleDiff $false
 $hasNotFoundError2 = $result2.Issues -contains 'carrier_search_selected_carrier_not_found_in_codebase'
 if ($hasNotFoundError2) {
     Write-Host "  PASS (correctly reports carrier not found)" -ForegroundColor Green
@@ -184,7 +195,7 @@ if ($hasNotFoundError2) {
 # Test 3: Carrier not in oracle, but in project root (via env var) => PASS
 Write-Host 'Test 3: Carrier not in oracle, but in project root (via PROJECT_ROOT env var) => PASS'
 $testCount++
-$result3 = Invoke-CarrierOracleCheck -TestRoot 'test3-project-root-fallback' -CarrierName 'ExampleFlowService' -CreateOracleDiff $false -UseEnvProjectRoot $true
+$result3 = Invoke-CarrierOracleCheck -TestDir (Join-Path $TestRoot 'test3-project-root-fallback') -CarrierName 'ExampleFlowService' -CreateOracleDiff $false -UseEnvProjectRoot $true
 $hasNotFoundError3 = $result3.Issues -contains 'carrier_search_selected_carrier_not_found_in_codebase'
 $hasProjectRootWarning = $result3.Warnings | Where-Object { $_ -like '*project root*' }
 if (-not $hasNotFoundError3 -and $hasProjectRootWarning) {
@@ -199,10 +210,27 @@ Write-Host ""
 Write-Host "=== Results: $passCount/$testCount passed ===" -ForegroundColor $(if ($passCount -eq $testCount) { 'Green' } else { 'Yellow' })
 
 if ($failCount -gt 0) {
-    Write-Host "Some tests failed. Temp directory preserved at: $tempRoot" -ForegroundColor Red
+    Write-Host "Some tests failed. Temp directory preserved at: $TestRoot" -ForegroundColor Red
+    [ordered]@{
+        status = 'FAIL'
+        passed = $passCount
+        failed = $failCount
+        total = $testCount
+        test_root = $TestRoot
+    } | ConvertTo-Json -Depth 4
     exit 1
 }
 
 # Clean up on success
-Remove-Item -LiteralPath $tempRoot -Recurse -Force
+Remove-Item -LiteralPath $TestRoot -Recurse -Force
+
+[ordered]@{
+    status = 'PASS'
+    assertions = 3
+    cases = @(
+        'carrier_in_oracle_diff_passes',
+        'carrier_not_found_anywhere_fails',
+        'carrier_in_project_root_fallback_passes'
+    )
+} | ConvertTo-Json -Depth 5
 exit 0

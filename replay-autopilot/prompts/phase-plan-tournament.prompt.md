@@ -6,7 +6,7 @@
 - If version is < v427, those rules are NOT available and you must NOT apply them
 - Current loaded evolution version should be available in environment or runner metadata
 
-【固定上下文】
+【Fixed Context】
 - 主仓库: {{PROJECT_ROOT}}
 - feature_name: {{FEATURE_NAME}}
 - requirement_source: {{REQUIREMENT_SOURCE}}
@@ -23,91 +23,90 @@
 - run label: {{RUN_LABEL}}
 - round: {{ROUND_ID}}
 
-【目标】
-基于 Phase 0 的探索事实，生成多份候选实现计划，按统一规则择优，最后冻结一个可执行的实施合同给 Phase 1。强规划，低探索编码。
+【Goal】
+Based on the exploration facts from Phase 0, generate multiple candidate implementation plans, evaluate by unified rules, and finally freeze an executable implementation contract for Phase 1. Strong planning, low exploration coding.
 
-【允许读取】
-1. requirement_source。
-2. repo rules: AGENTS.md, CLAUDE.md, .memory/build-test-profile.yaml。
-3. isolated worktree 当前代码。
-4. 当前 replay root 下的 `EXPLORATION_REPORT.md`、`ROUND_CONTRACT.md`、`PHASE0_RESULT.md`、`FAMILY_CONTRACT.json`、`CONTEXT_MANIFEST.md`。
-5. `{{BASELINE_INDEX}}`，但只能作为中性结构索引。
-6. `{{SURFACE_CARRIER_SCAN}}`，但只能作为中性生产承载点候选清单；每个候选仍必须读源码确认。
-7. `{{CONTEXT_MANIFEST}}` 列出的只读系统上下文文件；只能作为通用项目背景。
-8. `{{ORACLE_DIFF_ANALYSIS}}`，oracle commit diff 的结构化分析（文件列表、layer 分类、weight），用于约束计划对齐 oracle 实际改动范围。
+【Allowed to Read】
+1. requirement_source.
+2. repo rules: AGENTS.md, CLAUDE.md, .memory/build-test-profile.yaml.
+3. isolated worktree current code.
+4. Current replay root at `EXPLORATION_REPORT.md`, `ROUND_CONTRACT.md`, `PHASE0_RESULT.md`, `FAMILY_CONTRACT.json`, `CONTEXT_MANIFEST.md`.
+5. `{{BASELINE_INDEX}}`, but only as a neutral structural index.
+6. `{{SURFACE_CARRIER_SCAN}}`, but only as a neutral list of production carrier candidates; each candidate must still be confirmed by reading source code.
+7. `{{CONTEXT_MANIFEST}}` listed read-only system context files; only as general project background.
+8. `{{ORACLE_DIFF_ANALYSIS}}`, structured analysis of oracle commit diff (file list, layer classification, weight), used to constrain plan alignment with actual oracle changes.
 
-禁止读取 requirement_source 所在快照以外的 feature 文档目录；不要对 `.doc\<feature>` 或原始需求父目录执行 `rg` / `Get-ChildItem` / 批量读取。若需要需求事实，只读本 prompt 给出的 `requirement_source` 单文件快照。
+It is forbidden to read feature documentation directories outside the snapshot where requirement_source is located; do not run `rg` / `Get-ChildItem` / batch reads on `.doc\<feature>` or original requirement parent directories. If requirement facts are needed, only read the `requirement_source` single-file snapshot given in this prompt.
 
-【禁止】
-- 禁止直接读取 oracle branch/commit 或运行 `git diff`/`git log`/`git show` 访问 oracle commit（只允许读取 `{{ORACLE_DIFF_ANALYSIS}}` 中 runner 预处理的结构化分析）。禁止读取历史实现、旧 replay、历史会话总结、FINAL_REPLAY_REPORT。
-- 禁止修改生产代码、测试代码、配置、SQL、前端文件。
-- 禁止跑 Maven/测试/构建。
-- 禁止把候选计划写成泛泛任务清单；每个高权重 slice 必须落到真实入口、文件族、验证点和停止条件。
+【Forbidden】
+- Forbidden to directly read oracle branch/commit or run `git diff`/`git log`/`git show` to access oracle commit (only allowed to read the preprocessed structured analysis in `{{ORACLE_DIFF_ANALYSIS}}`). Forbidden to read historical implementations, old replays, historical session summaries, FINAL_REPLAY_REPORT.
+- Forbidden to modify production code, test code, configuration, SQL, frontend files.
+- Forbidden to run Maven/tests/builds.
+- Forbidden to write candidate plans as generic task lists; each high-weight slice must land on real entry points, file families, verification points, and stop conditions.
 
-【必须先做】
-1. 读取 `{{REPLAY_ROOT}}\PHASE0_RESULT.md`。
-2. 如果 `phase0_status` 不是 `PROCEED`，不得规划实现，写 `PLAN_RESULT.md`，`plan_status=INVALID_PLAN`。
-3. 读取 `{{REPLAY_ROOT}}\EXPLORATION_REPORT.md` 和 `{{REPLAY_ROOT}}\ROUND_CONTRACT.md`。
-4. 读取 `{{REPLAY_ROOT}}\FAMILY_CONTRACT.json`。
-5. 读取 `{{SURFACE_CARRIER_SCAN}}`，把 required family 的候选生产承载点纳入候选计划。
-6. 若上述文件缺失，写 `PLAN_RESULT.md`，`plan_status=BLOCKED`。
+【Must Do First】
+1. Read `{{REPLAY_ROOT}}\PHASE0_RESULT.md`.
+2. If `phase0_status` is not `PROCEED`, do not plan implementation, write `PLAN_RESULT.md`, `plan_status=INVALID_PLAN`.
+3. Read `{{REPLAY_ROOT}}\EXPLORATION_REPORT.md` and `{{REPLAY_ROOT}}\ROUND_CONTRACT.md`.
+4. Read `{{REPLAY_ROOT}}\FAMILY_CONTRACT.json`.
+5. Read `{{SURFACE_CARRIER_SCAN}}`, include the required family's candidate production carriers in the candidate plan.
+6. If any of the above files are missing, write `PLAN_RESULT.md`, `plan_status=BLOCKED`.
 
 【Oracle Feature Domain Compatibility Check (MANDATORY v347)】
 
 在执行 "Oracle-Constrained Planning" 之前，必须先检查 oracle 与需求的功能域是否兼容。
 
-1. 读取 `{{ORACLE_DIFF_ANALYSIS}}`，提取 oracle 文件路径中的功能域关键词：
-   - `examine/` / `ExamineFlow` / `ExamineFacade` → 审核流程域
-   - `push/` / `ExamplePush` / `PushService` → 外部推送域
-   - `ai/` / `Example` / `ExampleAuto` / `AiReview` → AI核赔域
-   - `compensate/` / `CompensateTable` → 理算域
-   - `route/` / `CaseRoute` → 案件流转域
-   - `refund/` / `RefundTicket` / `ExampleTicket` → 回调域
+1. Read `{{ORACLE_DIFF_ANALYSIS}}`, extract functional domain keywords from oracle file paths:
+   - `ai/` / `Example` / `ExampleAuto` / `AiReview` → workflow domain
+   - `push/` / `ExamplePush` / `PushService` → external push domain
+   - `compensate/` / `CompensateTable` → settlement domain
+   - `route/` / `CaseRoute` → case routing domain
+   - `refund/` / `RefundTicket` / `ExampleTicket` → callback domain
 
-2. 读取 `{{REQUIREMENT_SOURCE}}`，提取需求的功能描述关键词：
-   - 标题中的功能名称 (e.g., "AI核赔自动流转", "回调处理")
-   - 核心业务术语 (e.g., "免复核金额", "回调原因")
+2. Read `{{REQUIREMENT_SOURCE}}`, extract functional description keywords from the requirement:
+   - Feature name in the title (e.g., "workflow", "callback processing")
+   - Core domain terminology (e.g., "exempt review amount", "callback reason")
 
-3. **域兼容性判断**：
-   - 统计 oracle 文件中各功能域的文件数量
-   - 确定主功能域：文件数量最多的域
-   - 计算非主功能域文件比例：`foreign_ratio = non_primary_count / total_oracle_files`
-   - 如果 `foreign_ratio > 30%` → `domain_compatibility: MISMATCH`
-   - 如果 oracle 主功能域与需求主功能域不同 → `domain_compatibility: MISMATCH`
-   - 否则 → `domain_compatibility: COMPATIBLE`
+3. **Domain Compatibility Judgment**:
+   - Count the number of files in each functional domain in oracle files
+   - Determine primary domain: the domain with the most files
+   - Calculate non-primary domain file ratio: `foreign_ratio = non_primary_count / total_oracle_files`
+   - If `foreign_ratio > 30%` → `domain_compatibility: MISMATCH`
+   - If oracle primary domain differs from requirement primary domain → `domain_compatibility: MISMATCH`
+   - Otherwise → `domain_compatibility: COMPATIBLE`
 
-4. **在 `PLAN_RESULT.md` 中必须包含**：
-   - `oracle_primary_domain:` <提取的oracle主功能域>
-   - `requirement_primary_domain:` <提取的需求主功能域>
+4. **Must include in `PLAN_RESULT.md`**:
+   - `oracle_primary_domain:` <extracted oracle primary domain>
+   - `requirement_primary_domain:` <extracted requirement primary domain>
    - `domain_compatibility:` COMPATIBLE | MISMATCH | UNCERTAIN
-   - `foreign_domain_ratio:` <非主功能域文件百分比>
+   - `foreign_domain_ratio:` <non-primary domain file percentage>
 
-5. 如果 `domain_compatibility: MISMATCH`，禁止生成候选计划，直接写 `PLAN_RESULT.md` 并设置：
+5. If `domain_compatibility: MISMATCH`, forbidden to generate candidate plans, directly write `PLAN_RESULT.md` and set:
    - `plan_status=BLOCKED`
    - `blocker: oracle_feature_domain_mismatch`
-   - 在 `PLAN_RESULT.md` 中说明冲突文件列表和冲突原因
+   - Explain conflicting file list and conflict reason in `PLAN_RESULT.md`
 
 【Oracle-Constrained Planning (MANDATORY)】
 
 在生成候选计划之前，你 MUST 先完成以下 oracle 对齐步骤：
 
-1. 读取 `{{ORACLE_DIFF_ANALYSIS}}` 文件，了解 oracle commit 实际修改了哪些文件。
-2. 列出所有 oracle production files（非 test 文件），并为每个文件确定 layer（DTO/Enum/Service/Mapper/Controller/Resource）。
-3. 按 weight 排序 oracle production files：HIGH (Service/Controller) > MEDIUM (Enum/Mapper/Resource) > LOW (DTO/Test)。
-4. **硬约束**：你的每个候选计划的 `required_files` 和 `expected_diff_matrix` MUST 包含所有 oracle HIGH-weight production files。遗漏 oracle HIGH-weight 文件的候选计划将被淘汰。
-5. **First Slice Rule**：第一刀 MUST 指向 oracle 中最高 weight 的 production 文件。如果 oracle 有 Service 层改动，不得以 DTO/Enum 作为第一刀。
-6. **Domain-Aware Oracle Overlap Calculation (v423)**：在计算 oracle overlap 之前，必须先应用域过滤。
-   - 首先确定 `oracle_primary_domain`（从 ORACLE_DIFF_ANALYSIS.json 提取）
-   - 应用域过滤：只保留路径包含 `oracle_primary_domain` 相关目录的 oracle 文件（例如 AI核赔自动化 → ai/claim/calculation/auto-flow）
-   - 在域过滤后的文件集上计算 overlap：`overlap = |plan_files ∩ domain_filtered_oracle_files| / |domain_filtered_oracle_files|`
-   - 要求：overlap MUST >= 50%，HIGH-weight overlap MUST >= 70%
-   - 在 `PLAN_RESULT.md` 中报告 `oracle_primary_domain` 和域过滤后的文件数量
+1. Read `{{ORACLE_DIFF_ANALYSIS}}` to understand which files were actually modified in the oracle commit.
+2. List all oracle production files (non-test files), and determine the layer (DTO/Enum/Service/Mapper/Controller/Resource) for each file.
+3. Sort oracle production files by weight: HIGH (Service/Controller) > MEDIUM (Enum/Mapper/Resource) > LOW (DTO/Test).
+4. **Hard constraint**: Each candidate plan's `required_files` and `expected_diff_matrix` MUST include all oracle HIGH-weight production files. Candidate plans missing oracle HIGH-weight files will be eliminated.
+5. **First Slice Rule**: The first slice MUST target the highest weight production file in the oracle. If oracle has Service layer changes, do not use DTO/Enum as the first slice.
+6. **Domain-Aware Oracle Overlap Calculation (v423)**: Before calculating oracle overlap, domain filtering must be applied first.
+   - First determine `oracle_primary_domain` (extracted from ORACLE_DIFF_ANALYSIS.json)
+   - Apply domain filtering: only retain oracle files whose path contains directories related to `oracle_primary_domain` (e.g., workflow → ai/claim/calculation/auto-flow)
+   - Calculate overlap on domain-filtered file set: `overlap = |plan_files ∩ domain_filtered_oracle_files| / |domain_filtered_oracle_files|`
+   - Requirement: overlap MUST >= 50%, HIGH-weight overlap MUST >= 70%
+   - Report `oracle_primary_domain` and the number of domain-filtered files in `PLAN_RESULT.md`
 
-7. **Oracle overlap validation**：计划中列出的 production files 与**域过滤后**的 oracle production files 的重叠率 MUST >= 50%。低于 50% 的计划会被 runner 拒绝。HIGH-weight oracle files 重叠率 MUST >= 70%。
+7. **Oracle overlap validation**: The overlap rate between planned production files and **domain-filtered** oracle production files MUST >= 50%. Plans below 50% will be rejected by the runner. HIGH-weight oracle file overlap rate MUST >= 70%.
 
-8. **Oracle Coverage Repair Ledger**：如果 overlap < 50% 或 HIGH-weight oracle production files 没有全部进入计划，必须在 `PLAN_RESULT.md` 写出机器可读修复账本。账本必须说明缺失的 oracle 高权重文件、扩展到哪个 existing production carrier / slice / executable test，或为什么该文件在 blind replay 中必须阻塞。禁止只写”待后续补充””需确认””参考 oracle 后决定”等占位说法。
+8. **Oracle Coverage Repair Ledger**: If overlap < 50% or not all HIGH-weight oracle production files are included in the plan, write a machine-readable repair ledger in `PLAN_RESULT.md`. The ledger must explain the missing oracle high-weight files, which existing production carrier / slice / executable test to extend to, or why the file must be blocked in blind replay. Do not write placeholders like “to be added later”, “needs confirmation”, “decide after referencing oracle”.
 
-如果 `{{ORACLE_DIFF_ANALYSIS}}` 不存在或为空，跳过 oracle 约束但必须在 `PLAN_RESULT.md` 写 `oracle_analysis_skipped`。
+If `{{ORACLE_DIFF_ANALYSIS}}` does not exist or is empty, skip oracle constraints but must write `oracle_analysis_skipped` in `PLAN_RESULT.md`.
 
 【Golden Delivery Slice Binding (MANDATORY when present)】
 
@@ -132,24 +131,24 @@ Machine-readable requirements:
 
 **Step 1: Read Oracle Contracts**
 
-如果 `{{REPLAY_ROOT}}\ORACLE_CONTRACTS.json` 存在，你 MUST 在生成候选计划前读取它。
+If `{{REPLAY_ROOT}}\ORACLE_CONTRACTS.json` exists, you MUST read it before generating candidate plans.
 
-该文件包含 oracle commit 中所有实际方法的精确签名（class_name, method_name, parameter_types, return_type）。
+This file contains the exact signatures (class_name, method_name, parameter_types, return_type) of all actual methods in the oracle commit.
 
 **Step 2: Use EXACT Signatures**
 
-对于候选计划中的每个 production carrier（Service/Facade/Controller）：
+For each production carrier (Service/Facade/Controller) in candidate plans:
 
-1. ✅ 必须: 使用 `ORACLE_CONTRACTS.json` 中的 EXACT method name
-2. ✅ 必须: 使用 EXACT parameter types
-3. ✅ 必须: 使用 EXACT return type
-4. ❌ 禁止: 从需求推断签名
-5. ❌ 禁止: 创建与 oracle 签名不同的新方法
-6. ❌ 禁止: 创建在 `forbidden_carriers` 列表中的 carrier
+1. ✅ MUST: Use EXACT method name from `ORACLE_CONTRACTS.json`
+2. ✅ MUST: Use EXACT parameter types
+3. ✅ MUST: Use EXACT return type
+4. ❌ Forbidden: Infer signatures from requirements
+5. ❌ Forbidden: Create new methods different from oracle signatures
+6. ❌ Forbidden: Create carriers listed in `forbidden_carriers`
 
 **Step 3: Document Oracle Alignment**
 
-在 `PLAN_RESULT.md` 和 `IMPLEMENTATION_CONTRACT.md` 中必须包含：
+Must include in `PLAN_RESULT.md` and `IMPLEMENTATION_CONTRACT.md`:
 
 ```markdown
 - oracle_contract_pre_binding: performed | skipped_no_contracts | blocked
@@ -179,27 +178,27 @@ Machine-readable requirements:
 
 **Verification:**
 
-verifier 将检查：
-1. 计划中的 carrier 是否在 oracle 中存在
-2. 签名是否完全匹配（method name, parameters, return type）
-3. 是否创建了 synthetic carrier（不在 oracle 中的新 carrier）
+The verifier will check:
+1. Whether the carrier in the plan exists in the oracle
+2. Whether the signature matches exactly (method name, parameters, return type)
+3. Whether a synthetic carrier was created (new carrier not in the oracle)
 
-如果 synthetic carrier rate > 40%，计划将被拒绝。
+If synthetic carrier rate > 40%, the plan will be rejected.
 
-如果 `ORACLE_CONTRACTS.json` 不存在，写 `oracle_contract_pre_binding: skipped_no_contracts` 并继续。
+If `ORACLE_CONTRACTS.json` does not exist, write `oracle_contract_pre_binding: skipped_no_contracts` and continue.
 
 【Pattern Matching Enforcement (MANDATORY for integration/callback features)】
-如果需求涉及外部集成、回调、推送、通知、RPC 接口、API callback 等与外部系统交互的场景：
+If the requirement involves external integration, callback, push, notification, RPC interface, API callback, or other scenarios interacting with external systems:
 
-1. **搜索相似实现**：对项目中已有同方向 Facade 入口（如相同接口上的其他方法），用 `rg` 搜索候选方法签名、返回类型和错误处理模式。必须记录搜索命令、候选签名。
-2. **Pattern to Follow 文档**：在 FIRST_SLICE_PROOF_PLAN.md 的 `key: value` 字段中增加：
-   - `pattern_to_follow:` — 相似方法的完整签名（如 `ClassName.methodName(ParamType) -> ReturnType`）或 `NEW_PATTERN`（如果确实找不到相似实现）
-   - `pattern_return_type:` — 相似实现的返回类型
-   - `pattern_error_handling:` — 相似实现的错误处理模式（`response_codes` 或 `exception_propagation`）
-   - `pattern_evidence_source:` — 搜索命令和代码文件路径
-3. 如果 `pattern_to_follow:` 不是 `NEW_PATTERN`，`pattern_return_type:` 和 `pattern_error_handling:` 必须有具体值，禁止占位词。
+1. **Search for similar implementations**: For existing Facade entries in the same direction in the project (e.g., other methods on the same interface), use `rg` to search for candidate method signatures, return types, and error handling patterns. Must record the search commands and candidate signatures.
+2. **Pattern to Follow Documentation**: Add the following to the `key: value` fields in FIRST_SLICE_PROOF_PLAN.md:
+   - `pattern_to_follow:` — Complete signature of similar method (e.g., `ClassName.methodName(ParamType) -> ReturnType`) or `NEW_PATTERN` (if no similar implementation found)
+   - `pattern_return_type:` — Return type of the similar implementation
+   - `pattern_error_handling:` — Error handling pattern of the similar implementation (`response_codes` or `exception_propagation`)
+   - `pattern_evidence_source:` — Search command and code file path
+3. If `pattern_to_follow:` is not `NEW_PATTERN`, `pattern_return_type:` and `pattern_error_handling:` must have concrete values, no placeholders allowed.
 
-禁止用叙述性描述替代具体搜索证据。`pattern_evidence_source:` 必须包含可复现的搜索命令。
+Do not use narrative descriptions to replace specific search evidence. `pattern_evidence_source:` must contain reproducible search commands.
 
 ---
 
@@ -207,7 +206,7 @@ verifier 将检查：
 
 **CRITICAL CARRIER VERIFICATION REQUIREMENT:**
 
-在完成规划并选定 `selected_carrier` 后，你必须验证所选 carrier 确实存在于代码库中。
+After completing the plan and selecting `selected_carrier`, you must verify that the selected carrier actually exists in the codebase.
 
 ### Verification Steps
 
@@ -228,11 +227,11 @@ rg "public.*yourMethodName\(" --type java
 
 ### Allowed Actions
 
-✅ **ALLOWED**: 选择确实存在的 carrier（搜索返回结果）
-✅ **ALLOWED**: 如果 carrier 不存在，写 `plan_status=BLOCKED` 和 `blocker: carrier_not_found`
+✅ **ALLOWED**: Select a carrier that actually exists (search returned results)
+✅ **ALLOWED**: If the carrier does not exist, write `plan_status=BLOCKED` and `blocker: carrier_not_found`
 
-❌ **FORBIDDEN**: 提交一个 carrier 不存在的计划
-❌ **FORBIDDEN**: 假设 carrier 存在而不验证
+❌ **FORBIDDEN**: Submit a plan with a non-existent carrier
+❌ **FORBIDDEN**: Assume a carrier exists without verification
 
 ### Example
 
@@ -264,8 +263,8 @@ Status: PROCEED  # ✅ ALLOWED
 
 ---
 
-【候选计划要求】
-生成 `{{PLAN_CANDIDATE_COUNT}}` 个候选计划文件：
+【Candidate Plan Requirements】
+Generate `{{PLAN_CANDIDATE_COUNT}}` candidate plan files:
 - `{{REPLAY_ROOT}}\PLAN_CANDIDATE_1.md`
 - `{{REPLAY_ROOT}}\PLAN_CANDIDATE_2.md`
 - `{{REPLAY_ROOT}}\PLAN_CANDIDATE_3.md`
@@ -275,26 +274,26 @@ Status: PROCEED  # ✅ ALLOWED
 - core path first slice
 - deploy-facing surface allocation
 - requirement family allocation：core_entry / stateful_side_effect / deploy_export_page / wire_payload_api_contract / config_policy_threshold / generated_artifact_template_upload / external_integration / automation_test_interface / lifecycle_cleanup_retention
-- FAMILY_CONTRACT.json alignment：每个 detected family 的 planned slice、proof_required、forbidden_proof 和 coverage cap 是否被候选计划保留或更严格化
-- production carrier alignment：每个 required family 必须优先绑定 `SURFACE_CARRIER_SCAN.md` 中的已有生产承载点；如果要新建承载文件，必须说明它由哪个已有入口调用、同 slice 修改哪个已有承载点、如何测试真实输出/副作用
-- no substitute carrier：高权重 core/stateful/artifact family 的计划不得以 `Noop` / `Stub` / `Fake` / `Dummy` / `Placeholder` / `Mock` / `InMemory` / `TestOnly` / `Scaffold` 等占位或替代类作为主要承载点。新类只能是领域真实能力类，并且必须由已有生产入口调用。
+- FAMILY_CONTRACT.json alignment: planned slice, proof_required, forbidden_proof, and coverage cap for each detected family -- whether retained or made more strict by the candidate plan
+- production carrier alignment: each required family must preferentially bind to existing production carriers from `SURFACE_CARRIER_SCAN.md`; if creating a new carrier file, must explain which existing entry calls it, which existing carrier is modified in the same slice, and how to test real output/side effects
+- no substitute carrier: plans for high-weight core/stateful/artifact families must not use `Noop` / `Stub` / `Fake` / `Dummy` / `Placeholder` / `Mock` / `InMemory` / `TestOnly` / `Scaffold` placeholder or substitute classes as primary carriers. New classes must be real domain capability classes and must be called by existing production entries.
 - slice budget reservation table
 - exact contract strategy
 - side-effect ledger strategy
 - test charter
 - expected diff matrix
-- sibling surface ownership：每个 sibling 必须归属到具体 `family_id`，后续 slice 结果必须用 `family_id: sibling` 格式报告，禁止把 deploy/export sibling 传播到 stateful/config/artifact family
+- sibling surface ownership: each sibling must belong to a specific `family_id`, subsequent slice results must use `family_id: sibling` format, deploying/export siblings must not be propagated to stateful/config/artifact family
 - risk/cap rule
 - why this plan could fail
 
-候选计划必须有差异：
-- 一个偏 core-transaction-first
-- 一个偏 deploy-facing-surface-balanced
-- 一个偏 exact-contract-and-test-first
-如果你认为某个策略明显不可行，仍要写出并说明淘汰理由。
+Candidate plans must differ:
+- One biased toward core-transaction-first
+- One biased toward deploy-facing-surface-balanced
+- One biased toward exact-contract-and-test-first
+If you believe a strategy is clearly infeasible, still write it out and explain why it's eliminated.
 
-【择优规则】
-用 100 分 rubric 评分：
+【Evaluation Rules】
+Use a 100-point rubric for scoring:
 - core path closure: 25
 - side-effect/transaction evidence: 20
 - exact contract fidelity: 15
@@ -303,58 +302,58 @@ Status: PROCEED  # ✅ ALLOWED
 - token/cost discipline: 5
 - rollback/blocker clarity: 5
 
-不得选择只做入口钩子、helper/service 骨架、DTO/entity/config 支撑面的计划。
-不得选择主要依赖新建 synthetic service/helper/substitute carrier 的计划；新文件只能作为既有生产承载点的被调用实现，不能单独关闭 family。
-不得选择把所有 Phase 1 slice 都分配到同一概念族的计划；当 core/stateful 基线已能形成可执行证据后，后续预算必须转入至少一个 deploy-facing executable surface。
-不得选择让 detected requirement family 在 Phase 1 中完全 untouched 的计划；如果 slice 数不足，必须明确 `family_budget_gap`、cap 和下一轮首片。
-如果所有候选都无法安全进入编码，`PLAN_RESULT.md` 写 `plan_status=BLOCKED`。
+Do not select plans that only do entry hooks, helper/service skeletons, DTO/entity/config supporting surfaces.
+Do not select plans that primarily rely on new synthetic service/helper/substitute carriers; new files can only be called implementations of existing production carriers, not close a family on their own.
+Do not select plans that allocate all Phase 1 slices to the same conceptual family; once core/stateful baselines can form executable evidence, subsequent budget must shift to at least one deploy-facing executable surface.
+Do not select plans that leave detected requirement families completely untouched in Phase 1; if slice count is insufficient, must specify `family_budget_gap`, cap, and the first slice of the next round.
+If all candidates cannot safely proceed to coding, write `plan_status=BLOCKED` in `PLAN_RESULT.md`.
 
-【Production Carrier Search（MANDATORY, v270）】
+【Production Carrier Search (MANDATORY, v270)】
 
-在选择第一刀和生成 `IMPLEMENTATION_CONTRACT.md` 之前，你必须先证明“没有选错生产入口”。禁止先创建新 service 再让测试追随新 service。
+Before selecting the first slice and generating `IMPLEMENTATION_CONTRACT.md`, you must first prove that “the production entry was not chosen incorrectly”. Forbidden to create a new service first and then have tests follow the new service.
 
-必须完成并记录：
-1. `carrier_search_queries:` 至少 3 条可复现源码搜索命令或搜索式，覆盖现有 task/processor/handler/facade/controller/route/consumer/listener、现有 `handle*` / `process*` / `execute*` / `callback*` / `notify*` 方法，以及与需求关键词相近的既有实现或 sibling surface。
-2. `existing_production_carriers:` 搜索命中的真实生产承载点列表；如果为空，写 `NONE_FOUND_AFTER_SEARCH`，不能留空。
-3. `selected_carrier_from_search:` 最终选择的生产承载点，必须来自 `existing_production_carriers`，除非 `new_service_proposed: true` 且有合格理由。
-4. `new_service_proposed: true | false`。
-5. `new_service_justification:` 仅当新 service 必须创建时填写；只允许跨项目成立的理由，例如 `orphan_feature_no_existing_domain`、`new_external_boundary`、`incompatible_existing_carriers`、`oracle_new_service_no_existing_orchestration`。不能写“为了方便测试”“先占位”“后续再接入口”。
+Must complete and record:
+1. `carrier_search_queries:` At least 3 reproducible source search commands or patterns, covering existing task/processor/handler/facade/controller/route/consumer/listener, existing `handle*` / `process*` / `execute*` / `callback*` / `notify*` methods, and existing implementations or sibling surfaces close to requirement keywords.
+2. `existing_production_carriers:` List of real production carriers hit by the search; if empty, write `NONE_FOUND_AFTER_SEARCH`, cannot leave blank.
+3. `selected_carrier_from_search:` Final selected production carrier, must be from `existing_production_carriers`, unless `new_service_proposed: true` with valid justification.
+4. `new_service_proposed: true | false`.
+5. `new_service_justification:` Only fill when a new service must be created; only cross-project valid reasons, such as `orphan_feature_no_existing_domain`, `new_external_boundary`, `incompatible_existing_carriers`, `oracle_new_service_no_existing_orchestration`. Cannot write “for convenience of testing”, “placeholder first”, “will connect later”.
 
-如果 `selected_carrier_from_search` 不在搜索结果中，或 `new_service_proposed: true` 但没有合格理由，`PLAN_RESULT.md` 必须写 `plan_status=BLOCKED` 和 `blocker: carrier_search_unproven`，不得进入 Phase 1。
+If `selected_carrier_from_search` is not in the search results, or `new_service_proposed: true` without valid justification, `PLAN_RESULT.md` must write `plan_status=BLOCKED` and `blocker: carrier_search_unproven`, and must not enter Phase 1.
 
-机器校验格式要求：
-- `carrier_search:` 必须在 `PLAN_RESULT.md` 中独立成行，值只能是 `performed` 或 `blocked`。
-- `carrier_search_queries:` 必须在 `PLAN_RESULT.md` 中独立成行，值必须包含至少 3 条以分号、逗号或 `|` 分隔的搜索式，且至少出现 3 次 `rg` / `grep` / `findstr` / `Select-String` / `search` / `query` 之一。
-- `existing_production_carriers:` 必须在 `PLAN_RESULT.md` 中独立成行，值必须和 key 在同一行；多项用 `;` 分隔，不能写成空 key 后接 bullet/list。字段名必须是 `existing_production_carriers`，不能写 `carrier_search_existing_carriers` 等别名。
+Machine-verifiable format requirements:
+- `carrier_search:` must be on its own line in `PLAN_RESULT.md`, value can only be `performed` or `blocked`.
+- `carrier_search_queries:` must be on its own line in `PLAN_RESULT.md`, value must contain at least 3 search patterns separated by semicolon, comma, or `|`, and must appear at least 3 times with `rg` / `grep` / `findstr` / `Select-String` / `search` / `query`.
+- `existing_production_carriers:` must be on its own line in `PLAN_RESULT.md`, value must be on the same line as the key; multiple items separated by `;`, cannot be an empty key followed by bullet/list. Field name must be `existing_production_carriers`, cannot use aliases like `carrier_search_existing_carriers`.
 - Alias names such as `carrier_search_existing_carriers` are forbidden. Empty key followed by bullet/list is forbidden.
-- `selected_carrier_from_search:` 必须在 `PLAN_RESULT.md` 中独立成行，且必须能从 `existing_production_carriers:` 同一行值中匹配到；除非 `new_service_proposed: true` 且理由合格。
-- `oracle_production_file_overlap:` 必须在 `PLAN_RESULT.md` 中独立成行，值必须是数字百分比，例如 `83%`。不能只写在 `ORACLE_OVERLAP_GATE.json`、候选计划、解释段落或后验报告里。
-- 如果 verifier 报 `carrier_search_queries_too_few`、`plan_result_missing:oracle_production_file_overlap` 或 `oracle_overlap_below_threshold`，Plan stage 会触发一次 contract repair pass；repair 后仍失败则本轮必须 BLOCKED。
+- `selected_carrier_from_search:` must be on its own line in `PLAN_RESULT.md`, and must be matchable from the same line value of `existing_production_carriers:`; unless `new_service_proposed: true` with valid justification.
+- `oracle_production_file_overlap:` must be on its own line in `PLAN_RESULT.md`, value must be a number percentage, e.g., `83%`. Cannot be written only in `ORACLE_OVERLAP_GATE.json`, candidate plans, explanation paragraphs, or post-hoc reports.
+- If the verifier reports `carrier_search_queries_too_few`, `plan_result_missing:oracle_production_file_overlap`, or `oracle_overlap_below_threshold`, the Plan stage will trigger one contract repair pass; if repair still fails, this round must be BLOCKED.
 
-【必须产出最终规划文件】
+【Required Final Plan Output Files】
 1. `{{REPLAY_ROOT}}\PLAN_SELECTION.md`
-   - 候选计划评分表
-   - 选择理由
-   - 淘汰理由
-   - 关键取舍
+   - Candidate plan scoring table
+   - Selection rationale
+   - Elimination rationale
+   - Key trade-offs
 
 2. `{{REPLAY_ROOT}}\REPLAY_PLAN.md`
-   - 按 slice 排序的最终计划
-   - 每个 slice: requirement rows / surfaces / files / tests / DoD / blocker / coverage cap
-   - 每个 slice 必须写 `existing production carrier(s)`；若为空，必须写 `carrier_search_terms` 与 `BLOCKED/coverage_cap`
-   - 每个 detected requirement family 至少对应一个 slice 或 blocker/cap
-   - 明确哪个 slice 首次覆盖 deploy-facing surface；若没有，必须写 `surface_budget_gap` 与 coverage cap
-   - 明确 `STOP_AND_REPORT` 条件
+   - Final plan sorted by slice
+   - Each slice: requirement rows / surfaces / files / tests / DoD / blocker / coverage cap
+   - Each slice must write `existing production carrier(s)`; if empty, must write `carrier_search_terms` and `BLOCKED/coverage_cap`
+   - Each detected requirement family must correspond to at least one slice or blocker/cap
+   - Must specify which slice first covers deploy-facing surface; if none, must write `surface_budget_gap` and coverage cap
+   - Must specify `STOP_AND_REPORT` condition
 
 3. `{{REPLAY_ROOT}}\IMPLEMENTATION_CONTRACT.md`
-   - Phase 1 必须遵守的执行合同
-   - 必须包含独立机器可读行：`selected_real_entry: <Phase0 selected_real_entry>`；如果无法绑定真实入口，写 `selected_real_entry: PLAN_BLOCKED_SELECTED_REAL_ENTRY`，并在 `PLAN_RESULT.md` 写 `plan_status=BLOCKED`
-   - 必须包含独立机器可读行：`first_slice: <PLAN_RESULT first_slice>` 与 `first_red_test: <PLAN_RESULT first_red_test>`
-   - 不允许重开大范围探索
-   - 不允许替换 selected real entry，除非写 `BLOCKED_PLAN_MISMATCH`
-   - 不允许以浅层 GREEN 宣称 core DONE
-   - 不允许用新建 replay-local service/helper/test-only surface 关闭 family；必须经过已有生产入口/承载点
-   - 不允许连续两个以上 slice 只扩展同一 core/service/log test 家族，除非所有高权重 deploy-facing surface 已有 executable slice 或明确 blocker/cap
+   - Execution contract that Phase 1 must follow
+   - Must contain independent machine-readable line: `selected_real_entry: <Phase0 selected_real_entry>`; if cannot bind to real entry, write `selected_real_entry: PLAN_BLOCKED_SELECTED_REAL_ENTRY`, and write `plan_status=BLOCKED` in `PLAN_RESULT.md`
+   - Must contain independent machine-readable line: `first_slice: <PLAN_RESULT first_slice>` and `first_red_test: <PLAN_RESULT first_red_test>`
+   - Not allowed to reopen large-scale exploration
+   - Not allowed to replace selected real entry, unless writing `BLOCKED_PLAN_MISMATCH`
+   - Not allowed to claim core DONE with shallow GREEN
+   - Not allowed to close family with new replay-local service/helper/test-only surface; must go through existing production entry/carrier
+   - Not allowed to extend only the same core/service/log test family for more than two consecutive slices, unless all high-weight deploy-facing surfaces already have executable slice or explicit blocker/cap
 
 4. `{{REPLAY_ROOT}}\EXPECTED_DIFF_MATRIX.md`
    - requirement -> module -> expected file families -> change type -> validation -> closure condition
@@ -363,24 +362,24 @@ Status: PROCEED  # ✅ ALLOWED
    - selected real entry -> orchestration -> persistence/query/write -> state/task/progress/log -> transaction/failure isolation -> executable proof
 
 6. `{{REPLAY_ROOT}}\TEST_CHARTER.md`
-   - RED/GREEN 顺序
-   - 真实入口测试
-   - DB/事务或替代验证
+   - RED/GREEN order
+   - Real entry tests
+   - DB/transaction or alternative verification
    - deploy-facing surface tests
-   - static-only/blocker 时的 cap
-   - **格式硬要求（v426）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词，如果缺少这些关键词将触发 `test_charter_missing:RED` 或 `test_charter_missing:GREEN` 错误。你可以添加其他内容，但必须显式包含这两个标题段落。
+   - cap when static-only/blocker
+   - **Format hard requirement (v426)**: TEST_CHARTER must include independent `## RED Phase` and `## GREEN Phase` heading sections. The verifier will search for "RED" and "GREEN" keywords; if these keywords are missing, it will trigger `test_charter_missing:RED` or `test_charter_missing:GREEN` errors. You can add other content, but must explicitly include these two heading sections.
 
 7. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md`
-   - 只写 Phase 1 第一刀，不写全量计划
-   - 必须绑定 `PLAN_RESULT.md` 的 `first_slice`、`first_red_test` 和 Phase 0 的 `selected_real_entry`
-   - **格式硬要求（机器校验 v452）**：FIRST_SLICE_PROOF_PLAN 必须包含以下所有字段作为独立的 `key: value` 行。runner dry-run 脚本会逐行解析这些字段，不会解析叙述段落、Markdown 表格或嵌套列表。如果某个字段没有以 `key: value` 格式出现在独立行上，dry-run gate 会直接 BLOCKED_PLAN_MISMATCH。
-   - **v452 最高优先级字段**：以下字段是最容易被遗漏的关键字段，必须优先检查：
-     - `highest_weight_open_gate:` - **必须填写**。从 ROUND_CONTRACT.md 的 Requirement Family Ledger 中找出 weight 最高且需要在第一刀"打开"（新建服务或修改核心路径）的 family。例如：`stateful_side_effect`、`core_entry`、`wire_payload_api_contract`。不能省略，不能写成 "TBD"、"待确认" 等占位词。
-     - `selected_real_entry:` - **必须填写**。必须与 Phase 0 的 selected_real_entry 完全一致。
-     - `proof_kind:` - **必须填写**。必须是以下枚举值之一：`real_entry_behavior`、`stateful_side_effect`、`route_export_behavior`、`payload_shape_behavior`、`generated_artifact_behavior`。
-     - `real_carrier_kind:` - **必须填写**。必须是以下枚举值之一：`production_entry_or_service`、`production_controller_or_route`、`production_mapper_or_query`、`production_payload_builder`、`production_template_or_artifact_renderer`、`production_lifecycle_cleanup`、`production_service_method`、`production_service`、`production_enum`、`production_dto`。
-   - 禁止用叙述性段落、Markdown 表格、`##` 标题段落或嵌套列表替代 `key: value` 格式。你可以在 `key: value` 行之前或之后添加解释性内容，但每个必填字段本身必须以 `key: value` 独立行出现，值非空、非占位词。
-   - 每个字段值禁止写占位词：`TBD`、`unknown`、`N/A`、`placeholder`、`待确认`、`未确认`、`后续确认`。如果某字段确实无法填写，必须写 `PLAN_BLOCKED_<FIELD>` 并在 `PLAN_RESULT.md` 写 `plan_status=BLOCKED`。
+   - Only write Phase 1 first slice, not the full plan
+   - Must bind `PLAN_RESULT.md` `first_slice`, `first_red_test`, and Phase 0 `selected_real_entry`
+   - **Format hard requirement (machine-verified v452)**: FIRST_SLICE_PROOF_PLAN must include all of the following fields as independent `key: value` lines. The runner dry-run script parses these fields line by line, and does not parse narrative paragraphs, Markdown tables, or nested lists. If any field does not appear as `key: value` format on its own line, the dry-run gate will directly BLOCKED_PLAN_MISMATCH.
+   - **v452 Highest Priority Fields**: The following fields are most commonly missed and must be checked first:
+     - `highest_weight_open_gate:` - **Must fill**. From ROUND_CONTRACT.md's Requirement Family Ledger, find the highest-weight family that needs to be "opened" (create new service or modify core path) in the first slice. For example: `stateful_side_effect`, `core_entry`, `wire_payload_api_contract`. Cannot omit, cannot write "TBD", "pending confirmation" or other placeholders.
+     - `selected_real_entry:` - **Must fill**. Must be identical to Phase 0's selected_real_entry.
+     - `proof_kind:` - **Must fill**. Must be one of the following enum values: `real_entry_behavior`, `stateful_side_effect`, `route_export_behavior`, `payload_shape_behavior`, `generated_artifact_behavior`.
+     - `real_carrier_kind:` - **Must fill**. Must be one of the following enum values: `production_entry_or_service`, `production_controller_or_route`, `production_mapper_or_query`, `production_payload_builder`, `production_template_or_artifact_renderer`, `production_lifecycle_cleanup`, `production_service_method`, `production_service`, `production_enum`, `production_dto`.
+   - Forbidden to use narrative paragraphs, Markdown tables, `##` heading sections, or nested lists as substitutes for `key: value` format. You can add explanatory content before or after the `key: value` lines, but each required field itself must appear as a `key: value` independent line, with non-empty, non-placeholder values.
+   - Each field value is forbidden to use placeholder words: `TBD`, `unknown`, `N/A`, `placeholder`, `pending confirmation`, `unconfirmed`, `confirm later`. If a field truly cannot be filled, must write `PLAN_BLOCKED_<FIELD>` and write `plan_status=BLOCKED` in `PLAN_RESULT.md`.
    - 必须逐字使用以下字段名，供 runner dry-run 校验；不得只写近义词：
      - `first_slice:`
      - `golden_slice_binding:`
@@ -435,28 +434,28 @@ pattern_return_type: <return type>
 pattern_error_handling: <response_codes or exception_propagation>
 pattern_evidence_source: <rg command + file path>
 ```
-   - **测试 harness 选择规则（v289）**：`first_red_test` 必须指向已有测试依赖的模块。当前 claim replay 中测试必须放在 `example-server/src/test/...`，运行命令必须使用 `-pl example-server -am`；禁止规划 `example-core/src/test/...`、`-pl example-core`、或通过修改 `pom.xml` 新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
-   - **公共入口证明规则（机器校验）**：如果 `selected_real_entry` 是 facade/controller/API/endpoint/route 等公共入口，则以下全部必须满足，否则 runner 拒绝 FIRST_SLICE_PROOF_PLAN 并 early stop：
-     1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `ExampleModuleConfigController` → carrier 必须包含 `ExampleModuleConfigController` 或 `ExampleModuleConfigFacade`，不能只写 `TExampleModuleConfig entity` 或 `ExampleModuleConfigMapper`。
-     2. `first_red_test` 必须通过该公共入口或其直接调用链发起，不能只测 Mapper/DAO 层。
-     3. `public_entry_contract_coverage:` 必须写明请求参数、响应字段、状态码或错误分支中至少一个的可执行证明。仅写 "Full" 或 "existing contract accepts DTO" 不够，必须写具体断言内容（如 "assert ResultModel.success contains exemptReviewAmount field"、"assert POST /ai/claim/config/add returns 200 with updated config JSON"、"assert invalid param returns ResultModel.error with message"）。
-     4. `real_carrier_kind` 必须写 `production_entry_or_service` 或 `production_controller_or_route`，不能写 `production_mapper_or_query`、`production_dto`、`production_enum`。
-   - `proof_kind` 是机器校验字段，只允许以下值（逐字照写）：`real_entry_behavior`、`stateful_side_effect`、`route_export_behavior`、`payload_shape_behavior`、`generated_artifact_behavior`。禁止写 `static_presence`、`helper_only`、`compile_only`、`dto_only` 或自造词如 `entity_behavior`。违反格式的 FIRST_SLICE_PROOF_PLAN 将被 runner 拒绝。
-   - `real_carrier_kind` 是机器校验字段，只允许以下值（逐字照写）：`production_entry_or_service`、`production_controller_or_route`、`production_mapper_or_query`、`production_payload_builder`、`production_template_or_artifact_renderer`、`production_lifecycle_cleanup`、`production_service_method`、`production_service`、`production_enum`、`production_dto`。禁止写 `production_entity`、`protected_hook`、`test_subclass`、`helper_only`、`dto_only`、`static_presence`、`mock_only` 或任何自造词。违反格式的 FIRST_SLICE_PROOF_PLAN 将被 runner 拒绝。
-   - `minimum_side_effect_or_blocker` 必须写出第一刀最少要证明的真实生产调用、状态/落库/输出/payload/导出/template 副作用；如果找不到，写 `PLAN_BLOCKED_REAL_CARRIER`。
-   - **v295_executable_first_slice_gate / v295 可执行第一刀硬门禁**：当 `plan_status: PROCEED` 时，第一刀不得是 `Contract & RED Tests`、`CONTRACT_ONLY`、`RED-only`、`test-only`、`production_boundary: NONE` 或 `expected_production_diff: NONE`。第一刀必须在同一 slice 内包含：一个 RED 测试、最小 GREEN 生产实现、以及 `minimum_side_effect_or_blocker` 中写明的真实生产副作用/payload/输出/导出/template 证明。禁止把 GREEN 或生产副作用延后到 S2/S3；如果第一刀只能写合同或 RED 测试，必须把 `plan_status` 改为 `BLOCKED`。
-   - **v296_core_executable_tracer_selection**：如果 Phase 0 已发现 `selected_real_entry`，且最高权重 family 是 `core_entry`，候选计划必须至少包含一个以该真实入口为第一刀的 executable tracer bullet。最终 `selected_candidate` 不得选择只改 Constant/DTO/Entity/Mapper 的 exact-contract/static slice。`highest_weight_open_gate: core_entry` 时，`selected_carrier` 必须是真实入口/服务/方法，`proof_kind` 必须是 `real_entry_behavior` 或 `stateful_side_effect`，`real_carrier_kind` 必须是 `production_entry_or_service`、`production_service_method` 或 `production_service`。禁止用 `plan_status: BLOCKED` 逃避该选择，除非 Phase0 没有真实入口、测试 harness 不可用或 oracle overlap 在扩展后仍低于阈值。
-   - `minimum_side_effect_or_blocker` 的值禁止写 `NONE`、`N/A`、`NOT_APPLICABLE`、`none_with_reason`、`no production code`、`contract definition only`、`to be implemented in Slice 2` 等绕过语。它必须是可执行证明，例如“service method writes state through mapper and test asserts mapper call + status value”，或写 `PLAN_BLOCKED_REAL_CARRIER` 并停止。
-   - `production_boundary` 和 `expected_production_diff` 在 `plan_status: PROCEED` 时必须指向真实生产文件/方法/文件族，禁止写 `NONE` 或 “Slice 1 does not touch production code”。
-   - `forbidden_substitute_check` 是机器校验字段，只允许以下两种值（逐字照写，不加点号、不加空格、不加描述）：
-     - `forbidden_substitute_check: passed` （检查通过）
-     - `forbidden_substitute_check: failed:<reason>` （检查不通过，必须同时写 `plan_status=BLOCKED`）
-     禁止写描述性文本如 "Must verify..."、"No substitute..."、"Check that..."。违反格式的 FIRST_SLICE_PROOF_PLAN 将被 runner 拒绝并 early stop。
-   - 如果需求写明字段来源、来源表、来源字段或“后端自动填充”，第一刀或第二刀必须是 source-chain slice：`source carrier -> build context/request -> task data -> wire payload`。只验证终端 DTO/taskData/payload 写入不能关闭 core。
-   - 字段默认写成单行 `field: value`；如必须换行，下一行只能使用 Markdown definition-list 的 `: value`，不能把值散落到普通段落里。`production_boundary:`、`selected_carrier:`、`target_subsurface_or_carrier:`、`expected_production_diff:` 这四个字段必须优先写成同一行逗号分隔值；禁止写成空冒号后接 bullet/list，否则 verifier 会判定 `first_slice_proof_schema_empty`。
-   - 若第一刀无法用真实入口和 RED 测试证明，`PLAN_RESULT.md` 必须写 `plan_status=BLOCKED`，不得进入 Phase 1
-	   - **v457 first_slice_proof schema 硬要求（Executable Evidence Gate）**：
-	     FIRST_SLICE_PROOF_PLAN 必须包含以下 V457 字段，且格式必须符合机器校验：
+   - **Test harness selection rule (v289)**: `first_red_test` must point to a module with existing test dependencies. Currently tests must be placed in `example-server/src/test/...`, run command must use `-pl example-server -am`; forbidden to plan `example-core/src/test/...`, `-pl example-core`, or add test dependencies by modifying `pom.xml` to satisfy RED. If unable to prove in existing harness, write `PLAN_BLOCKED_TEST_HARNESS` and downgrade `plan_status` to `BLOCKED`.
+   - **Public entry proof rule (machine-verified)**: If `selected_real_entry` is a public entry like facade/controller/API/endpoint/route, then all of the following must be satisfied, otherwise the runner rejects FIRST_SLICE_PROOF_PLAN and early stops:
+     1. `selected_carrier` must be the public entry itself, or a response contract test carrier containing the full name of the public entry. Forbidden to only write Mapper/Entity/DTO/internal service. For example: entry is `ExampleModuleConfigController` → carrier must contain `ExampleModuleConfigController` or `ExampleModuleConfigFacade`, cannot only write `TExampleModuleConfig entity` or `ExampleModuleConfigMapper`.
+     2. `first_red_test` must be initiated through the public entry or its direct call chain, not only test Mapper/DAO layer.
+     3. `public_entry_contract_coverage:` must specify executable proof for at least one of request parameters, response fields, status codes, or error branches. Simply writing "Full" or "existing contract accepts DTO" is insufficient; must write specific assertion content (e.g., "assert ResultModel.success contains exemptReviewAmount field", "assert POST /ai/claim/config/add returns 200 with updated config JSON", "assert invalid param returns ResultModel.error with message").
+     4. `real_carrier_kind` must be `production_entry_or_service` or `production_controller_or_route`, cannot be `production_mapper_or_query`, `production_dto`, `production_enum`.
+   - `proof_kind` is a machine-verified field, only allows the following values (copy verbatim): `real_entry_behavior`, `stateful_side_effect`, `route_export_behavior`, `payload_shape_behavior`, `generated_artifact_behavior`. Forbidden to write `static_presence`, `helper_only`, `compile_only`, `dto_only`, or invented words like `entity_behavior`. FIRST_SLICE_PROOF_PLAN that violates the format will be rejected by the runner.
+   - `real_carrier_kind` is a machine-verified field, only allows the following values (copy verbatim): `production_entry_or_service`, `production_controller_or_route`, `production_mapper_or_query`, `production_payload_builder`, `production_template_or_artifact_renderer`, `production_lifecycle_cleanup`, `production_service_method`, `production_service`, `production_enum`, `production_dto`. Forbidden to write `production_entity`, `protected_hook`, `test_subclass`, `helper_only`, `dto_only`, `static_presence`, `mock_only`, or any invented words. FIRST_SLICE_PROOF_PLAN that violates the format will be rejected by the runner.
+   - `minimum_side_effect_or_blocker` must specify the minimum real production call, state/persist/output/payload/export/template side effects the first slice must prove; if not found, write `PLAN_BLOCKED_REAL_CARRIER`.
+   - **v295_executable_first_slice_gate / v295 executable first slice hard gate**: When `plan_status: PROCEED`, the first slice must not be `Contract & RED Tests`, `CONTRACT_ONLY`, `RED-only`, `test-only`, `production_boundary: NONE`, or `expected_production_diff: NONE`. The first slice must include within the same slice: one RED test, minimum GREEN production implementation, and the real production side effect/payload/output/export/template proof specified in `minimum_side_effect_or_blocker`. Forbidden to defer GREEN or production side effects to S2/S3; if the first slice can only write contract or RED test, must change `plan_status` to `BLOCKED`.
+   - **v296_core_executable_tracer_selection**: If Phase 0 has already discovered `selected_real_entry`, and the highest weight family is `core_entry`, candidate plans must include at least one executable tracer bullet with that real entry as the first slice. The final `selected_candidate` must not choose an exact-contract/static slice that only modifies Constant/DTO/Entity/Mapper. When `highest_weight_open_gate: core_entry`, `selected_carrier` must be a real entry/service/method, `proof_kind` must be `real_entry_behavior` or `stateful_side_effect`, `real_carrier_kind` must be `production_entry_or_service`, `production_service_method`, or `production_service`. Forbidden to use `plan_status: BLOCKED` to avoid this choice, unless Phase0 has no real entry, test harness is unavailable, or oracle overlap remains below threshold after expansion.
+   - `minimum_side_effect_or_blocker` value is forbidden to write `NONE`, `N/A`, `NOT_APPLICABLE`, `none_with_reason`, `no production code`, `contract definition only`, `to be implemented in Slice 2`, or similar circumvention phrases. It must be an executable proof, such as “service method writes state through mapper and test asserts mapper call + status value”, or write `PLAN_BLOCKED_REAL_CARRIER` and stop.
+   - `production_boundary` and `expected_production_diff` when `plan_status: PROCEED` must point to real production files/methods/file families, forbidden to write `NONE` or “Slice 1 does not touch production code”.
+   - `forbidden_substitute_check` is a machine-verified field, only allows the following two values (copy verbatim, without period, space, or description):
+     - `forbidden_substitute_check: passed` (check passed)
+     - `forbidden_substitute_check: failed:<reason>` (check failed, must also write `plan_status=BLOCKED`)
+     Forbidden to write descriptive text like “Must verify...”, “No substitute...”, “Check that...”. FIRST_SLICE_PROOF_PLAN that violates the format will be rejected by the runner and early stopped.
+   - If the requirement specifies field sources, source tables, source fields, or “backend auto-fill”, the first or second slice must be a source-chain slice: `source carrier -> build context/request -> task data -> wire payload`. Only verifying terminal DTO/taskData/payload writes cannot close core.
+   - Fields should default to single line `field: value`; if a line break is necessary, the next line can only use Markdown definition-list `: value`, cannot scatter values into ordinary paragraphs. The four fields `production_boundary:`, `selected_carrier:`, `target_subsurface_or_carrier:`, `expected_production_diff:` must preferentially be written as comma-separated values on the same line; forbidden to write empty colon followed by bullet/list, otherwise the verifier will determine `first_slice_proof_schema_empty`.
+   - If the first slice cannot be proven with real entry and RED test, `PLAN_RESULT.md` must write `plan_status=BLOCKED`, must not enter Phase 1
+       - **v457 first_slice_proof schema hard requirement (Executable Evidence Gate)**:
+	     FIRST_SLICE_PROOF_PLAN must include the following V457 fields, and format must comply with machine verification:
 	     - `target_carrier_file_path:` - 精确文件路径，不能是 TBD/unknown/占位词
 	     - `target_carrier_line_number:` - 精确行号（整数），不能是 TBD_facade_save_method
 	     - `expected_test_class:` - 完整测试类名
@@ -487,16 +486,16 @@ pattern_evidence_source: <rg command + file path>
 
 8. `{{REPLAY_ROOT}}\PLAN_RESULT.md`
 
-【PLAN_RESULT.md 格式】
+## PLAN_RESULT.md Format
 
 ```markdown
 # Plan Result
 
-**注意**：以下所有字段必须以 `key: value` 格式独立成行，禁止空 key 后接 bullet/list。每个 key 必须有非空值（除了 `blocker:` 和 `invalid_reason:` 在无问题时可以为空）。
+**Note**: All of the following fields must be on independent lines in `key: value` format. Empty key followed by bullet/list is forbidden. Each key must have a non-empty value (except `blocker:` and `invalid_reason:` which can be empty when there is no issue).
 
 - plan_status: PROCEED | INVALID_PLAN | BLOCKED
-- selected_candidate: <从 PLAN_SELECTION.md 复制，如 "3 - Exact-Contract-and-Test-First">
-- selected_strategy: <从 PLAN_SELECTION.md 复制策略摘要，如 "exact-contract-and-test-first" | "core-transaction-first" | "deploy-facing-surface-balanced">
+- selected_candidate: <copied from PLAN_SELECTION.md, e.g., "3 - Exact-Contract-and-Test-First">
+- selected_strategy: <copied strategy summary from PLAN_SELECTION.md, e.g., "exact-contract-and-test-first" | "core-transaction-first" | "deploy-facing-surface-balanced">
 - implementation_model_recommendation: gpt-5.3-codex
 - required_files:
 - oracle_production_file_overlap:
@@ -505,10 +504,10 @@ pattern_evidence_source: <rg command + file path>
 - oracle_expansion_plan:
 - oracle_out_of_scope_files:
 - golden_slice_binding:
-- oracle_primary_domain: <功能域名称>
-- requirement_primary_domain: <功能域名称>
+- oracle_primary_domain: <domain name>
+- requirement_primary_domain: <domain name>
 - domain_compatibility: COMPATIBLE | MISMATCH | UNCERTAIN
-- foreign_domain_ratio: <百分比>
+- foreign_domain_ratio: <percentage>
 - carrier_search: performed | blocked
 - carrier_search_queries: <query1>; <query2>; <query3>
 - existing_production_carriers: <carrier1>; <carrier2> | NONE_FOUND_AFTER_SEARCH
@@ -524,30 +523,30 @@ pattern_evidence_source: <rg command + file path>
 - next_action:
 ```
 
-`PLAN_RESULT.md` 必须声明 `oracle_production_file_overlap` 和 `oracle_high_weight_coverage`（基于**域过滤后**的 oracle 文件集）。如果 oracle-assisted planning 模式下 overlap 低于 50%，必须先扩大/修正 selected plan 覆盖的高权重生产文件族；仍无法达到 50% 时，写 `plan_status=BLOCKED` 和 `blocker: oracle_overlap_below_threshold`，不得输出 PROCEED。
+`PLAN_RESULT.md` must declare `oracle_production_file_overlap` and `oracle_high_weight_coverage` (based on **domain-filtered** oracle file set). If overlap is below 50% in oracle-assisted planning mode, must first expand/correct the selected plan's covered high-weight production file families; if still cannot reach 50%, write `plan_status=BLOCKED` and `blocker: oracle_overlap_below_threshold`, must not output PROCEED.
 
-当 overlap < 50% 或存在 HIGH-weight uncovered 时，`PLAN_RESULT.md` 还必须包含以下机器可读字段：
-- `oracle_missing_high_weight_files:` 用分号列出未覆盖的 HIGH-weight oracle production files。
-- `oracle_expansion_plan:` 写成 `oracle file -> existing production carrier -> slice/test` 的映射；如果无法扩展，写 `BLOCKED:<reason>`。
-- `oracle_out_of_scope_files:` 只允许列出在 blind 条件下不可安全判断的文件，并逐项给出 blocker；没有则写 `none`。
+When overlap < 50% or there are HIGH-weight uncovered files, `PLAN_RESULT.md` must also include the following machine-readable fields:
+- `oracle_missing_high_weight_files:` List uncovered HIGH-weight oracle production files separated by semicolons.
+- `oracle_expansion_plan:` Written as mapping of `oracle file -> existing production carrier -> slice/test`; if cannot expand, write `BLOCKED:<reason>`.
+- `oracle_out_of_scope_files:` Only allowed to list files that cannot be safely judged under blind conditions, and give blocker for each; write `none` if none.
 
-判定规则：
-- `PROCEED`：最终计划可直接交给 Phase 1 执行，且 required planning artifacts 全部存在。
-- `INVALID_PLAN`：计划仍以 supporting/helper/static/DTO/config 为第一刀，或缺真实入口 RED。
-- `BLOCKED`：需求/代码事实不足以冻结计划，或关键 exact contract 无法在 blind 条件下安全判断。
+Decision rules:
+- `PROCEED`: Final plan can be directly handed to Phase 1 execution, and all required planning artifacts exist.
+- `INVALID_PLAN`: Plan still uses supporting/helper/static/DTO/config as first slice, or lacks real entry RED.
+- `BLOCKED`: Requirement/code facts are insufficient to freeze the plan, or key exact contract cannot be safely determined under blind conditions.
 
-【必须全部写出以下文件，无论 plan_status 是 PROCEED 还是 BLOCKED】
+## Must Write All the Following Files, Regardless of plan_status being PROCEED or BLOCKED
 
-以下 9 个文件是 Plan stage 的必产物。即使 plan_status=BLOCKED 或 plan_status=INVALID_PLAN，也必须全部写出。缺少任何一个都将触发 artifact repair pass 或 early stop。
+The following 9 files are required outputs of the Plan stage. Even if plan_status=BLOCKED or plan_status=INVALID_PLAN, they must all be written. Missing any of them will trigger an artifact repair pass or early stop.
 
 1. `{{REPLAY_ROOT}}\PLAN_RESULT.md` — plan_status + selected strategy
 2. `{{REPLAY_ROOT}}\PLAN_RESULT.json` — machine-readable plan contract. Markdown is for humans; this JSON is the authority for unattended gates.
-3. `{{REPLAY_ROOT}}\PLAN_SELECTION.md` — 候选评分与选择理由
-4. `{{REPLAY_ROOT}}\REPLAY_PLAN.md` — slice 排序最终计划
-5. `{{REPLAY_ROOT}}\IMPLEMENTATION_CONTRACT.md` — Phase 1 执行合同
+3. `{{REPLAY_ROOT}}\PLAN_SELECTION.md` - Candidate scoring and selection rationale
+4. `{{REPLAY_ROOT}}\REPLAY_PLAN.md` - Final plan sorted by slice
+5. `{{REPLAY_ROOT}}\IMPLEMENTATION_CONTRACT.md` - Phase 1 execution contract
 6. `{{REPLAY_ROOT}}\EXPECTED_DIFF_MATRIX.md` — requirement → file → change type → validation → closure
 
-   **格式硬要求（v449）**：EXPECTED_DIFF_MATRIX 必须使用 Markdown 表格格式，且必须包含 "Closure" 或 "Closure Condition" 列头。验证器会搜索 "closure" 关键词，如果缺少该列头将触发 `expected_diff_missing:closure` 错误。表格格式示例：
+   **Format hard requirement (v449)**: EXPECTED_DIFF_MATRIX must use Markdown table format, and must include a "Closure" or "Closure Condition" column header. The verifier will search for the "closure" keyword; if the column header is missing, it will trigger `expected_diff_missing:closure` error. Example table format:
 
    ```markdown
    ## Slice 1: Contract Definition
@@ -558,14 +557,14 @@ pattern_evidence_source: <rg command + file path>
    | example-core/.../ExampleFlowService.java | NEW_STUB | 20 | 0 | signature_only | S1 |
    ```
 
-   - "Closure" 列必须说明该 diff 在哪个 slice 闭合（如 S1, S2, S3）或为何无法闭合（如 BLOCKED:reason）
-   - 禁止使用 "Status: TODO" 或其他占位格式，必须明确 slice 或 blocker
-   - 验证器会检查 "closure" 关键词存在性
+   - The "Closure" column must explain which slice closes the diff (e.g., S1, S2, S3) or why it cannot be closed (e.g., BLOCKED:reason)
+   - Forbidden to use "Status: TODO" or other placeholder formats, must specify slice or blocker
+   - The verifier will check for the existence of the "closure" keyword
 7. `{{REPLAY_ROOT}}\SIDE_EFFECT_LEDGER.md` — entry → side effect → state/task/transaction → proof
 8. `{{REPLAY_ROOT}}\TEST_CHARTER.md` — RED/GREEN order + real entry tests + DB/transaction
-9. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md` — first slice proof schema (见上方字段清单)
+9. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md` - first slice proof schema (see field list above)
 
-`PLAN_RESULT.json` 最低格式：
+`PLAN_RESULT.json` minimum format:
 
 ```json
 {
@@ -581,39 +580,39 @@ pattern_evidence_source: <rg command + file path>
 }
 ```
 
-当 `plan_status=PROCEED` 时，`target_carrier_file_path`、`target_carrier_line_number`、`expected_test_class`、`expected_test_method`、`side_effects` 必须非空；当 `plan_status=BLOCKED` 时必须写 `blocker`；当 `plan_status=INVALID_PLAN` 时必须写 `invalid_reason`。
+When `plan_status=PROCEED`, `target_carrier_file_path`, `target_carrier_line_number`, `expected_test_class`, `expected_test_method`, `side_effects` must be non-empty; when `plan_status=BLOCKED` must write `blocker`; when `plan_status=INVALID_PLAN` must write `invalid_reason`.
 
-如果 plan_status=BLOCKED，IMPLEMENTATION_CONTRACT 和 FIRST_SLICE_PROOF_PLAN 可以写简短 blocker 说明，但文件必须存在。
+If plan_status=BLOCKED, IMPLEMENTATION_CONTRACT and FIRST_SLICE_PROOF_PLAN can write a brief blocker explanation, but files must exist.
 
-开始执行 Phase 0.5。只写上述规划产物。
+Start executing Phase 0.5. Only write the above planning artifacts.
 
 ---
 
 【Pre-S1 Plan Check Integration (v348)】
 
-在完成 Phase 0.5 规划后，Phase 1 开始前，必须执行以下检查：
+After completing Phase 0.5 planning, before Phase 1 begins, the following checks must be performed:
 
 ### 1. Carrier Verification (v348)
 
-参考 `PRE_S1_PLAN_CHECK.md`:
-- 验证 selected_carrier 与 requirement keywords 的匹配度
-- 运行 `verify-carrier.ps1` 验证载体选择
-- 如果 WARN 且无正当理由，plan_status 必须改为 BLOCKED
+Refer to `PRE_S1_PLAN_CHECK.md`:
+- Verify matching degree of selected_carrier with requirement keywords
+- Run `verify-carrier.ps1` to verify carrier selection
+- If WARN without valid justification, plan_status must be changed to BLOCKED
 
 ### 2. Horizontal Slicing Verification (v348)
 
-参考 `TRACER_BULLET_GUIDANCE.md`:
-- S1 (tracer_bullet) 必须触摸至少 3 个 family
-- 运行 `verify-horizontal-slice.ps1` 验证水平切片覆盖
-- 如果 families_touched < 3，slice 不得进入 GREEN 阶段
+Refer to `TRACER_BULLET_GUIDANCE.md`:
+- S1 (tracer_bullet) must touch at least 3 families
+- Run `verify-horizontal-slice.ps1` to verify horizontal slice coverage
+- If families_touched < 3, slice must not enter GREEN phase
 
 ### 3. Behavioral Test Charter (v348)
 
-参考 `TEST_CHARTER_GUIDANCE.md`:
-- RED 测试必须包含业务断言，禁止 fail()/assertTrue(true)/TODO
-- 运行 `verify-test-charter.ps1` 验证测试质量
-- 如果包含 blocked_patterns，不得进入 GREEN 阶段
+Refer to `TEST_CHARTER_GUIDANCE.md`:
+- RED tests must contain business assertions, forbidden to use fail()/assertTrue(true)/TODO
+- Run `verify-test-charter.ps1` to verify test quality
+- If it contains blocked_patterns, must not enter GREEN phase
 
-这些检查确保规划产生的 carrier 选择、切片设计和测试契约符合 TDD 最佳实践。
+These checks ensure that carrier selection, slice design, and test contracts produced by planning conform to TDD best practices.
 
 ---

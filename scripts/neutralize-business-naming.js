@@ -22,6 +22,7 @@ const path = require('path');
 const repoRoot = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 const write = args.includes('--write');
+const forceTests = args.includes('--force-tests'); // re-process test files w/o skipRe (fix Stage 2b assertion drift)
 function norm(p) { return p.split(path.sep).join('/'); }
 
 // Ordered exact-string replacements (longest/most-specific first so we
@@ -127,8 +128,16 @@ const targets = [
   'replay-autopilot/scripts/Build-BaselineCarrierIndex.ps1',
 ];
 
-// Skip author-local / correctly-isolated / historical paths.
-const skipRe = /rdc-git|skill-rules\.company|SESSION_|EVOLUTION_V\d+_INTEGRATION|\/tests\/|Test-v\d|test-v\d/i;
+// Always skip (company-isolated / historical). Test files skipped only when !forceTests.
+const alwaysSkipRe = /rdc-git|skill-rules\.company|SESSION_|EVOLUTION_V\d+_INTEGRATION/i;
+const testSkipRe = /Test-v\d|test-v\d|\/tests\//i;
+
+// Test directories scanned only under --force-tests (fix Stage 2b drift).
+const testTargets = [
+  'replay-autopilot/scripts',
+  'replay-autopilot/tests',
+  'replay-autopilot/test',
+];
 
 function listFiles(p, out) {
   out = out || [];
@@ -142,11 +151,13 @@ function listFiles(p, out) {
 
 const files = [];
 for (const t of targets) listFiles(path.join(repoRoot, t), files);
+if (forceTests) for (const t of testTargets) listFiles(path.join(repoRoot, t), files);
 
 const changes = [];
 for (const full of files) {
   const rel = path.relative(repoRoot, full);
-  if (skipRe.test(rel)) continue;
+  if (alwaysSkipRe.test(rel)) continue;
+  if (!forceTests && testSkipRe.test(rel)) continue;
   const original = fs.readFileSync(full, 'utf8');
   let content = original;
   const fileEdits = [];

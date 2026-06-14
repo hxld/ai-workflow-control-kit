@@ -2,7 +2,7 @@
 # Regression test for v381: Carrier Existence Verification
 #
 # Tests that Verify-PlanContract.ps1 verifies selected carriers exist in codebase
-# This prevents synthetic carriers like AiAutoClaimFlowService from being selected
+# This prevents synthetic carriers like ExampleFlowService from being selected
 
 param(
     [switch]$ValidateOnly
@@ -69,7 +69,7 @@ $hasPatternExclusion = $verifierContent -match 'TBD|unknown|N/A|placeholder.*NON
 Assert-True $hasPatternExclusion "Verifier must exclude placeholder patterns from existence check"
 
 # Test 7: Verify the fix prevents the v380 bug pattern
-# The bug: AiAutoClaimFlowService was selected but didn't exist
+# The bug: ExampleFlowService was selected but didn't exist
 # The fix: rg should be called to verify the carrier exists
 $hasRgInvocation = $verifierContent -match 'rg\s+.*class.*\$rgCarrierPattern' -or
                    $verifierContent -match 'rg\s+.*--type\s+java'

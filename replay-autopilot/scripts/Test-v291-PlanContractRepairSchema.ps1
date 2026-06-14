@@ -53,18 +53,18 @@ $root = Join-Path $TestRoot 'justification-fixture'
 New-Item -ItemType Directory -Force -Path $root | Out-Null
 Write-Utf8 (Join-Path $root 'ORACLE_DIFF_ANALYSIS.json') (@{
     files = @(
-        @{ path = 'claim-core/src/main/java/com/acme/NewOrchestrationService.java'; is_production = $true; weight = 'HIGH' }
+        @{ path = 'example-core/src/main/java/com/acme/NewOrchestrationService.java'; is_production = $true; weight = 'HIGH' }
     )
 } | ConvertTo-Json -Depth 6)
 Write-Utf8 (Join-Path $root 'PLAN_RESULT.md') @'
 - plan_status: PROCEED
 - selected_strategy: core-first
 - first_slice: NewOrchestrationService
-- first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl claim-server -am -Dtest=NewOrchestrationServiceTest
+- first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
 - oracle_production_file_overlap: 100%
 - oracle_high_weight_coverage: 1/1
 - carrier_search: performed
-- carrier_search_queries: rg "ExistingFlow" claim-core; rg "Orchestration" claim-core; rg "process" claim-core
+- carrier_search_queries: rg "ExistingFlow" example-core; rg "Orchestration" example-core; rg "process" example-core
 - existing_production_carriers: ExistingFlowService; ExistingTaskService; ExistingProgressService
 - selected_carrier_from_search: NewOrchestrationService (new service in oracle)
 - new_service_proposed: true
@@ -82,7 +82,7 @@ Write-Utf8 (Join-Path $root 'TEST_CHARTER.md') 'RED GREEN'
 Write-Utf8 (Join-Path $root 'FIRST_SLICE_PROOF_PLAN.md') @'
 first_slice: S1
 highest_weight_open_gate: core_entry
-first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl claim-server -am -Dtest=NewOrchestrationServiceTest
+first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
 selected_real_entry: NewOrchestrationService.process
 public_entry_contract_coverage: not_public_entry_with_reason
 selected_carrier: NewOrchestrationService.process
@@ -91,7 +91,7 @@ real_carrier_kind: production_service
 minimum_side_effect_or_blocker: state write through existing services
 forbidden_substitute_check: passed
 required_sibling_surfaces: none_with_reason
-production_boundary: claim-core/src/main/java/com/acme/NewOrchestrationService.java
+production_boundary: example-core/src/main/java/com/acme/NewOrchestrationService.java
 expected_production_diff: NewOrchestrationService behavior
 red_expectation: assertion failure before implementation
 green_minimum_implementation: implement real service behavior
@@ -103,7 +103,7 @@ coverage_cap_if_missing: 0
 pattern_to_follow: ExistingFlowService.process
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "ExistingFlowService" claim-core
+pattern_evidence_source: rg "ExistingFlowService" example-core
 '@
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $root -Stage Plan | Out-Null
 $verify = Get-Content -LiteralPath (Join-Path $root 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json

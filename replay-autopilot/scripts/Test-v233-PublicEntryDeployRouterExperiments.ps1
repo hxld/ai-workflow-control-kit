@@ -18,20 +18,20 @@ $root = Join-Path $temp 'replay'
 $worktree = Join-Path $root 'worktree'
 New-Item -ItemType Directory -Force -Path $worktree | Out-Null
 & git -C $worktree init | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\demo') | Out-Null
-Set-Content -LiteralPath (Join-Path $worktree 'claim-core\src\main\java\demo\Service.java') -Encoding UTF8 -Value 'class Service {}'
+New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\demo') | Out-Null
+Set-Content -LiteralPath (Join-Path $worktree 'example-core\src\main\java\demo\Service.java') -Encoding UTF8 -Value 'class Service {}'
 
 try {
     Set-Content -LiteralPath (Join-Path $root 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8 -Value @'
 # First Slice Proof Plan
 
 highest_weight_open_gate: core_entry + stateful_side_effect
-first_red_test: claim-server/src/test/java/demo/ServiceTest#callback_writes_side_effect
+first_red_test: example-server/src/test/java/demo/ServiceTest#callback_writes_side_effect
 selected_real_entry: DemoFacade.returnTicket(Request) -> DemoService.returnTicket(Request)
-selected_carrier: claim-core/src/main/java/demo/DemoService.java#returnTicket
+selected_carrier: example-core/src/main/java/demo/DemoService.java#returnTicket
 target_subsurface_or_carrier: callback validation and service side effect
 required_sibling_surfaces: S2 deploy DemoController.getPage; S3 DemoController.submit
-production_boundary: claim-api/claim-core public facade and service boundary
+production_boundary: example-api/example-core public facade and service boundary
 proof_kind: real_entry_behavior + stateful_side_effect
 red_expectation: service test fails before production edit
 fail-closed condition: stop if public facade response is not covered
@@ -51,8 +51,8 @@ fail-closed condition: stop if public facade response is not covered
         forced_requirement_family = 'core_entry'
         authorization = 'ALLOW'
         real_entry = 'DemoFacade.returnTicket(Request) -> DemoService.returnTicket(Request)'
-        selected_carrier = 'claim-core/src/main/java/demo/DemoService.java#returnTicket'
-        production_boundary = 'claim-core/src/main/java/demo/DemoService.java#returnTicket'
+        selected_carrier = 'example-core/src/main/java/demo/DemoService.java#returnTicket'
+        production_boundary = 'example-core/src/main/java/demo/DemoService.java#returnTicket'
         downstream_side_effect_or_output = 'service side effect'
         red_expectation = 'business assertion should fail'
         requires_side_effect_evidence = $true
@@ -81,13 +81,13 @@ fail-closed condition: stop if public facade response is not covered
         coverage_delta = 20
         target_subsurface_or_carrier = 'DemoService.returnTicket'
         required_sibling_surfaces = @('core_entry: DemoController.getPage')
-        production_boundary = 'claim-core DemoService.returnTicket'
+        production_boundary = 'example-core DemoService.returnTicket'
         proof_kind = 'real_entry_behavior'
         real_carrier_kind = 'production_entry_or_service'
         forbidden_substitute_check = 'passed'
         red_expectation = 'service assertion fails'
-        implemented_files = @('claim-core/src/main/java/demo/DemoService.java')
-        current_slice_changed_files = @('claim-core/src/main/java/demo/DemoService.java')
+        implemented_files = @('example-core/src/main/java/demo/DemoService.java')
+        current_slice_changed_files = @('example-core/src/main/java/demo/DemoService.java')
         tests = @(
             [ordered]@{ command = 'mvn -Dtest=ServiceTest test'; phase = 'RED'; result = 'fail'; evidence = 'AssertionError service side effect' },
             [ordered]@{ command = 'mvn -Dtest=ServiceTest test'; phase = 'GREEN'; result = 'pass'; evidence = 'Tests run: 1' }

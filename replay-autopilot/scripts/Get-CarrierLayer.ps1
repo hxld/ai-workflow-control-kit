@@ -16,7 +16,7 @@
     Path to the worktree (optional, overrides BaselineRoot).
 
 .EXAMPLE
-    .\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "$env:AI_WORKFLOW_PROJECT_ROOT"
+    .\Get-CarrierLayer.ps1 -Carrier "ExampleApplyClaimApiTaskProcessor" -BaselineRoot "$env:AI_WORKFLOW_PROJECT_ROOT"
 
 .OUTPUTS
     System.Collections.Hashtable with layer, file, and reason fields.
@@ -94,9 +94,9 @@ if ([string]::IsNullOrWhiteSpace($matchingFile)) {
 }
 
 # Determine layer from file path
-$layer = if ($matchingFile -match "(\\|/)claim-api(\\|/)|Facade\b") {
+$layer = if ($matchingFile -match "(\\|/)example-api(\\|/)|Facade\b") {
     "Facade"
-} elseif ($matchingFile -match "(\\|/)claim-web(\\|/)|Controller\b") {
+} elseif ($matchingFile -match "(\\|/)example-web(\\|/)|Controller\b") {
     "Controller"
 } elseif ($matchingFile -match "(\\|/)provider(\\|/)|Mapper\b|Dao\b") {
     "Provider"

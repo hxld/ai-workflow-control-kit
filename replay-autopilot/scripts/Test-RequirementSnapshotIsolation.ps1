@@ -43,7 +43,7 @@ oracle_branch: master_xiebao_wcl
 oracle_commit: f7cbcb7b20b7c861d46f438773d713f2c2204d3f
 replay_root_base: $replayBase
 run_label: snapshot-isolation-test
-system_context_dir: D:\opt\claim\.doc\claim-system-context
+system_context_dir: D:\opt\claim\.doc\example-system-context
 "@
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File $startScript -ConfigPath $configPath -Round 1 -DryRun | Out-Null

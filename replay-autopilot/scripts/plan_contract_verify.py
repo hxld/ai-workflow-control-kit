@@ -157,7 +157,7 @@ def verify_carrier_exists(plan_result, codebase_root):
         }
 
     # Extract class name from carrier string
-    # Handle formats like "AiAutoClaimFlowService.handle" or just "AiAutoClaimFlowService"
+    # Handle formats like "ExampleFlowService.handle" or just "ExampleFlowService"
     class_name = carrier.split('(')[0].split('.').pop() if '(' in carrier else carrier.split('.').pop()
 
     # Search for carrier class in codebase
@@ -181,7 +181,7 @@ def verify_carrier_exists(plan_result, codebase_root):
     if '.' in carrier and '(' in carrier:
         method = carrier.split('(')[0].split('.')[-1]
     elif 'selected_entry' in plan_result:
-        entry = plan_result.get('selected_entry', 'handleAutoFlow')
+        entry = plan_result.get('selected_entry', 'handleFlow')
         method = entry.split('(')[0] if '(' in entry else entry
 
     method_signature = None
@@ -335,8 +335,8 @@ def verify_first_slice_proof_v457(first_slice_proof_path):
         fields_checked.extend(['highest_weight_open_gate', 'selected_carrier'])
 
         # v461: Extract actual carrier name (before first '(') to avoid false positives
-        # Example: "AiApplyClaimApiTaskProcessor (EXISTING -> calls NEW AiAutoClaimFlowService)"
-        # should extract "AiApplyClaimApiTaskProcessor" not match on "AiAutoClaimFlowService"
+        # Example: "ExampleApplyClaimApiTaskProcessor (EXISTING -> calls NEW ExampleFlowService)"
+        # should extract "ExampleApplyClaimApiTaskProcessor" not match on "ExampleFlowService"
         actual_carrier = selected_carrier.split('(')[0].strip()
 
         # For core_entry family, carrier must be Facade/Controller, not Service

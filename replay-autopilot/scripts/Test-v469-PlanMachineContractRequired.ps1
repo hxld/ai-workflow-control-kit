@@ -41,7 +41,7 @@ try {
     New-Item -ItemType Directory -Force -Path $goodProceedRoot | Out-Null
     Write-Json (Join-Path $goodProceedRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'

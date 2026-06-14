@@ -28,7 +28,7 @@ CATEGORY_RULES = {
         'Service.java', 'ServiceImpl.java',
         'Facade.java', 'FacadeImpl.java',
         'Processor.java', 'Handler.java',
-        '/src/main/java/', 'claim-core/', 'claim-api/'
+        '/src/main/java/', 'example-core/', 'example-api/'
     ],
     'Database': [
         'Mapper.java', 'Mapper.xml', 'Dao.java', 'DaoImpl.java',

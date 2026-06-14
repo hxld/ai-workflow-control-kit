@@ -89,7 +89,7 @@ function Get-PlanNewServiceWhitelist {
     carrier rank checks during creation. Format:
 
     ## NEW_SERVICE_WHITELIST
-    - AiAutoClaimFlowService
+    - ExampleFlowService
     - AiNewServiceProcessor
 
     Returns array of service name strings.
@@ -206,7 +206,7 @@ function Add-CorrectionSuggestion {
 
     # Fallback: common Facade patterns for claim domain
     if ($suggestedCarriers.Count -eq 0) {
-        $suggestedCarriers = @('AiClaimFacade', 'ClaimCalculationFacade', 'AiApplyClaimFacade')
+        $suggestedCarriers = @('ExampleFacade', 'ClaimCalculationFacade', 'ExampleApplyClaimFacade')
     }
 
     # Remove duplicates and limit to top 3
@@ -458,8 +458,8 @@ $validExactRows = @($exactRows | Where-Object {
 $sourceChainRequired = $null -ne $sourceChain -and [bool]$sourceChain.required_source_chain
 $sourceChainCarrier = if ($sourceChainRequired -and $null -ne $sourceChain.next_required_slice) { [string]$sourceChain.next_required_slice.carrier } else { '' }
 $matchesSourceChain = -not $sourceChainRequired -or (
-    [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
-    [string]$entryCall -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
+    [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|ExampleDataAssemblyHelper|source' -or
+    [string]$entryCall -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|ExampleDataAssemblyHelper|source' -or
     [string]$sourceChainCarrier -eq '' -or
     [string]$ForcedSiblingSurface -eq $sourceChainCarrier
 )
@@ -473,7 +473,7 @@ $carrierTextForPlanLock = @(
 ) -join "`n"
 $unrequiredSourceChainCarrier = (
     -not $sourceChainRequired -and
-    $carrierTextForPlanLock -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    $carrierTextForPlanLock -match '(?i)\b(ExampleDataAssemblyHelper|ExampleApplyClaimService|ExampleCalculatorService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
 )
 if ($unrequiredSourceChainCarrier) {
     $issues.Add('blocked_plan_mismatch:unrequired_source_chain_carrier') | Out-Null

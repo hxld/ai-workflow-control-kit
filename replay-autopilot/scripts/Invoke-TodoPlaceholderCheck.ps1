@@ -6,7 +6,7 @@
 Checks for TODO/FIXME/XXX placeholders in production code.
 
 .DESCRIPTION
-Scans claim-core, claim-api, claim-web source directories for TODO placeholders.
+Scans example-core, example-api, example-web source directories for TODO placeholders.
 Throws if any TODO placeholders found, forcing executable behavior instead of placeholders.
 
 .PARAMETER Worktree
@@ -31,7 +31,7 @@ if ($ValidateOnly) {
         Script = $PSCommandPath
         Checks = @(
             'TODO placeholder check for production code',
-            'Bans TODO/FIXME/XXX in claim-core, claim-api, claim-web',
+            'Bans TODO/FIXME/XXX in example-core, example-api, example-web',
             'Allows TODO in test files'
         )
     } | Format-List
@@ -46,9 +46,9 @@ if ([string]::IsNullOrWhiteSpace($Worktree) -or -not (Test-Path -LiteralPath $Wo
 $resultPath = Join-Path $Worktree 'TODO_CHECK_RESULT.json'
 
 $forbiddenPaths = @(
-    "claim-core/src/main/java",
-    "claim-api/src/main/java",
-    "claim-web/src/main/java"
+    "example-core/src/main/java",
+    "example-api/src/main/java",
+    "example-web/src/main/java"
 )
 
 $result = [ordered]@{

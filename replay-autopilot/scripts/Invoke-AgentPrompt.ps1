@@ -27,19 +27,19 @@ function Test-CarrierLayer {
     Validates that a carrier path is in an executable architectural layer.
 
     .DESCRIPTION
-    Checks if the carrier is in claim-api (Facade), claim-web (Controller),
-    or claim-core/facade (Facade implementation). Returns $false for
-    Service layer (claim-core without /facade/) and other internal layers.
+    Checks if the carrier is in example-api (Facade), example-web (Controller),
+    or example-core/facade (Facade implementation). Returns $false for
+    Service layer (example-core without /facade/) and other internal layers.
 
     .PARAMETER CarrierPath
     The file path to the carrier class.
 
     .EXAMPLE
-    Test-CarrierLayer "claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java"
+    Test-CarrierLayer "example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java"
     Returns $false (Service layer)
 
     .EXAMPLE
-    Test-CarrierLayer "claim-api/src/main/java/com/huize/claim/api/facade/AiClaimFacade.java"
+    Test-CarrierLayer "example-api/src/main/java/com/example/project/api/facade/ExampleFacade.java"
     Returns $true (Facade layer)
     #>
     param(
@@ -50,18 +50,18 @@ function Test-CarrierLayer {
     # Normalize path
     $CarrierPath = $CarrierPath -replace '\\', '/'
 
-    # Check for Facade layer (claim-api)
-    if ($CarrierPath -match 'claim-api/.*Facade\.java') {
+    # Check for Facade layer (example-api)
+    if ($CarrierPath -match 'example-api/.*Facade\.java') {
         return $true
     }
 
-    # Check for Controller layer (claim-web)
-    if ($CarrierPath -match 'claim-web/.*Controller\.java') {
+    # Check for Controller layer (example-web)
+    if ($CarrierPath -match 'example-web/.*Controller\.java') {
         return $true
     }
 
-    # Check for Facade implementation in claim-core
-    if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
+    # Check for Facade implementation in example-core
+    if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
         return $true
     }
 
@@ -142,9 +142,9 @@ function Test-TodoPlaceholder {
         [string]$WorkDir,
 
         [string[]]$ForbiddenPaths = @(
-            "claim-core/src/main/java",
-            "claim-api/src/main/java",
-            "claim-web/src/main/java"
+            "example-core/src/main/java",
+            "example-api/src/main/java",
+            "example-web/src/main/java"
         )
     )
 

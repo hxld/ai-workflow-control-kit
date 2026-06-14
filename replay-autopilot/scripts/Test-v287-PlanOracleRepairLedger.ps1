@@ -34,11 +34,11 @@ function New-PlanReplayRoot {
 
     $oracle = [ordered]@{
         files = @(
-            [ordered]@{ path = 'claim-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' },
-            [ordered]@{ path = 'claim-core/src/main/java/com/acme/StatefulSideEffectService.java'; is_production = $true; weight = 'HIGH' },
-            [ordered]@{ path = 'claim-web/src/main/java/com/acme/ExportController.java'; is_production = $true; weight = 'MEDIUM' },
-            [ordered]@{ path = 'claim-provider/src/main/java/com/acme/ExactContractMapper.java'; is_production = $true; weight = 'MEDIUM' },
-            [ordered]@{ path = 'claim-domain/src/main/java/com/acme/ExactContractDto.java'; is_production = $true; weight = 'LOW' }
+            [ordered]@{ path = 'example-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' },
+            [ordered]@{ path = 'example-core/src/main/java/com/acme/StatefulSideEffectService.java'; is_production = $true; weight = 'HIGH' },
+            [ordered]@{ path = 'example-web/src/main/java/com/acme/ExportController.java'; is_production = $true; weight = 'MEDIUM' },
+            [ordered]@{ path = 'example-provider/src/main/java/com/acme/ExactContractMapper.java'; is_production = $true; weight = 'MEDIUM' },
+            [ordered]@{ path = 'example-domain/src/main/java/com/acme/ExactContractDto.java'; is_production = $true; weight = 'LOW' }
         )
     } | ConvertTo-Json -Depth 6
     Write-Utf8 (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') $oracle
@@ -48,7 +48,7 @@ function New-PlanReplayRoot {
         $ledger = @'
 
 ## Oracle Coverage Repair Ledger
-oracle_missing_high_weight_files: claim-core/src/main/java/com/acme/StatefulSideEffectService.java
+oracle_missing_high_weight_files: example-core/src/main/java/com/acme/StatefulSideEffectService.java
 oracle_expansion_plan: StatefulSideEffectService.java -> ExistingCoreFlowService.process -> slice-02/AiFlowStatefulSideEffectTest
 oracle_out_of_scope_files: none
 '@
@@ -58,11 +58,11 @@ oracle_out_of_scope_files: none
 plan_status: PROCEED
 selected_strategy: core-stateful-first
 implementation_model_recommendation: gpt-5.3-codex
-required_files: claim-core/src/main/java/com/acme/CoreFlowService.java
+required_files: example-core/src/main/java/com/acme/CoreFlowService.java
 oracle_production_file_overlap: 25%
 oracle_high_weight_coverage: 1/2
 carrier_search: performed
-carrier_search_queries: rg "CoreFlowService" claim-core; rg "process" claim-core; rg "ExistingCoreFlowService" claim-core
+carrier_search_queries: rg "CoreFlowService" example-core; rg "process" example-core; rg "ExistingCoreFlowService" example-core
 existing_production_carriers: ExistingCoreFlowService.process
 selected_carrier_from_search: ExistingCoreFlowService.process
 new_service_proposed: false
@@ -93,7 +93,7 @@ GREEN cannot claim core DONE from helper/static-only proof. Forbidden Substitute
 highest_weight_open_gate: core_path
 selected_carrier: ExistingCoreFlowService.process
 target_subsurface_or_carrier: ExistingCoreFlowService.process
-production_boundary: claim-core production service
+production_boundary: example-core production service
 proof_kind: real_entry_behavior_test
 real_carrier_kind: service
 first_red_test: ExistingCoreFlowServiceTest.shouldCloseCoreFlow

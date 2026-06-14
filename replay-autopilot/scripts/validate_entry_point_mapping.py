@@ -6,7 +6,7 @@ v418: Validates that selected carrier maps to requirement workflow.
 v419: Calls phase0_requirement_traceability_bind.py to create carrier bindings BEFORE planning.
 
 Prevents the anti-pattern where agents target wrong processors
-(e.g., AiCalculateLossApiTaskProcessor instead of AiApplyClaimApiTaskProcessor).
+(e.g., ExampleCalculatorApiTaskProcessor instead of ExampleApplyClaimApiTaskProcessor).
 """
 
 import json
@@ -80,8 +80,8 @@ def extract_processor_name(carrier_name: str) -> Optional[str]:
     Extract the processor/class name from a carrier string.
 
     Handles formats like:
-    - "AiApplyClaimApiTaskProcessor.handleTaskResponse"
-    - "AiCalculateLossApiTaskProcessor (verified in worktree)"
+    - "ExampleApplyClaimApiTaskProcessor.handleTaskResponse"
+    - "ExampleCalculatorApiTaskProcessor (verified in worktree)"
     - "SomeClass.methodName"
     """
     # Extract first part before parenthesis or dot

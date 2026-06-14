@@ -16,7 +16,7 @@ if ($placeholderLine -match [regex]::Escape('TBD|unknown|N/A|placeholder')) {
 
 $placeholderPattern = '(?i)(\bTBD\b|\bunknown\b|\bN\s*/\s*A\b|\bplaceholder\b)'
 
-$entryWithPath = 'TAiClaimModuleConfig (baseline-existing entity at claim-domain/src/main/java/com/huize/claim/domain/ai/TAiClaimModuleConfig.java)'
+$entryWithPath = 'TExampleModuleConfig (baseline-existing entity at example-domain/src/main/java/com/example/project/domain/ai/TExampleModuleConfig.java)'
 if ($entryWithPath -match $placeholderPattern) {
     throw 'selected_real_entry path containing domain/ai must not be classified as N/A placeholder.'
 }

@@ -661,11 +661,11 @@ if ($null -ne $sourceChainContract -and [bool]$sourceChainContract.required_sour
         }).Count -gt 0
     })
     $syntheticSourceCarrier = (
-        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|java\.lang\.reflect\.Field|new\s+AiApplyClaimTaskData|new\s+AiCalculateLossTaskData|hand[- ]?built|manual(?:ly)?\s+injected' -or
+        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|java\.lang\.reflect\.Field|new\s+ExampleApplyClaimTaskData|new\s+ExampleCalculatorTaskData|hand[- ]?built|manual(?:ly)?\s+injected' -or
         $resultEvidenceText -match '(?i)hand[- ]?built task data|manually injected|when values already exist on task data|terminal payload'
     )
     $terminalOnly = $sourceChainTouched.Count -eq 0 -and (
-        $implementedFiles -match 'AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor|AiClaimBaseTaskData|AIClaimConstant'
+        $implementedFiles -match 'ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor|ExampleBaseTaskData|ExampleClaimConstant'
     )
     if ($syntheticSourceCarrier -or $terminalOnly) {
         $carrierOrigin = 'synthetic_carrier'
@@ -1454,7 +1454,7 @@ $currentCarrierText = @(
 $sourceChainRequiredForPlanLock = $null -ne $sourceChainContract -and [bool]$sourceChainContract.required_source_chain
 $unrequiredSourceChainCarrier = (
     -not $sourceChainRequiredForPlanLock -and
-    $currentCarrierText -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    $currentCarrierText -match '(?i)\b(ExampleDataAssemblyHelper|ExampleApplyClaimService|ExampleCalculatorService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
 )
 if ($unrequiredSourceChainCarrier) {
     $carrierFamilyMatch = $false

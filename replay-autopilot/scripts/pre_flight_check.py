@@ -37,10 +37,10 @@ def run_command(cmd: List[str], workdir: str, timeout: int = 300) -> Dict:
 
 
 def check_test_compilation(worktree: str, maven_settings: str, root_pom: str) -> Dict:
-    """Check whether the existing claim-server test harness compiles."""
+    """Check whether the existing example-server test harness compiles."""
     cmd = [
         "mvn", "-s", maven_settings, "-f", root_pom,
-        "test-compile", "-pl", "claim-server", "-am", "-q", "-DskipTests"
+        "test-compile", "-pl", "example-server", "-am", "-q", "-DskipTests"
     ]
     result = run_command(cmd, worktree)
     return {
@@ -53,10 +53,10 @@ def check_test_compilation(worktree: str, maven_settings: str, root_pom: str) ->
 def check_test_harness_dependencies(worktree: str, maven_settings: str, root_pom: str) -> Dict:
     """Check that the allowed test harness module has test dependencies.
 
-    claim-core intentionally lacks JUnit/Mockito/Spring Test in this project.
+    example-core intentionally lacks JUnit/Mockito/Spring Test in this project.
     That must not be treated as an instruction to modify any pom.xml.
     """
-    cmd = ["mvn", "-s", maven_settings, "-f", root_pom, "dependency:tree", "-pl", "claim-server"]
+    cmd = ["mvn", "-s", maven_settings, "-f", root_pom, "dependency:tree", "-pl", "example-server"]
     result = run_command(cmd, worktree)
     output = (result.get("stdout", "") + result.get("stderr", "")).lower()
     has_test_harness = "junit" in output and "mockito" in output
@@ -64,16 +64,16 @@ def check_test_harness_dependencies(worktree: str, maven_settings: str, root_pom
         "check": "test_harness_dependency",
         "result": "success" if has_test_harness else "failed",
         "details": (
-            "claim-server test harness has JUnit/Mockito dependencies"
+            "example-server test harness has JUnit/Mockito dependencies"
             if has_test_harness
-            else "claim-server test harness dependency check failed; do not add test dependencies to claim-core"
+            else "example-server test harness dependency check failed; do not add test dependencies to example-core"
         )
     }
 
 
 def check_existing_test_errors(worktree: str, maven_settings: str, root_pom: str) -> Dict:
     """Check for existing test compilation or execution errors."""
-    cmd = ["mvn", "-s", maven_settings, "-f", root_pom, "test-compile", "-pl", "claim-server", "-am", "-q", "-DskipTests"]
+    cmd = ["mvn", "-s", maven_settings, "-f", root_pom, "test-compile", "-pl", "example-server", "-am", "-q", "-DskipTests"]
     result = run_command(cmd, worktree, timeout=180)
     combined_output = result.get("stdout", "") + result.get("stderr", "")
     has_errors = "error:" in combined_output.lower() or "compilation failure" in combined_output.lower() or "BUILD FAILURE" in combined_output

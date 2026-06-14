@@ -38,9 +38,9 @@ def search_codebase(worktree: str, search_terms: List[str], file_pattern: str = 
 
     # Search directories for service/facade classes
     search_paths = [
-        f"{worktree}/claim-core/src/main/java",
-        f"{worktree}/claim-api/src/main/java",
-        f"{worktree}/claim-server/src/main/java"
+        f"{worktree}/example-core/src/main/java",
+        f"{worktree}/example-api/src/main/java",
+        f"{worktree}/example-server/src/main/java"
     ]
 
     for term in search_terms:

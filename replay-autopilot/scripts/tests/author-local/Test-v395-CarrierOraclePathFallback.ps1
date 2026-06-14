@@ -34,7 +34,7 @@ function New-MinimalOracleDiff {
         total_deletions = 0
         files = @(
             @{
-                path = "claim-core/src/main/java/com/huize/claim/core/ai/service/$CarrierName.java"
+                path = "example-core/src/main/java/com/example/project/core/ai/service/$CarrierName.java"
                 layer = 'Service'
                 weight = 'HIGH'
                 is_test = $false
@@ -97,10 +97,10 @@ function Invoke-CarrierOracleCheck {
     if ($UseEnvProjectRoot) {
         $originalEnv = $env:PROJECT_ROOT
         $projectRoot = Join-Path $testDir 'project-root'
-        $projectSourceDir = Join-Path $projectRoot 'claim-core\src\main\java\com\huize\claim\core\ai\service'
+        $projectSourceDir = Join-Path $projectRoot 'example-core\src\main\java\com\example\project\core\ai\service'
         New-Item -ItemType Directory -Force -Path $projectSourceDir | Out-Null
         Set-Content -LiteralPath (Join-Path $projectSourceDir "$CarrierName.java") -Value @"
-package com.huize.claim.core.ai.service;
+package com.example.project.core.ai.service;
 
 public class $CarrierName {
 }
@@ -157,7 +157,7 @@ Write-Host ""
 # Test 1: Carrier in ORACLE_DIFF_ANALYSIS.json => PASS
 Write-Host 'Test 1: Carrier in ORACLE_DIFF_ANALYSIS.json => PASS'
 $testCount++
-$result1 = Invoke-CarrierOracleCheck -TestRoot 'test1-oracle-diff' -CarrierName 'AiAutoClaimFlowService' -CreateOracleDiff $true
+$result1 = Invoke-CarrierOracleCheck -TestRoot 'test1-oracle-diff' -CarrierName 'ExampleFlowService' -CreateOracleDiff $true
 $hasNotFoundError = $result1.Issues -contains 'carrier_search_selected_carrier_not_found_in_codebase'
 $hasOracleWarning = $result1.Warnings | Where-Object { $_ -like '*ORACLE_DIFF_ANALYSIS.json*' }
 if (-not $hasNotFoundError -and $hasOracleWarning) {
@@ -184,7 +184,7 @@ if ($hasNotFoundError2) {
 # Test 3: Carrier not in oracle, but in project root (via env var) => PASS
 Write-Host 'Test 3: Carrier not in oracle, but in project root (via PROJECT_ROOT env var) => PASS'
 $testCount++
-$result3 = Invoke-CarrierOracleCheck -TestRoot 'test3-project-root-fallback' -CarrierName 'AiAutoClaimFlowService' -CreateOracleDiff $false -UseEnvProjectRoot $true
+$result3 = Invoke-CarrierOracleCheck -TestRoot 'test3-project-root-fallback' -CarrierName 'ExampleFlowService' -CreateOracleDiff $false -UseEnvProjectRoot $true
 $hasNotFoundError3 = $result3.Issues -contains 'carrier_search_selected_carrier_not_found_in_codebase'
 $hasProjectRootWarning = $result3.Warnings | Where-Object { $_ -like '*project root*' }
 if (-not $hasNotFoundError3 -and $hasProjectRootWarning) {

@@ -99,9 +99,9 @@ $decision = Get-ForcedFamilyDecision -Ledger (New-Ledger -Families $baseFamilies
 Assert-Equals -Name 'S2 forces stateful side effects' -Actual $decision.family_id -Expected 'stateful_side_effect'
 
 $rankedCarrierFamilies = @(
-    (New-Family -Id 'core_entry' -Weight 100 -Touched 1 -Type 'tracer_bullet' -Status 'PARTIAL' -OpenSiblingSurfaces @('claim-core/src/main/java/com/example/OpenFacade.java#report', 'claim-core/src/main/java/com/example/NotifyEvent.java#pushPayload')),
-    (New-Family -Id 'stateful_side_effect' -Weight 95 -Touched 0 -Type 'stateful_success_slice' -Status 'OPEN' -Carrier 'claim-core/src/main/java/com/example/StatusService.java#dispose'),
-    (New-Family -Id 'deploy_export_page' -Weight 90 -Touched 0 -Type 'deploy_surface_first_slice' -Status 'OPEN' -Carrier 'claim-core/src/main/java/com/example/NotifyEvent.java#pushPayload' -ProofRequired @('payload contains exact wire field'))
+    (New-Family -Id 'core_entry' -Weight 100 -Touched 1 -Type 'tracer_bullet' -Status 'PARTIAL' -OpenSiblingSurfaces @('example-core/src/main/java/com/example/OpenFacade.java#report', 'example-core/src/main/java/com/example/NotifyEvent.java#pushPayload')),
+    (New-Family -Id 'stateful_side_effect' -Weight 95 -Touched 0 -Type 'stateful_success_slice' -Status 'OPEN' -Carrier 'example-core/src/main/java/com/example/StatusService.java#dispose'),
+    (New-Family -Id 'deploy_export_page' -Weight 90 -Touched 0 -Type 'deploy_surface_first_slice' -Status 'OPEN' -Carrier 'example-core/src/main/java/com/example/NotifyEvent.java#pushPayload' -ProofRequired @('payload contains exact wire field'))
 )
 $rankMap = New-CarrierRankMap -Ledger (New-Ledger -Families $rankedCarrierFamilies) -SliceIndex 2
 $decision = Get-ForcedFamilyDecision -Ledger (New-Ledger -Families $rankedCarrierFamilies) -SliceIndex 2 -CarrierRank $rankMap

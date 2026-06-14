@@ -376,9 +376,9 @@ $testFilePath = $null
 
 # Search in standard test locations
 $searchPaths = @(
-    (Join-Path $Worktree "claim-server\src\test\java\com\huize\claim\core\ai\service"),
-    (Join-Path $Worktree "claim-server\src\test\java\com\huize\claim\core\service"),
-    (Join-Path $Worktree "claim-server\src\test\java")
+    (Join-Path $Worktree "example-server\src\test\java\com\example\project\core\ai\service"),
+    (Join-Path $Worktree "example-server\src\test\java\com\example\project\core\service"),
+    (Join-Path $Worktree "example-server\src\test\java")
 )
 
 foreach ($path in $searchPaths) {
@@ -403,7 +403,7 @@ $preflightArgs = @(
     '-s', $MavenSettings,
     '-f', (Join-Path $Worktree 'pom.xml'),
     'clean', 'install',
-    '-pl', 'claim-domain,claim-api,claim-common',
+    '-pl', 'example-domain,example-api,example-common',
     '-DskipTests',
     '-q'
 )
@@ -437,7 +437,7 @@ $redArgs = @(
     '-s', $MavenSettings,
     '-f', (Join-Path $Worktree 'pom.xml'),
     'test',
-    '-pl', 'claim-server',
+    '-pl', 'example-server',
     '-am',
     "-Dtest=$TestClass",
     '-Dsurefire.failIfNoSpecifiedTests=false'

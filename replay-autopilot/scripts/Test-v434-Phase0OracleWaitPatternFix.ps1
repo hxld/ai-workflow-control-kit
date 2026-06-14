@@ -30,11 +30,11 @@ function Assert-True {
 $legitimateNextSteps = @'
 ## Immediate Next Steps
 
-1. **Implement S1**: TAiClaimModuleConfig.freeReviewAmount
+1. **Implement S1**: TExampleModuleConfig.freeReviewAmount
    - Add field to entity
    - Update mapper XML
 
-2. **Implement S2**: AiAutoClaimFlowService (NEW oracle service)
+2. **Implement S2**: ExampleFlowService (NEW oracle service)
    - Create service class (not in baseline)
    - Derive method signature from requirement
 

@@ -52,7 +52,7 @@ Describe "v317-StopAndEvolve-Tooling" {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.huize.claim.test;
+package com.example.project.test;
 
 import org.junit.Test;
 import org.junit.Assert;
@@ -96,7 +96,7 @@ public class BehavioralTest {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.huize.claim.test;
+package com.example.project.test;
 
 import org.junit.Test;
 
@@ -104,13 +104,13 @@ public class StructuralTest {
     @Test
     public void testClassExists() {
         // This only tests structure, not behavior
-        AiAutoClaimFlowService service = new AiAutoClaimFlowService();
+        ExampleFlowService service = new ExampleFlowService();
         Assert.assertNotNull(service);
     }
 
     @Test(expected = ClassNotFoundException.class)
     public void testMethodMissing() throws ClassNotFoundException {
-        Class.forName("com.huize.claim.NonExistentClass");
+        Class.forName("com.example.project.NonExistentClass");
     }
 }
 "@
@@ -153,7 +153,7 @@ public class StructuralTest {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.huize.claim.test;
+package com.example.project.test;
 
 import org.junit.Test;
 

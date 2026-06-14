@@ -1467,7 +1467,7 @@ function Test-ExplicitRequirementFamilyScope {
             return $combined -match '(?i)(模板|图片|png|pdf|附件|上传|生成文件|影像|template|image|upload|artifact|attachment)'
         }
         'external_integration' {
-            return $combined -match '(?i)(外部|对接|保司接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
+            return $combined -match '(?i)(外部|对接|外部接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
         }
         'lifecycle_cleanup_retention' {
             if ($combined -match '(?i)(清理|删除|移除|过期|保留|留存|expire|cleanup|delete|remove|retention|duplicate|idempotent|same-status|same status|re-entry)') { return $true }

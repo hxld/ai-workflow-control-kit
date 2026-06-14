@@ -34,8 +34,8 @@ def infer_package_from_source(source_path: str, worktree_path: str) -> Optional[
     rel_path = source_path.replace(worktree_path, '').lstrip(os.sep)
 
     # Extract package from path
-    # Pattern: src/main/java/com/huize/claim/service/MyService.java
-    #          -> com.huize.claim.service
+    # Pattern: src/main/java/com/example/project/service/MyService.java
+    #          -> com.example.project.service
 
     if 'src/main/java' in rel_path:
         parts = rel_path.split('src/main/java')[1].lstrip(os.sep)
@@ -130,7 +130,7 @@ def infer_test_path(carrier_class: str, worktree_path: str) -> str:
         return test_path, package
     else:
         # Fallback: construct from class name
-        # com.huize.claim.service.MyService -> src/test/java/com/huize/claim/service/MyServiceTest.java
+        # com.example.project.service.MyService -> src/test/java/com/example/project/service/MyServiceTest.java
         package_parts = carrier_class.split('.')
         class_name = package_parts[-1]
         package = '.'.join(package_parts[:-1]) if len(package_parts) > 1 else ''
@@ -219,7 +219,7 @@ def ensure_test_file_exists(carrier_class: str, carrier_method: str, worktree_pa
     Generate skeleton if missing.
 
     Args:
-        carrier_class: Fully qualified class name (e.g., com.huize.claim.service.MyService)
+        carrier_class: Fully qualified class name (e.g., com.example.project.service.MyService)
         carrier_method: Method name to test (e.g., processAutoFlow)
         worktree_path: Path to worktree
 
@@ -326,7 +326,7 @@ def main():
         print("  generate <carrier_class> <carrier_method> <worktree_path>", file=sys.stderr)
         print("  verify <test_file_path>", file=sys.stderr)
         print("\nExamples:", file=sys.stderr)
-        print("  ensure_test_file_exists.py generate com.huize.claim.service.MyService processAutoFlow D:\\opt\\claim", file=sys.stderr)
+        print("  ensure_test_file_exists.py generate com.example.project.service.MyService processAutoFlow D:\\opt\\claim", file=sys.stderr)
         print("  ensure_test_file_exists.py verify D:\\opt\\claim\\src\\test\\java\\com\\huize\\claim\\service\\MyServiceTest.java", file=sys.stderr)
         sys.exit(1)
 

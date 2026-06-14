@@ -115,7 +115,7 @@ $evidenceRootFull = Resolve-AbsolutePath $EvidenceRoot
 $preferredFeatures = @('xmlpSlowFix', 'policy-num-extension', 'skip-task-transform-case', 'xiebao')
 $candidates = New-Object System.Collections.Generic.List[object]
 foreach ($dir in @(Get-ChildItem -LiteralPath $docRoot -Directory)) {
-    if ($dir.Name -in @('aiClaimV2', 'claim-system-context', 'automation', 'template', '_template')) { continue }
+    if ($dir.Name -in @('example-feature', 'example-system-context', 'automation', 'template', '_template')) { continue }
     $requirementPath = Join-Path $dir.FullName 'requirements.md'
     if (-not (Test-Path -LiteralPath $requirementPath)) { continue }
     $binding = Read-RepoBinding -RequirementPath $requirementPath

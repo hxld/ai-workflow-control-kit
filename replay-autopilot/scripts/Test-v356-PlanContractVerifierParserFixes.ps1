@@ -12,7 +12,7 @@
 #>
 
 param(
-    [string]$ReplayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\aiClaimV2\claim-codex-replay-v355-autopilot-20260517-r01"
+    [string]$ReplayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\example-feature\claim-codex-replay-v355-autopilot-20260517-r01"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,8 +30,8 @@ new_service_created: true
 new_service_justification: orphan_feature
 selected_carrier_from_search: NONE_FOUND
 carrier_search_status: COMPLETED
-carrier_search_queries: rg "CarrierSearchFacade" claim-core
-existing_production_carriers: AiClaimDataFacade
+carrier_search_queries: rg "CarrierSearchFacade" example-core
+existing_production_carriers: ExampleDataFacade
 '@
 
 $testPlanPath = Join-Path $env:TEMP "v356-test-plan-result.md"

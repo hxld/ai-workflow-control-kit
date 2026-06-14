@@ -1002,7 +1002,7 @@ $syntheticCarrierCase = New-SliceResultObject `
     -TouchedFamilies @('stateful_side_effect') `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 10
-$syntheticCarrierCase.implemented_files = @('claim-core/src/main/java/example/AutoFlowNoop.java', 'claim-server/src/test/java/example/AutoFlowNoopTest.java')
+$syntheticCarrierCase.implemented_files = @('example-core/src/main/java/example/AutoFlowNoop.java', 'example-server/src/test/java/example/AutoFlowNoopTest.java')
 $syntheticCarrierCase.target_subsurface_or_carrier = 'AutoFlowNoop.orchestrate'
 $syntheticCarrierCase.production_boundary = 'real entry -> AutoFlowNoop substitute carrier'
 $syntheticCarrierCase.closed_assertions = @('asserted transaction rollback, commit order, task update, state transition, and progress log')
@@ -1058,10 +1058,10 @@ Invoke-VerifierCase `
     -ExpectedAuthorizedNextSlice $true `
     -ExpectedAuthorizedSynthesis $true
 
-$newStatefulDir = Join-Path $script:worktree 'claim-core\src\main\java\com\example\ai'
+$newStatefulDir = Join-Path $script:worktree 'example-core\src\main\java\com\example\ai'
 New-Item -ItemType Directory -Force -Path $newStatefulDir | Out-Null
-Set-Content -LiteralPath (Join-Path $newStatefulDir 'AiAutoClaimFlowService.java') -Encoding UTF8 -Value @"
-class AiAutoClaimFlowService {
+Set-Content -LiteralPath (Join-Path $newStatefulDir 'ExampleFlowService.java') -Encoding UTF8 -Value @"
+class ExampleFlowService {
     private CompensateInfoMapper compensateInfoMapper;
     private CompensateDetailMapper compensateDetailMapper;
     private CaseFlowStatusService caseFlowStatusService;
@@ -1090,10 +1090,10 @@ $statefulNewDomainCarrierCase = New-SliceResultObject `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 12
 $statefulNewDomainCarrierCase.implemented_files = @(
-    'claim-core/src/main/java/com/example/ai/AiAutoClaimFlowService.java',
-    'claim-server/src/test/java/com/example/ai/AiAutoClaimFlowServiceTest.java'
+    'example-core/src/main/java/com/example/ai/ExampleFlowService.java',
+    'example-server/src/test/java/com/example/ai/ExampleFlowServiceTest.java'
 )
-$statefulNewDomainCarrierCase.production_boundary = 'real entry -> AiAutoClaimFlowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
+$statefulNewDomainCarrierCase.production_boundary = 'real entry -> ExampleFlowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
 $statefulNewDomainCarrierCase.closed_assertions = @(
     'writes compensate info/detail mapper rows',
     'updates status 35',
@@ -1104,7 +1104,7 @@ $statefulNewDomainCarrierCase.closed_assertions = @(
 )
 $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
     status = 'CLOSED'
-    entry_call = 'AiAutoClaimFlowService#handle'
+    entry_call = 'ExampleFlowService#handle'
     expected_writes_or_outputs = @(
         'valid path writes t_compensate_info and t_compensate_detail',
         'valid path updates status 35 and inserts case progress',
@@ -1112,7 +1112,7 @@ $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
         'failure paths write only AI log'
     )
     must_not_writes = @('no case progress on precondition failure')
-    test_name = 'AiAutoClaimFlowServiceTest'
+    test_name = 'ExampleFlowServiceTest'
     red_result = 'BUSINESS_ASSERTION_FAILED'
     green_result = 'PASS'
 }

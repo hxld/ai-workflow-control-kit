@@ -44,8 +44,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Analyze-SourceChainContract failed' }
 $contract = Read-JsonObject (Join-Path $root 'SOURCE_CHAIN_CONTRACT.json')
 if (-not [bool]$contract.required_source_chain) { throw 'SOURCE_CHAIN_CONTRACT should require source chain' }
 Assert-Contains -Values @($contract.source_fields | ForEach-Object { [string]$_ }) -Pattern 'CaseRoute\.policyNo' -Label 'source_fields'
-Assert-Contains -Values @($contract.source_fields | ForEach-Object { [string]$_ }) -Pattern 'Insure\.insureNo' -Label 'source_fields'
-Assert-Contains -Values @($contract.next_required_slice.must_touch_files | ForEach-Object { [string]$_ }) -Pattern 'AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService' -Label 'must_touch_files'
+Assert-Contains -Values @($contract.source_fields | ForEach-Object { [string]$_ }) -Pattern 'Insure\.recordNo' -Label 'source_fields'
+Assert-Contains -Values @($contract.next_required_slice.must_touch_files | ForEach-Object { [string]$_ }) -Pattern 'ExampleDataAssemblyHelper|ExampleApplyClaimService|ExampleCalculatorService' -Label 'must_touch_files'
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-SliceClosure.ps1') `
     -ReplayRoot $root `

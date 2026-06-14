@@ -2597,7 +2597,7 @@ Add or update the following sections in ``$planResultPath``:
 1. Before claiming "new service required", you MUST show at least 3 carrier search attempts
 2. Each search attempt must include: search query, results found, and why insufficient
 3. If existing carrier serves similar purpose, use it instead of creating new one
-4. Do not create synthetic carriers (e.g., "InsureCompanyFlowConfigService") without exhaustive search
+4. Do not create synthetic carriers (e.g., "ExampleCompanyFlowConfigService") without exhaustive search
 5. Method signatures must match requirements exactly - no inferred parameters
 
 ## After repair
@@ -3033,11 +3033,11 @@ Required binding shape:
   - `literal_contract`
   - `real_entry`
 - **Correct format examples** (keyword MUST appear in the value):
-  - `golden_slice_binding: side_effect_ledger_gap → config_family → TAiClaimModuleConfig.java → AiClaimModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
+  - `golden_slice_binding: side_effect_ledger_gap → config_family → TExampleModuleConfig.java → ExampleModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
   - `golden_slice_binding: exact_contract_gap → facade → ClaimCaseFacade → getCaseInfo → testGetCaseInfo_ExactContract → production diff verified`
   - `golden_slice_binding: schema_contract_discovery_gap → entity → TCaseInfo → CaseInfoService → testSchemaDiscovery → table schema verified`
 - **Wrong format** (missing fingerprint keyword - will FAIL verification):
-  - `golden_slice_binding: config_family → TAiClaimModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
+  - `golden_slice_binding: config_family → TExampleModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
   - `golden_slice_binding: facade → ClaimCaseFacade → ...` (NO - starts with facade, not a fingerprint keyword)
 - The same binding must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
 - If `oracle_overlap_below_threshold`, `oracle_high_weight_uncovered`, or `low_verification_cap` appears, map at least one missing HIGH-weight oracle file to the Golden Slice first-slice contract: requirement literal -> real carrier -> RED test -> GREEN production diff -> side-effect proof.
@@ -3073,7 +3073,7 @@ You may modify ONLY these files under the replay root:
    - `oracle_out_of_scope_files: <semicolon-separated oracle files with blocker reasons or none>`
    - `golden_slice_binding: <MUST contain one of: side_effect_ledger_gap|exact_contract_gap|schema_contract_discovery_gap|low_verification_cap|oracle_overlap|positive_first_slice|first_slice_contract|stateful_side_effect|literal_contract|real_entry -> selected production carrier -> first RED -> minimum GREEN -> executable side effect>`
    - `first_slice: <S1 identifier, e.g., "S1" or "S1 - Auto Claim Flow">`
-   - `first_red_test: <test class.method, e.g., "AiAutoClaimFlowServiceTest.testHappyPath">`
+   - `first_red_test: <test class.method, e.g., "ExampleFlowServiceTest.testHappyPath">`
 3. FIRST_SLICE_PROOF_PLAN.md must use these exact single-line `key: value` fields; do not rely on headings, bullets, tables, or narrative paragraphs:
    - `first_slice: <S1 identifier MUST match PLAN_RESULT.md first_slice exactly>`
    - `first_red_test: <test signature MUST match PLAN_RESULT.md first_red_test exactly - this is cross-artifact consistency, not a suggestion>`
@@ -3102,9 +3102,9 @@ You may modify ONLY these files under the replay root:
    - `pattern_error_handling: <response_codes or exception_propagation>`
    - `pattern_evidence_source: <rg command + file path>`
    **V457 Executable Evidence Gate MANDATORY fields** (required for plan_status: PROCEED):
-   - `target_carrier_file_path: <exact file path to carrier, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java">`
+   - `target_carrier_file_path: <exact file path to carrier, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java">`
    - `target_carrier_line_number: <exact integer line number where method is defined, e.g., "42". If NEW_SERVICE and line number unknown, write "NEW_SERVICE_LINE_NUMBER_PENDING" and set plan_status: BLOCKED>`
-   - `expected_test_class: <full test class name, e.g., "AiApplyClaimApiTaskProcessorTest">`
+   - `expected_test_class: <full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest">`
    - `expected_test_method: <test method name, e.g., "testExecuteTask_AutoFlowTriggered">`
    - `expected_assertions: <JSON array with at least 3 assertions, e.g., ["assertEquals(35, caseStatus)", "verify(compensateDetailMapper).insert()", "assertNotNull(result)"]>`
    - `expected_side_effects: <JSON array with at least 1 side effect, e.g., [{"table": "t_compensate_detail", "operation": "insert"}, {"table": "t_case_route", "operation": "update", "field": "status", "value": "35"}]>`
@@ -3114,9 +3114,9 @@ You may modify ONLY these files under the replay root:
 6. If any `first_slice_proof_schema_missing:*` or dry-run `missing_fields` issue appears, update FIRST_SLICE_PROOF_PLAN.md using the exact keys above. Do not write `fail-closed condition:`; use `fail_closed_condition:`.
    **v452 CRITICAL**: If `first_slice_proof_schema_missing:highest_weight_open_gate` appears, you MUST add this field. Read ROUND_CONTRACT.md Requirement Family Ledger, find the highest-weight family (by weight field) that needs to be "opened" in S1 (has new service or needs core path change), and write its id as the value. Example values: `stateful_side_effect`, `core_entry`, `wire_payload_api_contract`, `config_policy_threshold`. Do NOT write TBD, unknown, or placeholder.
    **V457 Executable Evidence Gate CRITICAL**: If any `first_slice_proof_v457_missing:*` or `first_slice_proof_v457_*` issue appears, you MUST add or fix the specific V457 fields in FIRST_SLICE_PROOF_PLAN.md:
-   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java"
+   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java"
    - `first_slice_proof_v457_missing:target_carrier_line_number`: Add `target_carrier_line_number: <integer>` - read the file to find the exact line number where the method is defined, e.g., "42". Do NOT use TBD, unknown, or placeholder.
-   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "AiApplyClaimApiTaskProcessorTest"
+   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest"
    - `first_slice_proof_v457_missing:expected_test_method`: Add `expected_test_method: <methodName>` - the test method name, e.g., "testExecuteTask_AutoFlowTriggered"
    - `first_slice_proof_v457_assertions_missing` or `first_slice_proof_v457_assertions_insufficient`: Add `expected_assertions: ["assert1", "assert2", "assert3"]` - JSON array format with at least 3 concrete assertions. Convert any narrative format to JSON array.
    - `first_slice_proof_v457_side_effects_missing`: Add `expected_side_effects: [{"table": "...", "operation": "..."}]` - JSON array format with at least 1 side effect. Convert any narrative format to JSON array.

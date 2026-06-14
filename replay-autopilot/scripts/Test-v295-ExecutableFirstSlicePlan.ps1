@@ -24,7 +24,7 @@ function New-PlanFixture {
         [string]$Root,
         [string]$FirstSlice = 'S1_CoreTracerBullet',
         [string]$MinimumSideEffect = 'CoreFlowService.process writes case status through mapper and test asserts persisted status value',
-        [string]$ProductionBoundary = 'claim-core/src/main/java/com/acme/CoreFlowService.java#process',
+        [string]$ProductionBoundary = 'example-core/src/main/java/com/acme/CoreFlowService.java#process',
         [string]$ExpectedProductionDiff = 'CoreFlowService behavior change and mapper status write',
         [string]$GreenMinimum = 'Implement CoreFlowService.process minimum production path and make CoreFlowServiceTest pass',
         [switch]$OmitMinimumSideEffect
@@ -33,32 +33,32 @@ function New-PlanFixture {
     New-Item -ItemType Directory -Force -Path $Root | Out-Null
     Write-Utf8 (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') (@{
         files = @(
-            @{ path = 'claim-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' }
+            @{ path = 'example-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' }
         )
     } | ConvertTo-Json -Depth 6)
     Write-Utf8 (Join-Path $Root 'PLAN_RESULT.md') @'
 plan_status: PROCEED
 selected_strategy: core-first
 first_slice: S1_CoreTracerBullet
-first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl claim-server -am -Dtest=CoreFlowServiceTest#processWritesStatus test
+first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl example-server -am -Dtest=CoreFlowServiceTest#processWritesStatus test
 oracle_production_file_overlap: 100%
 oracle_high_weight_coverage: 1/1
 carrier_search: performed
-carrier_search_queries: rg "CoreFlowService" claim-core; rg "processWritesStatus" claim-core; rg "case status" claim-core
+carrier_search_queries: rg "CoreFlowService" example-core; rg "processWritesStatus" example-core; rg "case status" example-core
 existing_production_carriers: CoreFlowService
 selected_carrier_from_search: CoreFlowService
 new_service_proposed: false
 oracle_missing_high_weight_files: none
-oracle_expansion_plan: claim-core/src/main/java/com/acme/CoreFlowService.java -> CoreFlowService -> S1/CoreFlowServiceTest
+oracle_expansion_plan: example-core/src/main/java/com/acme/CoreFlowService.java -> CoreFlowService -> S1/CoreFlowServiceTest
 oracle_out_of_scope_files: none
 '@
     foreach ($file in @('PLAN_CANDIDATE_1.md', 'PLAN_CANDIDATE_2.md', 'PLAN_CANDIDATE_3.md', 'PLAN_SELECTION.md')) {
-        Write-Utf8 (Join-Path $Root $file) 'candidate covers claim-core/src/main/java/com/acme/CoreFlowService.java'
+        Write-Utf8 (Join-Path $Root $file) 'candidate covers example-core/src/main/java/com/acme/CoreFlowService.java'
     }
     Write-Utf8 (Join-Path $Root 'FAMILY_CONTRACT.json') '{"families":[]}'
-    Write-Utf8 (Join-Path $Root 'REPLAY_PLAN.md') "core_entry CoreFlowService claim-core/src/main/java/com/acme/CoreFlowService.java $FirstSlice"
+    Write-Utf8 (Join-Path $Root 'REPLAY_PLAN.md') "core_entry CoreFlowService example-core/src/main/java/com/acme/CoreFlowService.java $FirstSlice"
     Write-Utf8 (Join-Path $Root 'IMPLEMENTATION_CONTRACT.md') "selected_real_entry: CoreFlowService.process`nGREEN Phase Requirements: complete GREEN in the same executable first slice; Forbidden Substitute Mock Stub InMemory TestOnly Placeholder"
-    Write-Utf8 (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') "validation closure claim-core/src/main/java/com/acme/CoreFlowService.java"
+    Write-Utf8 (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') "validation closure example-core/src/main/java/com/acme/CoreFlowService.java"
     Write-Utf8 (Join-Path $Root 'SIDE_EFFECT_LEDGER.md') 'state task progress log transaction status write via mapper'
     Write-Utf8 (Join-Path $Root 'TEST_CHARTER.md') 'RED GREEN CoreFlowServiceTest asserts production side effect'
 
@@ -66,7 +66,7 @@ oracle_out_of_scope_files: none
     Write-Utf8 (Join-Path $Root 'FIRST_SLICE_PROOF_PLAN.md') @"
 first_slice: $FirstSlice
 highest_weight_open_gate: core_entry
-first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl claim-server -am -Dtest=CoreFlowServiceTest#processWritesStatus test
+first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl example-server -am -Dtest=CoreFlowServiceTest#processWritesStatus test
 selected_real_entry: CoreFlowService.process
 public_entry_contract_coverage: not_public_entry_with_reason
 selected_carrier: CoreFlowService.process
@@ -86,7 +86,7 @@ coverage_cap_if_missing: 0
 pattern_to_follow: ExistingStatusService.process
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "ExistingStatusService" claim-core
+pattern_evidence_source: rg "ExistingStatusService" example-core
 "@
 }
 

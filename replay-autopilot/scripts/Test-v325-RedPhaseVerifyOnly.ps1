@@ -47,7 +47,7 @@ try {
     Write-SliceResult -Path $slice1 -Object ([ordered]@{
         slice_index = 1
         implemented_files = @()
-        current_slice_changed_files = @('claim-server/src/test/java/ExampleTest.java')
+        current_slice_changed_files = @('example-server/src/test/java/ExampleTest.java')
         tests = @([ordered]@{
             phase = 'RED'
             result = 'pass'
@@ -68,8 +68,8 @@ try {
     $slice2 = Join-Path $tempRoot 'slice2.json'
     Write-SliceResult -Path $slice2 -Object ([ordered]@{
         slice_index = 2
-        implemented_files = @('claim-core/src/main/java/ExampleService.java')
-        current_slice_changed_files = @('claim-core/src/main/java/ExampleService.java', 'claim-server/src/test/java/ExampleServiceTest.java')
+        implemented_files = @('example-core/src/main/java/ExampleService.java')
+        current_slice_changed_files = @('example-core/src/main/java/ExampleService.java', 'example-server/src/test/java/ExampleServiceTest.java')
         tests = @(
             [ordered]@{ phase = 'RED'; result = 'failed'; evidence = 'AssertionError: expected persisted status row' },
             [ordered]@{ phase = 'GREEN'; result = 'passed'; evidence = 'Maven test passed after implementation' }

@@ -27,8 +27,8 @@ $familyWeights = @{
 # File family mappings based on path patterns
 $fileFamilyPatterns = @{
     "Frontend" = @("\.jsp$", "\.html$", "\.vue$", "\.jsx?$", "/web/", "/ui/", "/view/")
-    "Backend" = @("Service\.java$", "Facade\.java$", "Controller\.java$", "/claim-core/", "/claim-server/")
-    "Database" = @("Mapper\.java$", "Entity\.java$", "T[A-Z]", "TAiClaim", "/claim-provider/")
+    "Backend" = @("Service\.java$", "Facade\.java$", "Controller\.java$", "/example-core/", "/example-server/")
+    "Database" = @("Mapper\.java$", "Entity\.java$", "T[A-Z]", "TExample", "/example-provider/")
     "Test" = @("Test\.java$", "/test/")
     "Deploy" = @("pom\.xml", "\.yml$", "\.yaml$", "application\.properties")
     "External" = @("Push", "Insure", "Callback", "/integration/")
@@ -48,10 +48,10 @@ function Get-FileFamily {
     }
 
     # Default classification by directory
-    if ($FilePath -match "/claim-web/") { return "Frontend" }
-    if ($FilePath -match "/claim-core/") { return "Backend" }
-    if ($FilePath -match "/claim-provider/") { return "Database" }
-    if ($FilePath -match "/claim-server/") { return "Backend" }
+    if ($FilePath -match "/example-web/") { return "Frontend" }
+    if ($FilePath -match "/example-core/") { return "Backend" }
+    if ($FilePath -match "/example-provider/") { return "Database" }
+    if ($FilePath -match "/example-server/") { return "Backend" }
 
     return "Unknown"
 }

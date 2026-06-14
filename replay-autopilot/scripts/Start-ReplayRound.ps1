@@ -136,19 +136,19 @@ function Get-SurfaceCarrierSpecs {
             id = 'core_entry'
             title = 'Core real entry'
             pattern = '(?i)(processor|task|controller|facade|worker|job|handler|listener).*\.java$'
-            priority = '(?i)(claim-core/.*/ai/.*/task|claim-core/.*/ai/.*/service|claim-web/.*/controller|claim-server/.*/processor|/ai/)'
+            priority = '(?i)(example-core/.*/ai/.*/task|example-core/.*/ai/.*/service|example-web/.*/controller|example-server/.*/processor|/ai/)'
         },
         [pscustomobject]@{
             id = 'stateful_side_effect'
             title = 'Stateful side effects'
             pattern = '(?i)(service|mapper|dao|provider|task|progress|log|compensate|claim|case|status|transaction|xml).*(\.java|\.xml)$'
-            priority = '(?i)(claim-core/.*/service|claim-core/.*/mapper|claim-provider|compensate|progress|task|log|status|/ai/)'
+            priority = '(?i)(example-core/.*/service|example-core/.*/mapper|example-provider|compensate|progress|task|log|status|/ai/)'
         },
         [pscustomobject]@{
             id = 'deploy_export_page'
             title = 'Deploy-facing page/export surface'
             pattern = '(?i)(controller|report|export|excel|timeline|case|route|mapper|page|view|jsp|js|ftl|html|download|notify|event|message|mq|push).*(\.java|\.xml|\.jsp|\.js|\.ftl|\.html)$'
-            priority = '(?i)(claim-web|reportTable|caseinfo|GenerateExcel|CaseRoute|CaseTimeline|Notify|Event|Message|Rabbit|push|mq|\.jsp$|\.js$)'
+            priority = '(?i)(example-web|reportTable|caseinfo|GenerateExcel|CaseRoute|CaseTimeline|Notify|Event|Message|Rabbit|push|mq|\.jsp$|\.js$)'
         },
         [pscustomobject]@{
             id = 'wire_payload_api_contract'
@@ -271,10 +271,10 @@ function Write-SurfaceCarrierScan {
         $matches = @($trackedFiles | Where-Object { $_ -match $spec.pattern } | ForEach-Object {
             $score = 0
             if ($_ -match $spec.priority) { $score += 100 }
-            if ($_ -match '(?i)(claim-core|claim-web|claim-server|claim-domain)') { $score += 20 }
+            if ($_ -match '(?i)(example-core|example-web|example-server|example-domain)') { $score += 20 }
             if ($_ -match '(?i)(/ai/|\\ai\\|ocr|report|export|case|compensate|config)') { $score += 20 }
             $score += Get-RequirementAwareSurfaceScore -Path $_ -RequirementText $requirementText
-            if ($_ -match '(?i)(pom\.xml|claim-api/src/main/java/com/huize/claim/api/system)') { $score -= 50 }
+            if ($_ -match '(?i)(pom\.xml|example-api/src/main/java/com/example/project/api/system)') { $score -= 50 }
             [pscustomobject]@{ Path = $_; Score = $score }
         } | Sort-Object @{Expression='Score'; Descending=$true}, @{Expression='Path'; Ascending=$true} | Select-Object -First 35 | ForEach-Object { $_.Path })
         $lines.Add("## $($spec.id) - $($spec.title)")

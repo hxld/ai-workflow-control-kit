@@ -217,7 +217,7 @@ class TestCharterValidator:
             lines.append("")
             lines.append("For WRONG_TEST_SURFACE:")
             lines.append("  - Change test class from Service to Facade/Controller")
-            lines.append("  - Example: AiAutoClaimFlowServiceTest → AiAutoClaimFlowFacadeTest")
+            lines.append("  - Example: ExampleFlowServiceTest → ExampleAutoClaimFlowFacadeTest")
 
         if 'MISSING_ENTRY_POINT' in codes:
             lines.append("")

@@ -36,14 +36,14 @@ $patternMap = @{
     "review" = @("ExamineService", "ReviewService")
 
     # Refund/return ticket keywords
-    "refund" = @("RefundService", "RefundFacade", "ReturnTicketService")
-    "return" = @("ReturnTicketService", "RefundService")
+    "refund" = @("RefundService", "RefundFacade", "ExampleTicketService")
+    "return" = @("ExampleTicketService", "RefundService")
 
     # Claim-related keywords
-    "claim" = @("ClaimService", "ClaimFlowService", "AiClaimService")
+    "claim" = @("ClaimService", "ClaimFlowService", "ExampleService")
 
     # AI-related keywords
-    "ai" = @("AiClaimService", "AiAutoClaimFlowService", "AiReviewService")
+    "ai" = @("ExampleService", "ExampleFlowService", "AiReviewService")
 }
 
 # Normalize worktree path

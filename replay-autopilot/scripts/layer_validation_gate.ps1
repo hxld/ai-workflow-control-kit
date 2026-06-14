@@ -30,8 +30,8 @@ function Find-AsyncTaskTrigger {
     Returns the processor class name if found, $null otherwise.
 
     Common async task processors:
-    - AiApplyClaimApiTaskProcessor
-    - AiAutoClaimFlowService
+    - ExampleApplyClaimApiTaskProcessor
+    - ExampleFlowService
     - AbstractFlowService
     - FlowTaskHandler
     #>
@@ -53,8 +53,8 @@ function Find-AsyncTaskTrigger {
 
     # Known async task processors that trigger Service layer carriers
     $knownAsyncProcessors = @(
-        'AiApplyClaimApiTaskProcessor',
-        'AiAutoClaimFlowService',
+        'ExampleApplyClaimApiTaskProcessor',
+        'ExampleFlowService',
         'AbstractFlowService',
         'FlowTaskHandler',
         'AsyncTaskProcessor',

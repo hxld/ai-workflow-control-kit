@@ -36,7 +36,7 @@ Write-Utf8 (Join-Path $TestRoot 'PHASE0_RESULT.md') @'
 
 ## Selected Real Entry
 
-Primary Entry: AiAutoClaimFlowService.processAutoFlow(Long caseId, AiCalculateLossResult aiResult)
+Primary Entry: ExampleFlowService.processAutoFlow(Long caseId, ExampleCalculatorResult aiResult)
 
 ## First Executable Slice
 
@@ -55,7 +55,7 @@ ok
 ok
 
 ## Selected Real Entry
-Primary Entry: AiAutoClaimFlowService.processAutoFlow(Long caseId, AiCalculateLossResult aiResult)
+Primary Entry: ExampleFlowService.processAutoFlow(Long caseId, ExampleCalculatorResult aiResult)
 
 ## Candidate Surface Map
 ok
@@ -69,14 +69,14 @@ ok
 ## Planning Input Summary
 ok
 '@
-Write-Utf8 (Join-Path $TestRoot 'ROUND_CONTRACT.md') 'selected_real_entry: AiAutoClaimFlowService.processAutoFlow'
+Write-Utf8 (Join-Path $TestRoot 'ROUND_CONTRACT.md') 'selected_real_entry: ExampleFlowService.processAutoFlow'
 Write-Utf8 (Join-Path $TestRoot 'FAMILY_CONTRACT.json') (@{
-    selected_real_entry = 'AiAutoClaimFlowService.processAutoFlow'
+    selected_real_entry = 'ExampleFlowService.processAutoFlow'
     families = @(
         @{
             id = 'core_entry'
             required = $true
-            first_executable_carrier = 'AiAutoClaimFlowService.processAutoFlow'
+            first_executable_carrier = 'ExampleFlowService.processAutoFlow'
             coverage_cap_if_open = 60
         }
     )
@@ -104,7 +104,7 @@ Write-Utf8 (Join-Path $TestRoot 'PHASE0_RESULT.md') @'
 
 ## Selected Real Entry
 
-Primary Entry: AiAutoClaimFlowService.processAutoFlow(Long caseId, AiCalculateLossResult aiResult)
+Primary Entry: ExampleFlowService.processAutoFlow(Long caseId, ExampleCalculatorResult aiResult)
 
 ## First Executable Slice
 

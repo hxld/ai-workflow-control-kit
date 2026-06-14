@@ -23,13 +23,13 @@ $planResult = @"
 plan_status: PROCEED
 
 carrier_search: performed
-carrier_search_queries: rg -i "class.*Config.*Service" --type java claim-core/; rg -i "class.*AutoFlow.*Service" --type java claim-core/; rg -i "class.*ModuleConfig" --type java claim-core/
-existing_production_carriers: AiClaimModuleConfigService, AiAutoClaimFlowService
-selected_carrier_from_search: AiClaimModuleConfigService
+carrier_search_queries: rg -i "class.*Config.*Service" --type java example-core/; rg -i "class.*AutoFlow.*Service" --type java example-core/; rg -i "class.*ModuleConfig" --type java example-core/
+existing_production_carriers: ExampleModuleConfigService, ExampleFlowService
+selected_carrier_from_search: ExampleModuleConfigService
 new_service_created: false
 
 first_slice: S1 - Config field validation
-first_red_test: AiClaimModuleConfigServiceTest#testFreeReviewAmountFieldMissing
+first_red_test: ExampleModuleConfigServiceTest#testFreeReviewAmountFieldMissing
 selected_strategy: TracerBullet
 "@
 
@@ -42,8 +42,8 @@ $oracleCommit | Set-Content -LiteralPath (Join-Path $testRoot 'ORACLE_COMMIT.txt
 # Create minimal ORACLE_DIFF_ANALYSIS.json
 $oracleDiff = @{
     files = @(
-        @{ path = "claim-core/src/main/java/com/huize/claim/entity/TAiClaimModuleConfig.java"; is_production = $true; weight = "HIGH" }
-        @{ path = "claim-core/src/main/java/com/huize/claim/service/AiClaimModuleConfigService.java"; is_production = $true; weight = "HIGH" }
+        @{ path = "example-core/src/main/java/com/example/project/entity/TExampleModuleConfig.java"; is_production = $true; weight = "HIGH" }
+        @{ path = "example-core/src/main/java/com/example/project/service/ExampleModuleConfigService.java"; is_production = $true; weight = "HIGH" }
     )
 } | ConvertTo-Json -Depth 4
 $oracleDiff | Set-Content -LiteralPath (Join-Path $testRoot 'ORACLE_DIFF_ANALYSIS.json') -Encoding UTF8
@@ -62,7 +62,7 @@ foreach ($i in 1..3) {
 ## PLAN CANDIDATE $i
 
 candidate_type: TracerBullet
-carrier: AiClaimModuleConfigService
+carrier: ExampleModuleConfigService
 "@ | Set-Content -LiteralPath (Join-Path $testRoot "PLAN_CANDIDATE_$i.md") -Encoding UTF8
 }
 
@@ -72,7 +72,7 @@ $familyContract = @{
         @{ id = "core_entry"; required = $true },
         @{ id = "stateful_side_effect"; required = $true }
     )
-    selected_real_entry = "AiClaimModuleConfigService"
+    selected_real_entry = "ExampleModuleConfigService"
     first_executable_slice = "S1"
 } | ConvertTo-Json -Depth 4
 $familyContract | Set-Content -LiteralPath (Join-Path $testRoot 'FAMILY_CONTRACT.json') -Encoding UTF8
@@ -82,7 +82,7 @@ $familyContract | Set-Content -LiteralPath (Join-Path $testRoot 'FAMILY_CONTRACT
 ## Phase 0 Result
 
 phase0_status: PROCEED
-selected_real_entry: AiClaimModuleConfigService
+selected_real_entry: ExampleModuleConfigService
 "@ | Set-Content -LiteralPath (Join-Path $testRoot 'PHASE0_RESULT.md') -Encoding UTF8
 
 # Create minimal EXPLORATION_REPORT.md
@@ -111,15 +111,15 @@ coverage cap: applied
 @"
 ## Replay Plan
 
-core_entry: AiClaimModuleConfigService config validation
-stateful_side_effect: TAiClaimModuleConfig INSERT/UPDATE
+core_entry: ExampleModuleConfigService config validation
+stateful_side_effect: TExampleModuleConfig INSERT/UPDATE
 "@ | Set-Content -LiteralPath (Join-Path $testRoot 'REPLAY_PLAN.md') -Encoding UTF8
 
 # Create minimal IMPLEMENTATION_CONTRACT.md
 @"
 ## Implementation Contract
 
-selected real entry: AiClaimModuleConfigService
+selected real entry: ExampleModuleConfigService
 shallow-green-ban: FORBIDDEN - GREEN phase must execute real carrier with side effects
 "@ | Set-Content -LiteralPath (Join-Path $testRoot 'IMPLEMENTATION_CONTRACT.md') -Encoding UTF8
 
@@ -128,14 +128,14 @@ shallow-green-ban: FORBIDDEN - GREEN phase must execute real carrier with side e
 ## Expected Diff Matrix
 
 validation: field null check before implementation
-closure: config field added to TAiClaimModuleConfig
+closure: config field added to TExampleModuleConfig
 "@ | Set-Content -LiteralPath (Join-Path $testRoot 'EXPECTED_DIFF_MATRIX.md') -Encoding UTF8
 
 # Create minimal SIDE_EFFECT_LEDGER.md
 @"
 ## Side Effect Ledger
 
-state: TAiClaimModuleConfig.state update
+state: TExampleModuleConfig.state update
 task: no new task created
 progress: case flow update
 log: audit log entry
@@ -156,23 +156,23 @@ GREEN: setFreeReviewAmount - field value persists
 
 target family: core_entry
 highest_weight_open_gate: core_entry
-target subsurface: AiClaimModuleConfigService#getConfig
-selected_carrier: AiClaimModuleConfigService
+target subsurface: ExampleModuleConfigService#getConfig
+selected_carrier: ExampleModuleConfigService
 real_carrier_kind: production_service
 production_boundary: Service layer
-first_red_test: AiClaimModuleConfigServiceTest#testFreeReviewAmountFieldMissing
+first_red_test: ExampleModuleConfigServiceTest#testFreeReviewAmountFieldMissing
 public_entry_contract_coverage: N/A - internal service
 forbidden_substitute_check: PASSED - no Constant/DTO used
 required_sibling_surfaces: stateful_side_effect
-minimum_side_effect_or_blocker: TAiClaimModuleConfig INSERT/UPDATE
-expected_production_diff: TAiClaimModuleConfig.java add freeReviewAmount field
+minimum_side_effect_or_blocker: TExampleModuleConfig INSERT/UPDATE
+expected_production_diff: TExampleModuleConfig.java add freeReviewAmount field
 red_expectation: assertThat(dto.getFreeReviewAmount()).isNull()
 green_minimum_implementation: entity.addField + getter/setter
 proof_kind: real_entry_behavior
 fail_closed_condition: field null before impl, non-null after
 forbidden_substitute_proof: no static-only helper used
 coverage_cap_if_not_closed: 20%
-selected_real_entry: AiClaimModuleConfigService
+selected_real_entry: ExampleModuleConfigService
 "@ | Set-Content -LiteralPath (Join-Path $testRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
 # Run Verify-PlanContract with Worktree parameter

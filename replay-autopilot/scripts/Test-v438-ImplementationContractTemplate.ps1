@@ -19,19 +19,19 @@ $oldTemplateContent = @'
 # Implementation Contract
 
 ## Carrier
-- carrier_class: com.huize.claim.core.ai.service.AiAutoClaimFlowService
+- carrier_class: com.example.project.core.ai.service.ExampleFlowService
 - carrier_status: NEW
 - reason_for_new: Oracle addition - primary auto-flow orchestration service
 
 ## Method Signature
-- method_signature: executeAutoFlow(Long caseId, AiApplyClaimResult aiResult)
-- parameter_types: [Long, AiApplyClaimResult]
+- method_signature: executeAutoFlow(Long caseId, ExampleApplyClaimResult aiResult)
+- parameter_types: [Long, ExampleApplyClaimResult]
 - return_type: AutoFlowResult
 
 ## Call Path
-- called_by: AiApplyClaimApiTaskProcessor.handleTaskResponse
+- called_by: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 - trigger_event: AI claim result received
-- trace: AiApplyClaimApiTaskProcessor.handleTaskResponse -> AiAutoClaimFlowService.executeAutoFlow
+- trace: ExampleApplyClaimApiTaskProcessor.handleTaskResponse -> ExampleFlowService.executeAutoFlow
 
 ## Verification Constraints
 - verification_path: Oracle post-hoc after implementation
@@ -45,19 +45,19 @@ $newTemplateContent = @'
 # Implementation Contract
 
 ## Carrier
-- carrier_class: com.huize.claim.core.ai.service.AiAutoClaimFlowService
+- carrier_class: com.example.project.core.ai.service.ExampleFlowService
 - carrier_status: NEW
 - reason_for_new: Planned new carrier for auto-flow orchestration
 
 ## Method Signature
-- method_signature: executeAutoFlow(Long caseId, AiApplyClaimResult aiResult)
-- parameter_types: [Long, AiApplyClaimResult]
+- method_signature: executeAutoFlow(Long caseId, ExampleApplyClaimResult aiResult)
+- parameter_types: [Long, ExampleApplyClaimResult]
 - return_type: AutoFlowResult
 
 ## Call Path
-- called_by: AiApplyClaimApiTaskProcessor.handleTaskResponse
+- called_by: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 - trigger_event: AI claim result received
-- trace: AiApplyClaimApiTaskProcessor.handleTaskResponse -> AiAutoClaimFlowService.executeAutoFlow
+- trace: ExampleApplyClaimApiTaskProcessor.handleTaskResponse -> ExampleFlowService.executeAutoFlow
 
 ## Verification Constraints
 - verification_path: Blind replay with coverage cap; signature verification deferred to oracle post-hoc

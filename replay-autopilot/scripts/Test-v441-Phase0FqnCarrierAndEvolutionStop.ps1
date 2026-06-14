@@ -27,18 +27,18 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v441-test-" + [
 
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    $taskDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
+    $taskDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
     New-Item -ItemType Directory -Force -Path $taskDir | Out-Null
 
-    Write-Text (Join-Path $taskDir 'AiApplyClaimApiTaskProcessor.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Text (Join-Path $taskDir 'ExampleApplyClaimApiTaskProcessor.java') @'
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
-    public void handleTaskResponse(AiApplyClaimApiTask task, AiApplyClaimApiTaskResponse response) {
+public class ExampleApplyClaimApiTaskProcessor {
+    public void handleTaskResponse(ExampleApplyClaimApiTask task, ExampleApplyClaimApiTaskResponse response) {
     }
 }
-class AiApplyClaimApiTask {}
-class AiApplyClaimApiTaskResponse {}
+class ExampleApplyClaimApiTask {}
+class ExampleApplyClaimApiTaskResponse {}
 '@
 
     Write-Text (Join-Path $testRoot 'PHASE0_RESULT.md') @'
@@ -46,16 +46,16 @@ class AiApplyClaimApiTaskResponse {}
 
 `phase0_status`: PROCEED
 
-**selected_real_entry**: `com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse`
+**selected_real_entry**: `com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse`
 
 **carrier_status**: EXISTING
 
 ## Search Commands Used
 
 ```powershell
-rg -n "class\s+AiApplyClaimApiTaskProcessor" worktree --glob "*.java"
+rg -n "class\s+ExampleApplyClaimApiTaskProcessor" worktree --glob "*.java"
 rg -n "handleTaskResponse" worktree --glob "*.java"
-rg -n "AiApplyClaimApiTaskProcessor|handleTaskResponse" worktree --glob "*.java"
+rg -n "ExampleApplyClaimApiTaskProcessor|handleTaskResponse" worktree --glob "*.java"
 ```
 
 - result_summary: selected entry exists in baseline worktree.
@@ -63,8 +63,8 @@ rg -n "AiApplyClaimApiTaskProcessor|handleTaskResponse" worktree --glob "*.java"
 
     $methodVerify = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $testRoot -Worktree $worktree | ConvertFrom-Json
     Assert-True ($methodVerify.verification_status -eq 'PASS') 'Package-qualified Class.method should pass when class and method exist'
-    Assert-True ([string]$methodVerify.selected_real_entry -eq 'AiApplyClaimApiTaskProcessor.handleTaskResponse') 'Package-qualified method should normalize to Class.method'
-    Assert-True ([string]$methodVerify.selected_entry_carrier -eq 'AiApplyClaimApiTaskProcessor') 'Carrier should be terminal class, not package prefix'
+    Assert-True ([string]$methodVerify.selected_real_entry -eq 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse') 'Package-qualified method should normalize to Class.method'
+    Assert-True ([string]$methodVerify.selected_entry_carrier -eq 'ExampleApplyClaimApiTaskProcessor') 'Carrier should be terminal class, not package prefix'
     Assert-True ([string]$methodVerify.selected_entry_method -eq 'handleTaskResponse') 'Method should be parsed from package-qualified method'
 
     Write-Text (Join-Path $testRoot 'PHASE0_RESULT.md') @'
@@ -72,15 +72,15 @@ rg -n "AiApplyClaimApiTaskProcessor|handleTaskResponse" worktree --glob "*.java"
 
 `phase0_status`: PROCEED
 
-**selected_real_entry**: `com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor`
+**selected_real_entry**: `com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor`
 
 **carrier_status**: EXISTING
 
 ## Search Commands Used
 
 ```powershell
-rg -n "class\s+AiApplyClaimApiTaskProcessor" worktree --glob "*.java"
-rg -n "AiApplyClaimApiTaskProcessor" worktree --glob "*.java"
+rg -n "class\s+ExampleApplyClaimApiTaskProcessor" worktree --glob "*.java"
+rg -n "ExampleApplyClaimApiTaskProcessor" worktree --glob "*.java"
 rg -n "claim.core.ai.task" worktree --glob "*.java"
 ```
 
@@ -91,7 +91,7 @@ rg -n "claim.core.ai.task" worktree --glob "*.java"
     Assert-True ($classOnlyVerify.verification_status -eq 'FAIL') 'Package-qualified class-only entry should fail'
     Assert-True (@($classOnlyVerify.issues) -contains 'phase0_selected_real_entry_invalid_format') 'Class-only selected_real_entry should report invalid format'
     Assert-True (-not (@($classOnlyVerify.issues) -contains 'phase0_selected_real_entry_not_found')) 'Existing package-qualified class should not be misreported as not found'
-    Assert-True ([string]$classOnlyVerify.selected_entry_carrier -eq 'AiApplyClaimApiTaskProcessor') 'Class-only carrier should still be terminal class for diagnostics'
+    Assert-True ([string]$classOnlyVerify.selected_entry_carrier -eq 'ExampleApplyClaimApiTaskProcessor') 'Class-only carrier should still be terminal class for diagnostics'
     Assert-True ([string]::IsNullOrWhiteSpace([string]$classOnlyVerify.selected_entry_method)) 'Class-only entry should have no selected_entry_method'
 
     $runnerText = Get-Content -LiteralPath $runner -Raw -Encoding UTF8

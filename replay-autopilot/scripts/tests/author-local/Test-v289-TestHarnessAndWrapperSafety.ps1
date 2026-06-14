@@ -26,7 +26,7 @@ function New-PlanFixture {
 
     Write-Utf8 (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') (@{
         files = @(
-            @{ path = 'claim-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' }
+            @{ path = 'example-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' }
         )
     } | ConvertTo-Json -Depth 6)
 
@@ -38,7 +38,7 @@ function New-PlanFixture {
 - oracle_production_file_overlap: 100%
 - oracle_high_weight_coverage: 1/1
 - carrier_search: performed
-- carrier_search_queries: rg "ExistingCoreFlowService" claim-core; rg "CoreFlowService" claim-core; rg "process" claim-core
+- carrier_search_queries: rg "ExistingCoreFlowService" example-core; rg "CoreFlowService" example-core; rg "process" example-core
 - existing_production_carriers: ExistingCoreFlowService.process
 - selected_carrier_from_search: ExistingCoreFlowService.process
 - new_service_proposed: false
@@ -66,7 +66,7 @@ real_carrier_kind: production_service
 minimum_side_effect_or_blocker: service triggers DB write
 forbidden_substitute_check: passed
 required_sibling_surfaces: none_with_reason: core-only test fixture
-production_boundary: claim-core/src/main/java/com/acme/CoreFlowService.java
+production_boundary: example-core/src/main/java/com/acme/CoreFlowService.java
 expected_production_diff: CoreFlowService.java behavior change
 red_expectation: assertion failure before implementation
 green_minimum_implementation: production service closes real entry behavior
@@ -78,7 +78,7 @@ coverage_cap_if_missing: 0
 pattern_to_follow: ExistingCoreFlowService.process
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "ExistingCoreFlowService" claim-core
+pattern_evidence_source: rg "ExistingCoreFlowService" example-core
 "@
 }
 
@@ -97,26 +97,26 @@ $sliceWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-SliceZ
 $carrierWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1') -Raw -Encoding UTF8
 $preflightPy = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pre_flight_check.py') -Raw -Encoding UTF8
 
-$phase1HasHarnessRule = $phase1Prompt.Contains('claim-server/src/test') -and $phase1Prompt.Contains('claim-core/src/test')
-$phase1HasPomRule = $phase1Prompt.Contains('pom.xml') -and $phase1Prompt.Contains('JUnit/Mockito') -and $phase1Prompt.Contains('-pl claim-server -am')
-$planHasHarnessRule = $planPrompt.Contains('PLAN_BLOCKED_TEST_HARNESS') -and $planPrompt.Contains('-pl claim-server -am')
-Assert-True $phase1HasHarnessRule 'Phase1 prompt must force claim-server test harness'
-Assert-True $phase1HasPomRule 'Phase1 prompt must forbid POM dependency changes and use claim-server command'
+$phase1HasHarnessRule = $phase1Prompt.Contains('example-server/src/test') -and $phase1Prompt.Contains('example-core/src/test')
+$phase1HasPomRule = $phase1Prompt.Contains('pom.xml') -and $phase1Prompt.Contains('JUnit/Mockito') -and $phase1Prompt.Contains('-pl example-server -am')
+$planHasHarnessRule = $planPrompt.Contains('PLAN_BLOCKED_TEST_HARNESS') -and $planPrompt.Contains('-pl example-server -am')
+Assert-True $phase1HasHarnessRule 'Phase1 prompt must force example-server test harness'
+Assert-True $phase1HasPomRule 'Phase1 prompt must forbid POM dependency changes and use example-server command'
 Assert-True $planHasHarnessRule 'Plan prompt must fail closed on invalid test harness'
 Assert-True (($preflightWrapper + $sliceWrapper + $carrierWrapper) -notmatch '<<<') 'PowerShell wrappers must not use Bash here-string redirection'
-Assert-True (($preflightWrapper + $preflightPy) -notmatch 'Add JUnit dependency to claim-core/pom\.xml') 'Preflight must not recommend adding JUnit to claim-core POM'
+Assert-True (($preflightWrapper + $preflightPy) -notmatch 'Add JUnit dependency to example-core/pom\.xml') 'Preflight must not recommend adding JUnit to example-core POM'
 
 $validRoot = Join-Path $TestRoot 'valid-plan'
-New-PlanFixture -Root $validRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl claim-server -am -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
+New-PlanFixture -Root $validRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $validRoot -Stage Plan | Out-Null
 $validVerify = Get-Content -LiteralPath (Join-Path $validRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-True ($validVerify.verification_status -eq 'PASS') "Valid claim-server harness should pass, issues=$(@($validVerify.issues) -join ';')"
+Assert-True ($validVerify.verification_status -eq 'PASS') "Valid example-server harness should pass, issues=$(@($validVerify.issues) -join ';')"
 
 $invalidRoot = Join-Path $TestRoot 'invalid-plan'
-New-PlanFixture -Root $invalidRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl claim-core -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
+New-PlanFixture -Root $invalidRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-core -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $invalidRoot -Stage Plan | Out-Null
 $invalidVerify = Get-Content -LiteralPath (Join-Path $invalidRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-True ((@($invalidVerify.issues) -contains 'first_slice_proof_invalid:test_harness_claim_core')) 'Verifier must block claim-core test harness planning'
+Assert-True ((@($invalidVerify.issues) -contains 'first_slice_proof_invalid:test_harness_claim_core')) 'Verifier must block example-core test harness planning'
 
 $sliceRoot = Join-Path $TestRoot 'slice-zero-delta'
 New-Item -ItemType Directory -Force -Path $sliceRoot | Out-Null
@@ -128,10 +128,10 @@ Write-Utf8 $slicePath (@{
     slice_status = 'BLOCKED'
     coverage_delta = 0
     implemented_files = @()
-    current_slice_changed_files = @('claim-core/src/test/java/com/acme/CoreFlowServiceTest.java')
+    current_slice_changed_files = @('example-core/src/test/java/com/acme/CoreFlowServiceTest.java')
     gap_flags = @()
     tests = @(
-        @{ phase = 'RED'; result = 'blocked'; command = 'mvn -pl claim-core -Dtest=CoreFlowServiceTest test'; evidence = 'cannot find symbol org.junit.Test' }
+        @{ phase = 'RED'; result = 'blocked'; command = 'mvn -pl example-core -Dtest=CoreFlowServiceTest test'; evidence = 'cannot find symbol org.junit.Test' }
     )
 } | ConvertTo-Json -Depth 8)
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-SliceZeroDeltaEvaluation.ps1') -SliceResultPath $slicePath -Phase0ContractPath $phase0Path | Out-Null
@@ -143,7 +143,7 @@ $markdownPlan = Join-Path $TestRoot 'PLAN_RESULT.md'
 Write-Utf8 $markdownPlan @'
 - plan_status: PROCEED
 - new_service_proposed: false
-- carrier_search_queries: rg "ExistingCoreFlowService" claim-core
+- carrier_search_queries: rg "ExistingCoreFlowService" example-core
 '@
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1') -PlanResultPath $markdownPlan -Worktree D:\opt\claim -OracleCommit HEAD | Out-Null
 Assert-True ($LASTEXITCODE -eq 0) 'Carrier search wrapper should parse Markdown PLAN_RESULT.md'

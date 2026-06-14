@@ -795,7 +795,7 @@ if ($Stage -eq 'Phase0') {
     # Matches both key-value format and table format like:
     # ### Existing Production Carriers Found
     # | Carrier | Location | Method/Signature | Purpose |
-    # | AiAutoClaimFlowService | ... | ... | ... |
+    # | ExampleFlowService | ... | ... | ... |
     $existingProductionCarriers = Get-FirstText $combinedPlanArtifacts @(
         '(?m)^\s*-?\s*\*{0,2}\s*existing_production_carriers\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*existing_production_carriers\s*[:=]\s*([^\r\n]+?)\s*$',
@@ -889,7 +889,7 @@ if ($Stage -eq 'Phase0') {
         $issues.Add('carrier_search_new_service_unjustified') | Out-Null
     }
     # v406: Normalize carrier name for matching - strip method names like ".save", ".update" etc.
-    # This handles cases like "AiClaimModuleConfigService.save" matching "AiClaimModuleConfigService.java"
+    # This handles cases like "ExampleModuleConfigService.save" matching "ExampleModuleConfigService.java"
     $carrierBaseNameForMatch = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
         if ($selectedCarrierFromSearch -match '^([A-Za-z0-9_$]+)') {
             $matches[1]
@@ -907,7 +907,7 @@ if ($Stage -eq 'Phase0') {
     }
 
     # v381: Carrier Existence Verification - selected carrier must exist in codebase
-    # This prevents synthetic carriers like AiAutoClaimFlowService from being selected
+    # This prevents synthetic carriers like ExampleFlowService from being selected
     # v382: Enhanced with retry logic and Get-ChildItem fallback for robustness
     # v391: Skip existence check for new services (new_service_proposed=true)
     $carrierNameForExistenceCheck = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
@@ -1408,8 +1408,8 @@ if ($Stage -eq 'Phase0') {
             }
             # v459/v461/v464: Layer validation - core_entry family requires Facade/Controller entry point
             # v461: Extract actual carrier name (before first '(') to avoid false positives
-            # Example: "AiApplyClaimApiTaskProcessor (EXISTING -> calls NEW AiAutoClaimFlowService)"
-            # should extract "AiApplyClaimApiTaskProcessor" not match on "AiAutoClaimFlowService"
+            # Example: "ExampleApplyClaimApiTaskProcessor (EXISTING -> calls NEW ExampleFlowService)"
+            # should extract "ExampleApplyClaimApiTaskProcessor" not match on "ExampleFlowService"
             # v464: Allow Service layer carriers if plan documents an existing Facade/Controller entry point
             # Example: NEW Service called from existing Facade/TaskProcessor is valid
             $actualCarrier = $selectedCarrierValueForFirstSlice.Split('(')[0].Trim()
@@ -1455,14 +1455,14 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v289: Test harness placement gate. In this claim replay workspace, claim-core
+    # v289: Test harness placement gate. In this claim replay workspace, example-core
     # does not carry the test dependencies needed for JUnit/Mockito/Spring Test.
-    # Planning a RED directly under claim-core creates an environment-blocked round,
+    # Planning a RED directly under example-core creates an environment-blocked round,
     # not a business RED.
     $firstRedTestMatch = [regex]::Match($firstSliceProofText, '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?first_red_test\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$')
     if ($firstRedTestMatch.Success) {
         $firstRedValue = $firstRedTestMatch.Groups[1].Value.Trim()
-        if ($firstRedValue -match '(?i)(claim-core[/\\]src[/\\]test|-pl\s+claim-core|claim-core\s+-Dtest)') {
+        if ($firstRedValue -match '(?i)(example-core[/\\]src[/\\]test|-pl\s+example-core|example-core\s+-Dtest)') {
             $issues.Add('first_slice_proof_invalid:test_harness_claim_core') | Out-Null
         }
         if ($firstRedValue -match '(?i)(dependency\s*:|add\s+JUnit|鏂板.*(JUnit|Mockito|Spring Test))') {
@@ -1491,14 +1491,14 @@ if ($Stage -eq 'Phase0') {
         #         # Construct full test file path
         #         # Try various locations:
         #         # 1. Direct path if already qualified
-        #         # 2. Under claim-server/src/test/java/
+        #         # 2. Under example-server/src/test/java/
         #         # 3. Under src/test/java/
         #         # 4. Search in worktree
         #
         #         $testFilePaths = @(
         #             if ($testFileName -match '[/\\]') { Join-Path $worktreePath $testFileName } else { $null }
-        #             Join-Path $worktreePath "claim-server\src\test\java\com\huize\claim\core\ai\service\$testFileName"
-        #             Join-Path $worktreePath "claim-server\src\test\java\$testFileName"
+        #             Join-Path $worktreePath "example-server\src\test\java\com\example\project\core\ai\service\$testFileName"
+        #             Join-Path $worktreePath "example-server\src\test\java\$testFileName"
         #             Join-Path $worktreePath "src\test\java\$testFileName"
         #         ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         #
@@ -1721,8 +1721,8 @@ if ($Stage -eq 'Phase0') {
         # v380: Fix oracle_out_of_scope_files filtering bug (now works on domain-filtered files)
         # Previous logic used substring match (-like "*$_*") which incorrectly excluded
         # files that contained the exclusion pattern as a substring (e.g., "Facade"
-        # in exclusion list would match "AiAutoClaimFlowFacade" even though it's not
-        # "InsureCompanyPushFacade"). Now use exact match on filename without extension.
+        # in exclusion list would match "ExampleAutoClaimFlowFacade" even though it's not
+        # "ExamplePushFacade"). Now use exact match on filename without extension.
         $filteredOracleProdFiles = @($domainFilteredOracleFiles | Where-Object {
             $oracleFile = $_
             $fileName = [System.IO.Path]::GetFileName($oracleFile)

@@ -1,5 +1,5 @@
 # Test-v431-ExecutableEvidenceExperiments.ps1
-# Tests for the three experiments from aiClaimV2 NEXT_EXPERIMENT_PLAN.md
+# Tests for the three experiments from example-feature NEXT_EXPERIMENT_PLAN.md
 
 param(
     [switch]$ValidateOnly

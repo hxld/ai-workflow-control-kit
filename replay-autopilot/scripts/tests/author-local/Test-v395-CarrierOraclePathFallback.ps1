@@ -92,7 +92,7 @@ function Invoke-CarrierOracleCheck {
     New-Item -ItemType Directory -Force -Path $worktree | Out-Null
 
     # For test 3, create an isolated PROJECT_ROOT that contains the carrier.
-    # Do not depend on D:\opt\claim; the main worktree branch may not contain this oracle-added class.
+    # Do not depend on a specific project root; the main worktree branch may not contain this oracle-added class.
     $originalEnv = $null
     if ($UseEnvProjectRoot) {
         $originalEnv = $env:PROJECT_ROOT

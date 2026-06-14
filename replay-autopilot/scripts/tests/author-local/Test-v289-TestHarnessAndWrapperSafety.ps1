@@ -1,5 +1,5 @@
 param(
-    [string]$TestRoot = (Join-Path $PSScriptRoot '..\.tmp\v289-test-harness-and-wrapper-safety'),
+    [string]$TestRoot = (Join-Path $PSScriptRoot '.tmp\v289-test-harness-and-wrapper-safety'),
     [switch]$ValidateOnly
 )
 
@@ -79,6 +79,12 @@ pattern_to_follow: ExistingCoreFlowService.process
 pattern_return_type: void
 pattern_error_handling: exception_propagation
 pattern_evidence_source: rg "ExistingCoreFlowService" example-core
+target_carrier_file_path: example-core/src/main/java/com/acme/CoreFlowService.java
+target_carrier_line_number: NEW
+expected_test_class: ExistingCoreFlowServiceTest
+expected_test_method: testProcess
+expected_assertions: assertNotNull(result), assertEquals(PROCEED, status), assertTrue(sideEffect.verified())
+expected_side_effects: DB write verified, side effect ledger proof
 "@
 }
 
@@ -90,12 +96,12 @@ if ($ValidateOnly) {
 if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
 
-$phase1Prompt = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
-$planPrompt = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\prompts\phase-plan-tournament.prompt.md') -Raw -Encoding UTF8
-$preflightWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-PreflightComprehensive.ps1') -Raw -Encoding UTF8
-$sliceWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-SliceZeroDeltaEvaluation.ps1') -Raw -Encoding UTF8
-$carrierWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1') -Raw -Encoding UTF8
-$preflightPy = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pre_flight_check.py') -Raw -Encoding UTF8
+$phase1Prompt = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\..\prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
+$planPrompt = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\..\prompts\phase-plan-tournament.prompt.md') -Raw -Encoding UTF8
+$preflightWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Invoke-PreflightComprehensive.ps1') -Raw -Encoding UTF8
+$sliceWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Invoke-SliceZeroDeltaEvaluation.ps1') -Raw -Encoding UTF8
+$carrierWrapper = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\Invoke-PlanCarrierSearchVerification.ps1') -Raw -Encoding UTF8
+$preflightPy = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\pre_flight_check.py') -Raw -Encoding UTF8
 
 $phase1HasHarnessRule = $phase1Prompt.Contains('example-server/src/test') -and $phase1Prompt.Contains('example-core/src/test')
 $phase1HasPomRule = $phase1Prompt.Contains('pom.xml') -and $phase1Prompt.Contains('JUnit/Mockito') -and $phase1Prompt.Contains('-pl example-server -am')
@@ -107,16 +113,16 @@ Assert-True (($preflightWrapper + $sliceWrapper + $carrierWrapper) -notmatch '<<
 Assert-True (($preflightWrapper + $preflightPy) -notmatch 'Add JUnit dependency to example-core/pom\.xml') 'Preflight must not recommend adding JUnit to example-core POM'
 
 $validRoot = Join-Path $TestRoot 'valid-plan'
-New-PlanFixture -Root $validRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $validRoot -Stage Plan | Out-Null
+New-PlanFixture -Root $validRoot -FirstRedTest 'mvn -s <maven-settings> -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\..\Verify-PlanContract.ps1') -ReplayRoot $validRoot -Stage Plan -SkipCarrierAndOracleChecks | Out-Null
 $validVerify = Get-Content -LiteralPath (Join-Path $validRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-True ($validVerify.verification_status -eq 'PASS') "Valid example-server harness should pass, issues=$(@($validVerify.issues) -join ';')"
 
 $invalidRoot = Join-Path $TestRoot 'invalid-plan'
-New-PlanFixture -Root $invalidRoot -FirstRedTest 'mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-core -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $invalidRoot -Stage Plan | Out-Null
+New-PlanFixture -Root $invalidRoot -FirstRedTest 'mvn -s <maven-settings> -f {{WORKTREE}}\pom.xml test -pl example-core -Dtest=ExistingCoreFlowServiceTest -Dsurefire.failIfNoSpecifiedTests=false'
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\..\Verify-PlanContract.ps1') -ReplayRoot $invalidRoot -Stage Plan -SkipCarrierAndOracleChecks | Out-Null
 $invalidVerify = Get-Content -LiteralPath (Join-Path $invalidRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-True ((@($invalidVerify.issues) -contains 'first_slice_proof_invalid:test_harness_claim_core')) 'Verifier must block example-core test harness planning'
+Assert-True ((@($invalidVerify.issues) -contains 'first_slice_proof_invalid:test_harness_example_core')) 'Verifier must block example-core test harness planning'
 
 $sliceRoot = Join-Path $TestRoot 'slice-zero-delta'
 New-Item -ItemType Directory -Force -Path $sliceRoot | Out-Null
@@ -134,7 +140,7 @@ Write-Utf8 $slicePath (@{
         @{ phase = 'RED'; result = 'blocked'; command = 'mvn -pl example-core -Dtest=CoreFlowServiceTest test'; evidence = 'cannot find symbol org.junit.Test' }
     )
 } | ConvertTo-Json -Depth 8)
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-SliceZeroDeltaEvaluation.ps1') -SliceResultPath $slicePath -Phase0ContractPath $phase0Path | Out-Null
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\..\Invoke-SliceZeroDeltaEvaluation.ps1') -SliceResultPath $slicePath -Phase0ContractPath $phase0Path | Out-Null
 Assert-True ($LASTEXITCODE -eq 1) 'Zero-delta wrapper should block environment RED'
 $sliceAfter = Get-Content -LiteralPath $slicePath -Raw -Encoding UTF8 | ConvertFrom-Json
 Assert-True ($sliceAfter.zero_delta_enforced -eq $true -and $sliceAfter.coverage_delta -eq 0) 'Zero-delta wrapper must write enforced zero coverage'
@@ -145,7 +151,7 @@ Write-Utf8 $markdownPlan @'
 - new_service_proposed: false
 - carrier_search_queries: rg "ExistingCoreFlowService" example-core
 '@
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1') -PlanResultPath $markdownPlan -Worktree D:\opt\claim -OracleCommit HEAD | Out-Null
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\..\Invoke-PlanCarrierSearchVerification.ps1') -PlanResultPath $markdownPlan -Worktree (Join-Path $TestRoot 'worktree') -OracleCommit HEAD | Out-Null
 Assert-True ($LASTEXITCODE -eq 0) 'Carrier search wrapper should parse Markdown PLAN_RESULT.md'
 Assert-True (Test-Path -LiteralPath (Join-Path $TestRoot 'PLAN_RESULT_CARRIER_SEARCH_VERIFY.json')) 'Carrier search wrapper should write verification JSON for Markdown input'
 

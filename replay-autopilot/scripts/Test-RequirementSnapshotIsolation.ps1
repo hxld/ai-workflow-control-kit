@@ -35,7 +35,7 @@ $replayBase = Join-Path $tempRoot 'claim-codex-replay-v226-snapshot'
 $originalRequirement = "$env:AI_WORKFLOW_PROJECT_ROOT\.doc\xiebao\requirements.md"
 
 Write-Text $configPath @"
-project_root: D:\opt\claim
+project_root: /path/to/project
 feature_name: xiebao
 requirement_source: $originalRequirement
 base_commit: 4ef00669ea2909fc77324d433cb4fbac34929e01
@@ -43,7 +43,7 @@ oracle_branch: master_xiebao_wcl
 oracle_commit: f7cbcb7b20b7c861d46f438773d713f2c2204d3f
 replay_root_base: $replayBase
 run_label: snapshot-isolation-test
-system_context_dir: D:\opt\claim\.doc\example-system-context
+system_context_dir: /path/to/project/.doc/example-system-context
 "@
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File $startScript -ConfigPath $configPath -Round 1 -DryRun | Out-Null

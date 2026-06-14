@@ -320,7 +320,7 @@ if ($failed.Count -gt 0) {
         Write-Output "- [FAIL] $($item.Name): $($item.Details)"
     }
     Write-Output "SMOKE TESTS:"
-    Write-Output "- Claude: send '完整开发人保退票' and check %USERPROFILE%\\.agents\\logs\\skill-hooks.log"
+    Write-Output "- Claude: send '完整开发人保回调' and check %USERPROFILE%\\.agents\\logs\\skill-hooks.log"
     Write-Output "- Cursor: send '同步进度' and confirm beforeSubmitPrompt has no path error"
     Write-Output "- OpenCode: send '深度规划' and verify system message contains suggestion or block"
     Write-Output "- Codex: confirm config.toml keeps features.hooks + hooks.* after provider switch"

@@ -61,8 +61,8 @@ def find_service_file(service_name: str, project_root: Path) -> Optional[Path]:
     """Find service file in project structure"""
     # Common service locations
     search_paths = [
-        project_root / "example-core" / "src" / "main" / "java" / "com" / "huize" / "claim" / "core",
-        project_root / "example-core" / "src" / "main" / "java" / "com" / "huize" / "claim",
+        project_root / "example-core" / "src" / "main" / "java" / "com" / "example" / "project" / "core",
+        project_root / "example-core" / "src" / "main" / "java" / "com" / "example" / "project",
     ]
 
     for search_path in search_paths:
@@ -150,8 +150,8 @@ def main():
     # If in worktree, go to parent
     if (project_root / "worktree").exists():
         project_root = project_root / "worktree"
-    elif project_root.name == "claim-codex-replay" or "autopilot" in project_root.name:
-        # Try to find claim project root
+    elif "autopilot" in project_root.name:
+        # Try to find project root from worktree parent
         for parent in [project_root] + list(project_root.parents):
             if (parent / "pom.xml").exists():
                 project_root = parent

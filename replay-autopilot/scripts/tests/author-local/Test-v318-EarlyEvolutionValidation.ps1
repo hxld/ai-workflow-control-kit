@@ -36,7 +36,7 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
 - verification_results: PASS
-- changed_files: D:\opt\replay-autopilot\scripts\enforce_red_phase_gate.py
+- changed_files: replay-autopilot/scripts\enforce_red_phase_gate.py
 - pushed_commit: abcdef1
 - actual_knowledge_version_after_push: v318
 

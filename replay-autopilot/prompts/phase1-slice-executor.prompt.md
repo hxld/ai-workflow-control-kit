@@ -117,7 +117,7 @@ If you proceed WITHOUT carrier validation:
    - `thenAnswer` 的 lambda 参数是 `invocation -> { ... }`
 5. JUnit 用 `org.junit.Assert`（不是 assertj）：`assertEquals`、`assertTrue`、`assertNotNull`、`assertFalse`
 6. 用 `ReflectionTestUtils.setField(service, "fieldName", mock)` 注入依赖（不是 `@InjectMocks`）
-7. 写完测试后必须实际运行 `mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=YourTest -Dsurefire.failIfNoSpecifiedTests=false` 并确认 `BUILD SUCCESS`。如果编译失败，必须修复到通过再继续。
+7. 写完测试后必须实际运行 `mvn -s {{MAVEN_SETTINGS}} -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=YourTest -Dsurefire.failIfNoSpecifiedTests=false` 并确认 `BUILD SUCCESS`。如果编译失败，必须修复到通过再继续。
 8. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若 `example-core` 缺少测试依赖，这不是可修复的业务 diff；必须把 RED 测试放到 `example-server` 现有测试 harness 中。
 9. 如果 `FIRST_SLICE_PROOF_PLAN.md` 只给出测试类名而没有路径或模块，默认把该测试创建在 `example-server/src/test/java/...`，并用 `-pl example-server -am` 运行。禁止自行改成 `example-core/src/test` 或 `-pl example-core`。
 
@@ -354,7 +354,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
 13. 如果 forced family 是 core_entry/stateful_side_effect 且仍有 open sibling surfaces，本 slice 必须先补其中一个具体副作用 sibling；不能只新增日志、常量、DTO 或 mock-only 断言。
 14. 如果本 slice 没有关闭或推进 REQUIREMENT_FAMILY_LEDGER 中任何 OPEN/PARTIAL family，`coverage_delta` 必须为 0，`gap_flags` 必须包含 `no_progress_slice`。
 15. 严格 TDD：先写/调整 RED，运行并记录失败，再最小 GREEN。`DONE` 必须至少有一条 `phase=RED,result=fail` 的测试证据；如果 RED 命令因 PowerShell 参数解析、`-Dtest`、`-Dsurefire...` 或 wrapper 参数问题被阻断，必须立刻用 `mvn --% -s ... -f {{WORKTREE}}\pom.xml ...` 重放同一个 RED，再决定是否编码。不能把“RED 命令 blocked”当成可接受 RED，也不能在没有 RED fail 的情况下进入 GREEN；若重放仍非业务断言失败，写 BLOCKED 或 PARTIAL，并在 `gap_flags` 写 `tdd_red_not_replayed`、`feedback_loop_blocker`。
-16. Maven 必须带 `-s D:\maven\settings\settings.xml` 和 `-f {{WORKTREE}}\pom.xml`。
+16. Maven 必须带 `-s {{MAVEN_SETTINGS}}` 和 `-f {{WORKTREE}}\pom.xml`。
 17. 不允许修改主工作区 {{PROJECT_ROOT}}。
 
 【生产承载点规则】
@@ -475,7 +475,7 @@ Authorizing RED means all of the following are true:
 - the failure is a business assertion failure against the selected production carrier or observable output;
 - the failure is not caused by PowerShell parsing, Maven argument parsing, zero tests, missing dependency, compilation failure, environment setup, or a wrapper/tooling error.
 
-If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
+If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% -s {{MAVEN_SETTINGS}} -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
 
 When RED is blocked, passes, runs zero tests, or fails for non-business tooling reasons:
 - do not edit production files;

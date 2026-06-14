@@ -18,7 +18,7 @@ Test Scenarios:
 - Test worktree must exist
 
 .EXPECTED_RESULTS
-- Maven should be invoked with: -s D:\maven\settings\settings.xml
+- Maven should be invoked with: -s <path-to-maven-settings>
 - Maven should be invoked with: -f <PROJECT_ROOT>\pom.xml
 - Result JSON should contain maven_settings_used, root_pom_used, maven_command_args
 #>
@@ -136,7 +136,7 @@ Write-Host "  PASS: Maven settings and root POM were correctly applied"
 
 # Test 6: Verify expected values
 Write-Host "[Test 6] Verifying expected values..."
-$expectedSettings = 'D:\maven\settings\settings.xml'
+$expectedSettings = '<maven-settings>'
 $expectedPom = "$env:AI_WORKFLOW_PROJECT_ROOT\pom.xml"
 
 if ($mavenSettingsUsed -ne $expectedSettings) {

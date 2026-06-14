@@ -32,6 +32,7 @@ param(
     [string]$Approval = 'never',
     [int]$TimeoutMinutes = 240,
     [int]$MaxSlices = 3,
+    [string]$MavenSettings = '',
     [switch]$ValidateOnly
 )
 
@@ -235,7 +236,8 @@ function Invoke-GreenPhaseNoMockGate {
         [Parameter(Mandatory = $true)]
         [int]$SliceIndex,
         [Parameter(Mandatory = $true)]
-        [string]$RunnerContractPath
+        [string]$RunnerContractPath,
+        [string]$MavenSettings = ''
     )
 
     $gatePath = Join-Path $ReplayRoot ('GREEN_PHASE_VERIFY_{0:D2}.json' -f $SliceIndex)
@@ -327,7 +329,7 @@ function Invoke-GreenPhaseNoMockGate {
             $testExecutionResult.reason = 'test_execution_running'
 
             $mavenArgs = @(
-                '-s', 'D:\maven\settings\settings.xml',
+                '-s', $MavenSettings,
                 '-f', (Join-Path $Worktree 'pom.xml'),
                 'test',
                 '-pl', $testModule,
@@ -1203,7 +1205,7 @@ function Invoke-Phase0PrecheckGate {
         [int]$SliceIndex,
         [Parameter(Mandatory = $true)]
         [string]$RunnerContractPath,
-        [string]$MavenSettings = 'D:\maven\settings\settings.xml'
+        [string]$MavenSettings = ''
     )
 
     $gateScript = Join-Path $PSScriptRoot 'phase0-precheck.ps1'
@@ -2723,7 +2725,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -2756,7 +2758,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification: $($redIncrementalGate.Blocker)"
             break
         }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
+        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
         $verify = Read-JsonObject -Path $sliceVerify
@@ -3084,7 +3086,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         break
     }
     # v431: Phase0 precheck gate (test framework validation)
-    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
     if (-not [bool]$phase0Precheck.CanProceed) {
         Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -3110,7 +3112,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification: $($redIncrementalGate.Blocker)"
         break
     }
-    $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
+    $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
     Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
     Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
     # v431: Side effect ledger gate (verify after GREEN phase)
@@ -3237,7 +3239,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for repaired slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck_after_repair: $($phase0Precheck.Blocker)"
@@ -3263,7 +3265,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification_after_repair: $($redIncrementalGate.Blocker)"
             break
         }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
+        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
         # v431: Side effect ledger gate (verify after GREEN phase)

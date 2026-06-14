@@ -10,7 +10,7 @@ param(
     [string]$Worktree,
 
     [Parameter(Mandatory = $false)]
-    [string]$MavenSettings = 'D:\maven\settings\settings.xml',
+    [string]$MavenSettings = '',
 
     [Parameter(Mandatory = $false)]
     [bool]$DiscoveryMode = $false,

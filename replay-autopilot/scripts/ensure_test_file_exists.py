@@ -326,8 +326,8 @@ def main():
         print("  generate <carrier_class> <carrier_method> <worktree_path>", file=sys.stderr)
         print("  verify <test_file_path>", file=sys.stderr)
         print("\nExamples:", file=sys.stderr)
-        print("  ensure_test_file_exists.py generate com.example.project.service.MyService processAutoFlow D:\\opt\\claim", file=sys.stderr)
-        print("  ensure_test_file_exists.py verify D:\\opt\\claim\\src\\test\\java\\com\\huize\\claim\\service\\MyServiceTest.java", file=sys.stderr)
+        print("  ensure_test_file_exists.py generate com.example.service.MyService processFlow /path/to/worktree", file=sys.stderr)
+        print("  ensure_test_file_exists.py verify /path/to/worktree/src/test/java/com/example/service/MyServiceTest.java", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1]

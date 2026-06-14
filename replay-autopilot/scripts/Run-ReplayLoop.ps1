@@ -3389,11 +3389,6 @@ Do not create new production files, test files, or worktree changes.
         # Domain-to-directory mapping (same as Verify-PlanContract.ps1)
         $domainDirectoryMap = @{
             'ai' = 'ai'
-            'ai-claim' = 'ai'
-            'ai-claim-auto' = 'ai'
-            'aiclaim' = 'ai'
-            'aiclaimv2' = 'ai'
-            'auto-claim' = 'ai'
             'ocr' = 'ocr'
             'calculate' = 'calculate'
             'calculation' = 'calculate'

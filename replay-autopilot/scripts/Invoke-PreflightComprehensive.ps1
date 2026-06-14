@@ -10,7 +10,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Worktree,
 
-    [string]$MavenSettings = 'D:\maven\settings\settings.xml',
+    [string]$MavenSettings = '',
 
     [string]$RootPom = '',
 

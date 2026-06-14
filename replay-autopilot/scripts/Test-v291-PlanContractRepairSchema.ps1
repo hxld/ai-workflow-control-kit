@@ -60,7 +60,7 @@ Write-Utf8 (Join-Path $root 'PLAN_RESULT.md') @'
 - plan_status: PROCEED
 - selected_strategy: core-first
 - first_slice: NewOrchestrationService
-- first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
+- first_red_test: mvn -s <maven-settings> -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
 - oracle_production_file_overlap: 100%
 - oracle_high_weight_coverage: 1/1
 - carrier_search: performed
@@ -82,7 +82,7 @@ Write-Utf8 (Join-Path $root 'TEST_CHARTER.md') 'RED GREEN'
 Write-Utf8 (Join-Path $root 'FIRST_SLICE_PROOF_PLAN.md') @'
 first_slice: S1
 highest_weight_open_gate: core_entry
-first_red_test: mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
+first_red_test: mvn -s <maven-settings> -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=NewOrchestrationServiceTest
 selected_real_entry: NewOrchestrationService.process
 public_entry_contract_coverage: not_public_entry_with_reason
 selected_carrier: NewOrchestrationService.process

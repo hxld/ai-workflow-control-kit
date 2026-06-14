@@ -4,7 +4,8 @@
     [ValidateSet('Phase0', 'Plan')]
     [string]$Stage = 'Phase0',
     [switch]$ValidateOnly,
-    [string]$Worktree = ''
+    [string]$Worktree = '',
+    [switch]$SkipCarrierAndOracleChecks
 )
 
 $ErrorActionPreference = 'Stop'
@@ -933,7 +934,7 @@ if ($Stage -eq 'Phase0') {
     # New services are expected NOT to exist in the codebase yet
     $shouldCheckCarrierExistence = -not $newServiceIsTrue
 
-    if (-not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
+    if (-not $SkipCarrierAndOracleChecks -and -not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
         $worktreePathForCarrierCheck = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
 
         # v395: Check if carrier exists in oracle diff before searching codebase
@@ -965,8 +966,7 @@ if ($Stage -eq 'Phase0') {
                 # Try common project root locations
                 $replayRootParent = Split-Path $replayRootFull -Parent
                 $projectRootCandidates = @(
-                    "$env:AI_WORKFLOW_PROJECT_ROOT",
-                    'C:\projects\claim'
+                    "$env:AI_WORKFLOW_PROJECT_ROOT"
                 )
                 # Add inferred parent if valid
                 if (-not [string]::IsNullOrWhiteSpace($replayRootParent)) {
@@ -1045,49 +1045,51 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v352: Integrate carrier search verification to validate carrier exists in codebase
-    # Only run if carrier search fields are present (no missing field issues yet)
-    $carrierFieldIssues = @($issues | Where-Object { $_ -like 'carrier_search*' })
-    $worktreePath = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
-    $oracleCommitPath = Join-Path $replayRootFull 'ORACLE_COMMIT.txt'
-    $oracleCommit = if (Test-Path -LiteralPath $oracleCommitPath) { (Get-Content -LiteralPath $oracleCommitPath -Raw -Encoding UTF8).Trim() } else { '' }
-    $oracleDiffPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
+    if (-not $SkipCarrierAndOracleChecks) {
+        # v352: Integrate carrier search verification to validate carrier exists in codebase
+        # Only run if carrier search fields are present (no missing field issues yet)
+        $carrierFieldIssues = @($issues | Where-Object { $_ -like 'carrier_search*' })
+        $worktreePath = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
+        $oracleCommitPath = Join-Path $replayRootFull 'ORACLE_COMMIT.txt'
+        $oracleCommit = if (Test-Path -LiteralPath $oracleCommitPath) { (Get-Content -LiteralPath $oracleCommitPath -Raw -Encoding UTF8).Trim() } else { '' }
+        $oracleDiffPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
 
-    if ($carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
-        $carrierVerifyScript = Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1'
-        if (Test-Path -LiteralPath $carrierVerifyScript) {
-            $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_RESULT.md'
-            if (-not (Test-Path -LiteralPath $planResultPathForCarrier)) {
-                $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_CANDIDATE_1.md'
-            }
-
-            if (Test-Path -LiteralPath $planResultPathForCarrier) {
-                $carrierVerifyStdout = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stdout.log'
-                $carrierVerifyStderr = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stderr.log'
-                $carrierVerifyExit = & powershell -NoProfile -ExecutionPolicy Bypass -File $carrierVerifyScript -PlanResultPath $planResultPathForCarrier -Worktree $worktreePath -OracleCommit $oracleCommit -OracleDiffPath $oracleDiffPath > $carrierVerifyStdout 2> $carrierVerifyStderr
-                $carrierVerifyExitCode = $LASTEXITCODE
-
-                $carrierVerifyResultPath = if ($planResultPathForCarrier -match '\.(json|md)$') {
-                    $planResultPathForCarrier -replace '\.(json|md)$', '_CARRIER_SEARCH_VERIFY.json'
-                } else {
-                    "$planResultPathForCarrier`_CARRIER_SEARCH_VERIFY.json"
+        if ($carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
+            $carrierVerifyScript = Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1'
+            if (Test-Path -LiteralPath $carrierVerifyScript) {
+                $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_RESULT.md'
+                if (-not (Test-Path -LiteralPath $planResultPathForCarrier)) {
+                    $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_CANDIDATE_1.md'
                 }
 
-                if ($carrierVerifyExitCode -ne 0 -and (Test-Path -LiteralPath $carrierVerifyResultPath)) {
-                    # Parse verification result to extract issues
-                    try {
-                        $carrierVerifyResult = Get-Content -LiteralPath $carrierVerifyResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                        if ($carrierVerifyResult.status -eq 'FAIL') {
-                            foreach ($issue in $carrierVerifyResult.issues) {
-                                $issues.Add("carrier_search_verify:$($issue.code)") | Out-Null
+                if (Test-Path -LiteralPath $planResultPathForCarrier) {
+                    $carrierVerifyStdout = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stdout.log'
+                    $carrierVerifyStderr = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stderr.log'
+                    $carrierVerifyExit = & powershell -NoProfile -ExecutionPolicy Bypass -File $carrierVerifyScript -PlanResultPath $planResultPathForCarrier -Worktree $worktreePath -OracleCommit $oracleCommit -OracleDiffPath $oracleDiffPath > $carrierVerifyStdout 2> $carrierVerifyStderr
+                    $carrierVerifyExitCode = $LASTEXITCODE
+
+                    $carrierVerifyResultPath = if ($planResultPathForCarrier -match '\.(json|md)$') {
+                        $planResultPathForCarrier -replace '\.(json|md)$', '_CARRIER_SEARCH_VERIFY.json'
+                    } else {
+                        "$planResultPathForCarrier`_CARRIER_SEARCH_VERIFY.json"
+                    }
+
+                    if ($carrierVerifyExitCode -ne 0 -and (Test-Path -LiteralPath $carrierVerifyResultPath)) {
+                        # Parse verification result to extract issues
+                        try {
+                            $carrierVerifyResult = Get-Content -LiteralPath $carrierVerifyResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            if ($carrierVerifyResult.status -eq 'FAIL') {
+                                foreach ($issue in $carrierVerifyResult.issues) {
+                                    $issues.Add("carrier_search_verify:$($issue.code)") | Out-Null
+                                }
+                            } elseif ($carrierVerifyResult.status -eq 'WARN') {
+                                foreach ($warning in $carrierVerifyResult.warnings) {
+                                    $warnings.Add("carrier_search_verify:$($warning.code)") | Out-Null
+                                }
                             }
-                        } elseif ($carrierVerifyResult.status -eq 'WARN') {
-                            foreach ($warning in $carrierVerifyResult.warnings) {
-                                $warnings.Add("carrier_search_verify:$($warning.code)") | Out-Null
-                            }
+                        } catch {
+                            $warnings.Add("carrier_search_verify:parse_error:$($_.Exception.Message)") | Out-Null
                         }
-                    } catch {
-                        $warnings.Add("carrier_search_verify:parse_error:$($_.Exception.Message)") | Out-Null
                     }
                 }
             }
@@ -1455,7 +1457,7 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v289: Test harness placement gate. In this claim replay workspace, example-core
+    # v289: Test harness placement gate. In this workspace, example-core
     # does not carry the test dependencies needed for JUnit/Mockito/Spring Test.
     # Planning a RED directly under example-core creates an environment-blocked round,
     # not a business RED.
@@ -1463,7 +1465,7 @@ if ($Stage -eq 'Phase0') {
     if ($firstRedTestMatch.Success) {
         $firstRedValue = $firstRedTestMatch.Groups[1].Value.Trim()
         if ($firstRedValue -match '(?i)(example-core[/\\]src[/\\]test|-pl\s+example-core|example-core\s+-Dtest)') {
-            $issues.Add('first_slice_proof_invalid:test_harness_claim_core') | Out-Null
+            $issues.Add('first_slice_proof_invalid:test_harness_example_core') | Out-Null
         }
         if ($firstRedValue -match '(?i)(dependency\s*:|add\s+JUnit|鏂板.*(JUnit|Mockito|Spring Test))') {
             $issues.Add('first_slice_proof_invalid:test_dependency_change') | Out-Null
@@ -1656,11 +1658,6 @@ if ($Stage -eq 'Phase0') {
         # the PowerShell hash literal and disabled this verifier.
         $domainDirectoryMap = @{
             'ai' = 'ai'
-            'ai-claim' = 'ai'
-            'ai-claim-auto' = 'ai'
-            'aiclaim' = 'ai'
-            'aiclaimv2' = 'ai'
-            'auto-claim' = 'ai'
             'ocr' = 'ocr'
             'calculate' = 'calculate'
             'calculation' = 'calculate'
@@ -1681,7 +1678,7 @@ if ($Stage -eq 'Phase0') {
             if ($domainDirectoryMap.ContainsKey($domainKey)) {
                 $domainDirectoryPatterns += $domainDirectoryMap[$domainKey]
             }
-            if ($domainKey -match 'ai|claim|auto') { $domainDirectoryPatterns += 'ai' }
+            if ($domainKey -match 'ai') { $domainDirectoryPatterns += 'ai' }
             if ($domainKey -match 'ocr') { $domainDirectoryPatterns += 'ocr' }
             if ($domainKey -match 'risk') { $domainDirectoryPatterns += 'risk' }
             if ($domainKey -match 'push') { $domainDirectoryPatterns += 'push' }

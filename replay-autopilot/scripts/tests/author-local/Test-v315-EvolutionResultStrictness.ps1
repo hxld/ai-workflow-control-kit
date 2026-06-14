@@ -30,7 +30,7 @@ $invalid = New-TestRoot 'invalid'
 ```
 final_status: VALIDATED_TOOLING_EVOLUTION
 tooling_changes_applied: true
-changed_files: D:\opt\replay-autopilot\scripts\plan_contract_verify.py
+changed_files: replay-autopilot/scripts\plan_contract_verify.py
 stop_and_evolve_satisfied: true
 verification_results: PASS (manual review)
 actual_knowledge_version_after_push: v314 (commit blocked by environment)
@@ -59,7 +59,7 @@ $valid = New-TestRoot 'valid'
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
 - verification_results: PASS
-- changed_files: D:\opt\replay-autopilot\scripts\Validate-EvolutionResult.ps1; D:\opt\replay-autopilot\prompts\skill-evolution.prompt.md
+- changed_files: replay-autopilot/scripts\Validate-EvolutionResult.ps1; replay-autopilot\prompts\skill-evolution.prompt.md
 - pushed_commit: abcdef1234567890
 - actual_knowledge_version_after_push: v315
 "@ | Set-Content -LiteralPath (Join-Path $valid 'EVOLUTION_RESULT.md') -Encoding UTF8

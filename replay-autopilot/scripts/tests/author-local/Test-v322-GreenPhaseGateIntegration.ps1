@@ -67,7 +67,7 @@ $mismatchRoot = New-TestRoot -Name 'version-mismatch' -KnowledgeRoot $mismatchKn
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
 - verification_results: PASS
-- changed_files: D:\opt\replay-autopilot\scripts\Run-SliceLoop.ps1
+- changed_files: replay-autopilot/scripts\Run-SliceLoop.ps1
 - pushed_commit: abcdef123456
 - actual_knowledge_version_after_push: v322
 "@ | Set-Content -LiteralPath (Join-Path $mismatchRoot 'EVOLUTION_RESULT.md') -Encoding UTF8
@@ -107,7 +107,7 @@ $validRoot = New-TestRoot -Name 'valid' -KnowledgeRoot $validKnowledge
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
 - verification_results: PASS
-- changed_files: D:\opt\replay-autopilot\scripts\Run-SliceLoop.ps1; D:\opt\replay-autopilot\scripts\Validate-EvolutionResult.ps1
+- changed_files: replay-autopilot/scripts\Run-SliceLoop.ps1; replay-autopilot\scripts\Validate-EvolutionResult.ps1
 - pushed_commit: abcdef123456
 - actual_knowledge_version_after_push: v322
 "@ | Set-Content -LiteralPath (Join-Path $validRoot 'EVOLUTION_RESULT.md') -Encoding UTF8

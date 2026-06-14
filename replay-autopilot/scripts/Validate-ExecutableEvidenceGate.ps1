@@ -299,13 +299,13 @@ $allChangedForHarness = @(
     (Get-StringArray $slice.round_changed_files_snapshot)
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 if (@($allChangedForHarness | Where-Object { $_ -match '(?i)example-core[/\\]src[/\\]test' }).Count -gt 0) {
-    $issues.Add('wrong_test_surface:claim_core_test_harness') | Out-Null
+    $issues.Add('wrong_test_surface:example_core_test_harness') | Out-Null
     $warnings.Add('Tests were placed under example-core/src/test even though this replay requires example-server test harness') | Out-Null
 }
 foreach ($test in @($slice.tests)) {
     $commandText = [string]$test.command
     if ($commandText -match '(?i)-pl\s+example-core\b') {
-        $issues.Add('wrong_test_surface:claim_core_maven_module') | Out-Null
+        $issues.Add('wrong_test_surface:example_core_maven_module') | Out-Null
         $warnings.Add('RED/GREEN command used -pl example-core; use -pl example-server -am for replay tests') | Out-Null
     }
 }

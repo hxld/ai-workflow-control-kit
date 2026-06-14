@@ -1,16 +1,16 @@
 ---
 name: rdc-git
-description: 慧择研发中心 Git 规范，包含分支命名、Commit 规范、MR 流程。当用户需要创建分支、提交代码、创建 MR 时使用此技能。
+description: 研发中心 Git 规范，包含分支命名、Commit 规范、MR 流程。当用户需要创建分支、提交代码、创建 MR 时使用此技能。
 compatibility: 需要 git 命令行工具
 allowed-tools: Bash Read Write Edit Glob Grep
 metadata:
   name-zh: Git 规范
   category: git-workflow
   version: 1.1.1
-  author: 陈武才
-  email: chenwucai@huize.com
+  author: company-template
+  email: <SET_ON_NEW_MACHINE>
   department: 研发中心
-  tags: git,commit,PR,code-review,huize
+  tags: git,commit,PR,code-review
 ---
 
 # 慧择 Git 规范

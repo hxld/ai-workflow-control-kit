@@ -59,16 +59,16 @@ docs/                Migration, productization, and operating guides
 
 ## Prerequisites
 
-Required on a new Windows machine:
+Required on any new machine:
 
 - Git
-- Node.js
+- Node.js >= 18
 - Codex or Claude Code
 
 Recommended when you use the related integrations:
 
 - Python for writing cc-switch SQLite settings
-- PowerShell 7 (`pwsh`) for legacy replay scripts and one-off Windows maintenance
+- PowerShell 7 (`pwsh`) for replay scripts and one-off Windows maintenance
 - cc-switch for shared Claude/Codex common config
 - rtk for the Claude `PreToolUse` hook path
 - uv, bun, ffmpeg, and openspec for skills that call those tools

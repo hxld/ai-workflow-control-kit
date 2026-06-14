@@ -170,10 +170,12 @@ function runReplayValidate(options) {
     return;
   }
 
-  const runner = commandAvailable('pwsh.exe')
-    ? 'pwsh.exe'
-    : options.allowWindowsPowerShellReplay && commandAvailable('powershell.exe')
-      ? 'powershell.exe'
+  const pwshName = os.platform() === 'win32' ? 'pwsh.exe' : 'pwsh';
+  const powershellName = os.platform() === 'win32' ? 'powershell.exe' : 'powershell';
+  const runner = commandAvailable(pwshName)
+    ? pwshName
+    : options.allowWindowsPowerShellReplay && commandAvailable(powershellName)
+      ? powershellName
       : '';
   if (!runner) {
     writeCheck('replay:validate-only', false, 'pwsh unavailable; Windows PowerShell fallback not allowed', true);
@@ -200,7 +202,7 @@ function main() {
   testCommand('node', true);
   testCommand('python', false);
   testCommand('rtk', false);
-  testCommand('pwsh.exe', false);
+  testCommand(os.platform() === 'win32' ? 'pwsh.exe' : 'pwsh', false);
 
   const agentsSkills = path.join(options.agentsHome, 'skills');
   testPath('agents:skills', agentsSkills);

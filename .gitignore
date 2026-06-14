@@ -4,9 +4,10 @@ Thumbs.db
 # Personal sharing materials (keep local only)
 深度分析-分享材料.md
 
-# IDE
-.idea/
+# IDE / editor configs
 .vscode/
+.idea/
+.vibeyardignore
 *.swp
 
 # Secrets and local auth

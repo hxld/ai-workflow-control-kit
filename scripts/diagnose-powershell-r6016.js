@@ -10,6 +10,8 @@ const args = new Set(process.argv.slice(2));
 const asJson = args.has('--json');
 const killHungAstParser = args.has('--kill-hung-ast-parser');
 
+const IS_WIN32 = os.platform() === 'win32';
+
 function execFile(file, argv, options = {}) {
   return childProcess.execFileSync(file, argv, {
     encoding: 'utf8',
@@ -17,6 +19,53 @@ function execFile(file, argv, options = {}) {
     maxBuffer: 1024 * 1024 * 20,
     ...options,
   });
+}
+
+function main() {
+  if (!IS_WIN32) {
+    console.log('diagnose-powershell-r6016 is Windows-only (uses WMI, tasklist.exe, cscript.exe).');
+    console.log('On macOS/Linux, PowerShell runs via pwsh and is not affected by R6016.');
+    process.exit(0);
+  }
+
+  const scriptPath = writeTempWmiScript();
+  let processes;
+  try {
+    const raw = execFile('cscript.exe', ['//NoLogo', scriptPath]);
+    processes = JSON.parse(raw || '[]');
+  } finally {
+    try {
+      fs.rmSync(scriptPath, { force: true });
+    } catch {
+      // Ignore cleanup failures.
+    }
+  }
+
+  const tasklistCsv = tasklistRows();
+  const summary = summarize(processes, tasklistCsv);
+  const killed = killHungAstParser ? killHungAstParsers(summary) : [];
+  const result = {
+    generatedAt: new Date().toISOString(),
+    killHungAstParser,
+    processes: summary,
+    killed,
+  };
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    printHuman(summary, killed);
+  }
+
+  const killedPidSet = new Set(killed.filter((item) => typeof item === 'number'));
+  const dangerous = summary.filter((item) =>
+    !killedPidSet.has(item.pid) && (
+    item.classification === 'rtk_proxy_powershell' ||
+    item.classification === 'build_via_powershell' ||
+    (item.classification === 'codex_ast_parser' && item.notResponding)
+    )
+  );
+  process.exit(dangerous.length > 0 ? 2 : 0);
 }
 
 function writeTempWmiScript() {
@@ -176,47 +225,6 @@ function printHuman(summary, killed) {
   console.log('- codex_ast_parser means Codex Desktop internal Windows command-safety parsing, not workflow-kit hooks.');
   console.log('- rtk_proxy_powershell means a command explicitly used RTK with Windows PowerShell; prefer direct executables.');
   console.log('- build_via_powershell means a build/test command is still routed through Windows PowerShell.');
-}
-
-function main() {
-  const scriptPath = writeTempWmiScript();
-  let processes;
-  try {
-    const raw = execFile('cscript.exe', ['//NoLogo', scriptPath]);
-    processes = JSON.parse(raw || '[]');
-  } finally {
-    try {
-      fs.rmSync(scriptPath, { force: true });
-    } catch {
-      // Ignore cleanup failures.
-    }
-  }
-
-  const tasklistCsv = tasklistRows();
-  const summary = summarize(processes, tasklistCsv);
-  const killed = killHungAstParser ? killHungAstParsers(summary) : [];
-  const result = {
-    generatedAt: new Date().toISOString(),
-    killHungAstParser,
-    processes: summary,
-    killed,
-  };
-
-  if (asJson) {
-    console.log(JSON.stringify(result, null, 2));
-  } else {
-    printHuman(summary, killed);
-  }
-
-  const killedPidSet = new Set(killed.filter((item) => typeof item === 'number'));
-  const dangerous = summary.filter((item) =>
-    !killedPidSet.has(item.pid) && (
-    item.classification === 'rtk_proxy_powershell' ||
-    item.classification === 'build_via_powershell' ||
-    (item.classification === 'codex_ast_parser' && item.notResponding)
-    )
-  );
-  process.exit(dangerous.length > 0 ? 2 : 0);
 }
 
 main();

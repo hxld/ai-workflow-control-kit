@@ -59,10 +59,10 @@ docs/                迁移、产品化和运维指南
 
 ## 前置条件
 
-一台新的 Windows 机器上需要：
+任何新机器上需要：
 
 - Git
-- Node.js
+- Node.js >= 18
 - Codex 或 Claude Code
 
 使用相关集成时推荐：

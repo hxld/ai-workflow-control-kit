@@ -115,8 +115,8 @@ function Sync-BackupMirrorSkill {
 function Get-KnowledgeBackupRoot {
     $candidates = @()
 
-    if (-not [string]::IsNullOrWhiteSpace($env:HXLD_AI_KNOWLEDGE_ROOT)) {
-        $candidates += $env:HXLD_AI_KNOWLEDGE_ROOT
+    if (-not [string]::IsNullOrWhiteSpace($env:AI_WORKFLOW_KNOWLEDGE_ROOT)) {
+        $candidates += $env:AI_WORKFLOW_KNOWLEDGE_ROOT
     }
 
     $scriptParent = Split-Path -Parent $PSScriptRoot

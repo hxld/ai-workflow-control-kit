@@ -18,13 +18,13 @@ Run at least 3 reproducible search commands:
 
 ```bash
 # Example for Facade layer
-rg "class.*Facade.*java" --type java claim-core/src/main/java/
+rg "class.*Facade.*java" --type java example-core/src/main/java/
 
 # Example for Service layer
-rg "class.*Service.*java" --type java claim-core/src/main/java/
+rg "class.*Service.*java" --type java example-core/src/main/java/
 
 # Example for Controller layer
-rg "class.*Controller.*java" --type java claim-core/src/main/java/
+rg "class.*Controller.*java" --type java example-core/src/main/java/
 ```
 
 ### Step 2: Document Search Queries
@@ -33,9 +33,9 @@ In PLAN_RESULT.md, you MUST include:
 
 ```markdown
 carrier_search: performed
-carrier_search_queries: rg "class.*Facade.*java" --type java; rg "ClaimCalculationFacade" --type java; rg "AiClaimFacade" --type java
-existing_production_carriers: AiClaimFacade; ClaimCalculationFacade; RiskInfoFacade
-selected_carrier_from_search: AiClaimFacade
+carrier_search_queries: rg "class.*Facade.*java" --type java; rg "ClaimCalculationFacade" --type java; rg "ExampleFacade" --type java
+existing_production_carriers: ExampleFacade; ClaimCalculationFacade; RiskInfoFacade
+selected_carrier_from_search: ExampleFacade
 ```
 
 ### Step 3: Justify New Service (Only If Required)
@@ -87,17 +87,17 @@ See `scripts/verifier/plan_contract_verify.json`:
 
 **Search Queries:**
 ```bash
-rg "class.*Facade.*java" --type java claim-core/src/main/java/
-rg "triggerAutoFlow" --type java claim-core/src/main/java/
-rg "AiClaimFacade" --type java claim-core/src/main/java/
+rg "class.*Facade.*java" --type java example-core/src/main/java/
+rg "triggerAutoFlow" --type java example-core/src/main/java/
+rg "ExampleFacade" --type java example-core/src/main/java/
 ```
 
 **Existing Production Carriers Found:**
-- AiClaimFacade - Methods: submit, query, updateStatus
+- ExampleFacade - Methods: submit, query, updateStatus
 - ClaimCalculationFacade - Methods: calculate, getBook
 - RiskInfoFacade - Methods: queryRisk, updateRisk
 
-**Selected Carrier:** AiClaimFacade (EXISTING)
+**Selected Carrier:** ExampleFacade (EXISTING)
 **Reason:** Closest match for core_entry family, has `submit` method
 ```
 
@@ -106,7 +106,7 @@ rg "AiClaimFacade" --type java claim-core/src/main/java/
 ```markdown
 ## WRONG: No Carrier Search Performed
 
-### Selected Carrier: AiAutoClaimFlowService (NEW)
+### Selected Carrier: ExampleFlowService (NEW)
 
 **Problems:**
 1. Did NOT search for existing Facade/Service carriers

@@ -32,12 +32,12 @@ grep "public.*execute.*(" ${oracle_branch}:${file_path}
 
 ```json
 {
-  "carrier": "AiAutoClaimFlowService",
+  "carrier": "ExampleFlowService",
   "exists_in_base": false,
   "signatures": {
-    "claim-core/.../AiAutoClaimFlowService.java": [
-      "public class AiAutoClaimFlowService",
-      "public void handle(Long caseId, AiApplyClaimApiTask task)"
+    "example-core/.../ExampleFlowService.java": [
+      "public class ExampleFlowService",
+      "public void handle(Long caseId, ExampleApplyApiTask task)"
     ]
   }
 }

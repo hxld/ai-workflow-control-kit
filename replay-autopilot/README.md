@@ -1,6 +1,6 @@
 # Replay Autopilot
 
-这个目录用于把 aiClaimV2 replay 从“人工复制 prompt”推进到“脚本化循环执行”：准备隔离 worktree、调用本地 agent CLI、收集日志、解析 Phase 1/Phase 2 报告、生成技能进化提案，并在显式授权时触发受控技能进化。
+这个目录用于把 AI 编码 replay 任务从“人工复制 prompt”推进到“脚本化循环执行”：准备隔离 worktree、调用本地 agent CLI、收集日志、解析 Phase 1/Phase 2 报告、生成技能进化提案，并在显式授权时触发受控技能进化。
 
 ## 路径配置（可移植性）
 
@@ -230,7 +230,7 @@ phase1_max_slices: 3
 - 每轮准备阶段会先生成 `BASELINE_INDEX.md`，只包含需求标题、规则文件摘要、模块文件族数量和可复现搜索命令。
 - 每轮准备阶段还会生成 `CONTEXT_MANIFEST.md`，列出 `system_context_dir` 下允许读取的通用系统上下文文件。
 - `BASELINE_INDEX.md` 是 token 优化用的中性索引，不得包含 selected entry、上一轮 gap、oracle 信息、旧 replay 分数或实现建议。
-- `CONTEXT_MANIFEST.md` / `.doc/claim-system-context` 只能作为通用项目背景，不能替代 requirement_source 和代码事实。
+- `CONTEXT_MANIFEST.md` / `.doc/example-system-context` 只能作为通用项目背景，不能替代 requirement_source 和代码事实。
 - Phase 0 只允许写 `EXPLORATION_REPORT.md`、`ROUND_CONTRACT.md` 和 `PHASE0_RESULT.md`。
 - Phase 0.5 会生成 `PLAN_CANDIDATE_*.md`、`PLAN_SELECTION.md`、`REPLAY_PLAN.md`、`IMPLEMENTATION_CONTRACT.md`、`EXPECTED_DIFF_MATRIX.md`、`SIDE_EFFECT_LEDGER.md`、`TEST_CHARTER.md` 和 `PLAN_RESULT.md`。
 - 禁止修改生产代码、测试、配置、SQL、前端文件。
@@ -305,7 +305,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-ReplayLoop.ps1 -StartRound 2 -Rounds 1 -RunEvolution
 ```
 
-也可以在 `config.yaml` 中把 `auto_evolution: true` 打开。建议先用默认模式检查 `EVOLUTION_PROPOSAL.md`，确认 gap 是跨项目 workflow gate，而不是 aiClaimV2 项目细节。
+也可以在 `config.yaml` 中把 `auto_evolution: true` 打开。建议先用默认模式检查 `EVOLUTION_PROPOSAL.md`，确认 gap 是跨项目 workflow gate，而不是 example-feature 项目细节。
 
 ## 跑到指定知识版本
 
@@ -397,7 +397,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-UntilKnowledge
 - Parser 优先以 `FINAL_REPLAY_REPORT.md` / Phase 2 指标为准，不再把 Phase 0 的 `PROCEED` 当最终状态。
 - 分数解析支持 Markdown 反引号、百分号、表格和 `key: value` 多种写法。
 - Phase 0 使用高推理模型做探索，Phase 0.5 做多候选规划择优，Phase 1 使用代码模型按合同逐 slice 执行。
-- `.doc/claim-system-context` 通过 `CONTEXT_MANIFEST.md` 接入，只作为通用系统背景，减少重复探索。
+- `.doc/example-system-context` 通过 `CONTEXT_MANIFEST.md` 接入，只作为通用系统背景，减少重复探索。
 - Phase 0/Phase 1 强制最小可交付核心闭环：真实入口、编排、持久化/查询/写入、副作用、失败隔离和可执行证据。
 - 字段/列名/flag/payload/display 命名必须先锁定当前需求和代码证据；自由翻译会被标记为 `exact_contract_gap`。
 - deploy-facing surface 需要可执行最小切片；static-only、blocker-only、helper-only 只能降权或封顶。

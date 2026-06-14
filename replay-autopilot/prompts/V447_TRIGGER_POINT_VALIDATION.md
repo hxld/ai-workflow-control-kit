@@ -4,27 +4,27 @@
 
 This prompt enforces Experiment 1 from NEXT_EXPERIMENT_PLAN.md: Correct Trigger Point Selection.
 
-The core issue: v446 selected `AiCalculateLossApiTaskProcessor` (Calculate Loss task) when the requirement said "AI核赔结果获取成功后" which should map to `AiApplyClaimApiTaskProcessor` (Apply Claim task).
+The core issue: v446 selected `ExampleCalculatorApiTaskProcessor` (Calculate Loss task) when the requirement said "AI核赔结果获取成功后" which should map to `ExampleApiTaskProcessor` (Apply Claim task).
 
 ## Trigger Point Mapping
 
 | Requirement Pattern | Expected Processor | Task Type | Description |
 |---------------------|-------------------|-----------|-------------|
-| AI核赔结果获取成功后 | AiApplyClaimApiTaskProcessor | Apply Claim | Comprehensive AI interface that triggers auto-flow AFTER result is saved |
-| 核赔结果获取成功后 | AiApplyClaimApiTaskProcessor | Apply Claim | Same as above (shorter form) |
-| AI核赔成功后 | AiApplyClaimApiTaskProcessor | Apply Claim | Same as above (shortest form) |
-| 赔款计算成功后 | AiCalculateLossApiTaskProcessor | Calculate Loss | Only calculates amounts, does NOT trigger auto-flow |
-| 计算损失成功后 | AiCalculateLossApiTaskProcessor | Calculate Loss | Same as above (alternative phrasing) |
+| AI核赔结果获取成功后 | ExampleApiTaskProcessor | Apply Claim | Comprehensive AI interface that triggers auto-flow AFTER result is saved |
+| 核赔结果获取成功后 | ExampleApiTaskProcessor | Apply Claim | Same as above (shorter form) |
+| AI核赔成功后 | ExampleApiTaskProcessor | Apply Claim | Same as above (shortest form) |
+| 赔款计算成功后 | ExampleCalculatorApiTaskProcessor | Calculate Loss | Only calculates amounts, does NOT trigger auto-flow |
+| 计算损失成功后 | ExampleCalculatorApiTaskProcessor | Calculate Loss | Same as above (alternative phrasing) |
 
 ## Critical Distinction
 
-**AiCalculateLossApiTaskProcessor** (Calculate Loss task):
+**ExampleCalculatorApiTaskProcessor** (Calculate Loss task):
 - Only calculates loss amounts
 - Does NOT trigger auto-flow
 - Is NOT the comprehensive AI interface
 - Should NOT be selected when requirement says "AI核赔结果获取成功后"
 
-**AiApplyClaimApiTaskProcessor** (Apply Claim task):
+**ExampleApiTaskProcessor** (Apply Claim task):
 - Is the comprehensive AI interface
 - Triggers auto-flow AFTER result is successfully saved
 - Should be selected when requirement says "AI核赔结果获取成功后"
@@ -57,14 +57,14 @@ Before finalizing carrier selection in Phase 0:
 **Requirement snippet**: "AI核赔结果获取成功后，自动流转..."
 
 **Wrong selection** (v446):
-- Selected: `AiCalculateLossApiTaskProcessor.handleTaskResponse()`
+- Selected: `ExampleCalculatorApiTaskProcessor.handleTaskResponse()`
 - Reason: "Found 'AI' and 'success' in processor name"
 - Status: WRONG_TEST_SURFACE
 
 **Correct selection** (v447):
 - Pattern found: "AI核赔结果获取成功后"
-- Expected processor: `AiApplyClaimApiTaskProcessor`
-- Selected: `AiApplyClaimApiTaskProcessor.handleTaskResponse()`
+- Expected processor: `ExampleApiTaskProcessor`
+- Selected: `ExampleApiTaskProcessor.handleTaskResponse()`
 - Reason: "Trigger pattern 'AI核赔结果获取成功后' maps to Apply Claim task processor"
 
 ## Integration with Phase 0 Contract Gate

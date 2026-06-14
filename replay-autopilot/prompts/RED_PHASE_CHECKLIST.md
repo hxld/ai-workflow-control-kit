@@ -16,7 +16,7 @@
 **Step 1**: Verify test compiles without errors
 
 ```bash
-mvn test-compile -pl claim-server
+mvn test-compile -pl example-server
 ```
 
 - [ ] Test compiles successfully

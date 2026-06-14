@@ -7,13 +7,13 @@ For the **HIGHEST-WEIGHT open family**, you MUST provide `first_slice_proof` wit
 ### Required first_slice_proof Fields
 
 1. **target_carrier_file_path**: Exact file path
-   - Example: `"claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java"`
+   - Example: `"example-core/src/main/java/com/example/project/core/task/ExampleApiTaskProcessor.java"`
 
 2. **target_carrier_line_number**: Exact line number where method is defined
    - Example: `42`
 
 3. **expected_test_class**: Full test class name
-   - Example: `"AiApplyClaimApiTaskProcessorTest"`
+   - Example: `"ExampleApiTaskProcessorTest"`
 
 4. **expected_test_method**: Test method name
    - Example: `"testExecuteTask_AutoFlowTriggered"`
@@ -55,9 +55,9 @@ For the **HIGHEST-WEIGHT open family**, you MUST provide `first_slice_proof` wit
   "highest_weight_family": "core_entry",
   "family_weight": 100,
   "first_slice_proof": {
-    "target_carrier_file_path": "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java",
+    "target_carrier_file_path": "example-core/src/main/java/com/example/project/core/task/ExampleApiTaskProcessor.java",
     "target_carrier_line_number": 42,
-    "expected_test_class": "AiApplyClaimApiTaskProcessorTest",
+    "expected_test_class": "ExampleApiTaskProcessorTest",
     "expected_test_method": "testExecuteTask_AutoFlowTriggered",
     "expected_assertions": [
       "assertEquals(35, caseStatus)",

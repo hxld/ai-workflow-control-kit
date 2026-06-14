@@ -13,7 +13,7 @@
     Path to output JSON file (default: .\BASELINE_CARRIER_INDEX.json).
 
 .PARAMETER BaselineCommit
-    Git commit hash for baseline verification (default: e19c16c).
+    Git commit hash for baseline verification (default: <your baseline commit>).
 
 .EXAMPLE
     .\Build-BaselineCarrierIndex.ps1 -BaselineRoot "$env:AI_WORKFLOW_PROJECT_ROOT" -OutputPath "BASELINE_CARRIER_INDEX.json"
@@ -23,7 +23,7 @@
 param(
     [string]$BaselineRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
     [string]$OutputPath = ".\BASELINE_CARRIER_INDEX.json",
-    [string]$BaselineCommit = "e19c16c"
+    [string]$BaselineCommit = ""
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,9 +60,9 @@ if (-not $rgAvailable) {
     exit 1
 }
 
-# Scan claim-core for Task processors and @Remote/@CatfishRemote annotations
-Write-Host "Scanning claim-core..."
-$corePath = Join-Path $BaselineRoot "claim-core\src\main\java"
+# Scan example-core for Task processors and @Remote/@CatfishRemote annotations
+Write-Host "Scanning example-core..."
+$corePath = Join-Path $BaselineRoot "example-core\src\main\java"
 
 if (Test-Path -LiteralPath $corePath) {
     $rgResult = rg "@CatfishRemote|@Remote" --type java --files-with-matching $corePath 2>&1
@@ -71,15 +71,15 @@ if (Test-Path -LiteralPath $corePath) {
         $relativeFile = $file -replace [regex]::Escape($BaselineRoot), '' -replace '^\\+', '' -replace '^/+', ''
         $className = [System.IO.Path]::GetFileNameWithoutExtension($file)
 
-        $layer = if ($file -match "(\\|/)claim-api(\\|/)|Facade") { "Facade" }
-                  elseif ($file -match "(\\|/)claim-web(\\|/)|Controller") { "Controller" }
+        $layer = if ($file -match "(\\|/)example-api(\\|/)|Facade") { "Facade" }
+                  elseif ($file -match "(\\|/)example-web(\\|/)|Controller") { "Controller" }
                   elseif ($file -match "TaskProcessor|\.task\.|Task\.java") { "Task" }
                   elseif ($file -match "Service") { "Service" }
                   else { "Service" }
 
         $carriers[$className] = @{
             layer = $layer
-            module = "claim-core"
+            module = "example-core"
             file = $relativeFile
             baseline_commit = $BaselineCommit
             type = "Task"
@@ -87,9 +87,9 @@ if (Test-Path -LiteralPath $corePath) {
     }
 }
 
-# Scan claim-api for Facade implementations
-Write-Host "Scanning claim-api..."
-$apiPath = Join-Path $BaselineRoot "claim-api\src\main\java"
+# Scan example-api for Facade implementations
+Write-Host "Scanning example-api..."
+$apiPath = Join-Path $BaselineRoot "example-api\src\main\java"
 
 if (Test-Path -LiteralPath $apiPath) {
     $rgResult = rg "class.*Facade|class.*Controller" --type java --files-with-matching $apiPath 2>&1
@@ -104,7 +104,7 @@ if (Test-Path -LiteralPath $apiPath) {
 
         $carriers[$className] = @{
             layer = $layer
-            module = "claim-api"
+            module = "example-api"
             file = $relativeFile
             baseline_commit = $BaselineCommit
             type = "Facade"
@@ -112,9 +112,9 @@ if (Test-Path -LiteralPath $apiPath) {
     }
 }
 
-# Scan claim-web for Controller implementations
-Write-Host "Scanning claim-web..."
-$webPath = Join-Path $BaselineRoot "claim-web\src\main\java"
+# Scan example-web for Controller implementations
+Write-Host "Scanning example-web..."
+$webPath = Join-Path $BaselineRoot "example-web\src\main\java"
 
 if (Test-Path -LiteralPath $webPath) {
     $rgResult = rg "@Controller|@RestController|@RequestMapping" --type java --files-with-matching $webPath 2>&1
@@ -125,7 +125,7 @@ if (Test-Path -LiteralPath $webPath) {
 
         $carriers[$className] = @{
             layer = "Controller"
-            module = "claim-web"
+            module = "example-web"
             file = $relativeFile
             baseline_commit = $BaselineCommit
             type = "Controller"

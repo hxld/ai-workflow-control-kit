@@ -58,15 +58,15 @@
 
 1. 读取 `{{ORACLE_DIFF_ANALYSIS}}`，提取 oracle 文件路径中的功能域关键词：
    - `examine/` / `ExamineFlow` / `ExamineFacade` → 审核流程域
-   - `push/` / `InsureCompanyPush` / `PushService` → 保司推送域
-   - `ai/` / `AiClaim` / `AiAuto` / `AiReview` → AI核赔域
+   - `push/` / `ExamplePush` / `PushService` → 外部推送域
+   - `ai/` / `Example` / `ExampleAuto` / `AiReview` → AI核赔域
    - `compensate/` / `CompensateTable` → 理算域
    - `route/` / `CaseRoute` → 案件流转域
-   - `refund/` / `RefundTicket` / `ReturnTicket` → 退票域
+   - `refund/` / `RefundTicket` / `ExampleTicket` → 回调域
 
 2. 读取 `{{REQUIREMENT_SOURCE}}`，提取需求的功能描述关键词：
-   - 标题中的功能名称 (e.g., "AI核赔自动流转", "退票处理")
-   - 核心业务术语 (e.g., "免复核金额", "退票原因")
+   - 标题中的功能名称 (e.g., "AI核赔自动流转", "回调处理")
+   - 核心业务术语 (e.g., "免复核金额", "回调原因")
 
 3. **域兼容性判断**：
    - 统计 oracle 文件中各功能域的文件数量
@@ -163,19 +163,19 @@ Machine-readable requirements:
 如果 `ORACLE_CONTRACTS.json` 包含：
 ```json
 {
-  "AiAutoClaimFlowService": {
+  "ExampleFlowService": {
     "method": "handle",
-    "signature": "public void handle(Long caseId, AiApplyClaimApiTask task)",
-    "parameter_types": ["Long", "AiApplyClaimApiTask"],
+    "signature": "public void handle(Long caseId, ExampleApplyApiTask task)",
+    "parameter_types": ["Long", "ExampleApplyApiTask"],
     "return_type": "void"
   }
 }
 ```
 
 你的计划 MUST 使用：
-- ✅ `AiAutoClaimFlowService.handle(Long caseId, AiApplyClaimApiTask task)`
-- ❌ NOT `AiAutoClaimFlowService.executeAutoFlow(Long caseId)`
-- ❌ NOT `AiAutoClaimFlowService.processAiResult(Long caseId, AiResult result)`
+- ✅ `ExampleFlowService.handle(Long caseId, ExampleApplyApiTask task)`
+- ❌ NOT `ExampleFlowService.executeAutoFlow(Long caseId)`
+- ❌ NOT `ExampleFlowService.processAiResult(Long caseId, AiResult result)`
 
 **Verification:**
 
@@ -245,9 +245,9 @@ Status: PROCEED  # ❌ FORBIDDEN
 
 **CORRECT** (carrier verified):
 ```
-Selected Carrier: AiAutoClaimFlowService.handle
-Verification: rg "class AiAutoClaimFlowService" --type java
-Result: Found in claim-core/src/main/java/.../AiAutoClaimFlowService.java
+Selected Carrier: ExampleFlowService.handle
+Verification: rg "class ExampleFlowService" --type java
+Result: Found in example-core/src/main/java/.../ExampleFlowService.java
 Status: PROCEED  # ✅ ALLOWED
 ```
 
@@ -435,9 +435,9 @@ pattern_return_type: <return type>
 pattern_error_handling: <response_codes or exception_propagation>
 pattern_evidence_source: <rg command + file path>
 ```
-   - **测试 harness 选择规则（v289）**：`first_red_test` 必须指向已有测试依赖的模块。当前 claim replay 中测试必须放在 `claim-server/src/test/...`，运行命令必须使用 `-pl claim-server -am`；禁止规划 `claim-core/src/test/...`、`-pl claim-core`、或通过修改 `pom.xml` 新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
+   - **测试 harness 选择规则（v289）**：`first_red_test` 必须指向已有测试依赖的模块。当前 claim replay 中测试必须放在 `example-server/src/test/...`，运行命令必须使用 `-pl example-server -am`；禁止规划 `example-core/src/test/...`、`-pl example-core`、或通过修改 `pom.xml` 新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
    - **公共入口证明规则（机器校验）**：如果 `selected_real_entry` 是 facade/controller/API/endpoint/route 等公共入口，则以下全部必须满足，否则 runner 拒绝 FIRST_SLICE_PROOF_PLAN 并 early stop：
-     1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `AiClaimModuleConfigController` → carrier 必须包含 `AiClaimModuleConfigController` 或 `AiClaimModuleConfigFacade`，不能只写 `TAiClaimModuleConfig entity` 或 `AiClaimModuleConfigMapper`。
+     1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `ExampleModuleConfigController` → carrier 必须包含 `ExampleModuleConfigController` 或 `ExampleModuleConfigFacade`，不能只写 `TExampleModuleConfig entity` 或 `ExampleModuleConfigMapper`。
      2. `first_red_test` 必须通过该公共入口或其直接调用链发起，不能只测 Mapper/DAO 层。
      3. `public_entry_contract_coverage:` 必须写明请求参数、响应字段、状态码或错误分支中至少一个的可执行证明。仅写 "Full" 或 "existing contract accepts DTO" 不够，必须写具体断言内容（如 "assert ResultModel.success contains exemptReviewAmount field"、"assert POST /ai/claim/config/add returns 200 with updated config JSON"、"assert invalid param returns ResultModel.error with message"）。
      4. `real_carrier_kind` 必须写 `production_entry_or_service` 或 `production_controller_or_route`，不能写 `production_mapper_or_query`、`production_dto`、`production_enum`。
@@ -554,8 +554,8 @@ pattern_evidence_source: <rg command + file path>
 
    | Oracle File | Diff Type | Lines Added | Lines Deleted | Validation | Closure |
    |-------------|-----------|-------------|---------------|------------|---------|
-   | claim-domain/.../TAiClaimModuleConfig.java | FIELD_ADD | 3 | 0 | type_match | S1 |
-   | claim-core/.../AiAutoClaimFlowService.java | NEW_STUB | 20 | 0 | signature_only | S1 |
+   | example-domain/.../TExampleModuleConfig.java | FIELD_ADD | 3 | 0 | type_match | S1 |
+   | example-core/.../ExampleFlowService.java | NEW_STUB | 20 | 0 | signature_only | S1 |
    ```
 
    - "Closure" 列必须说明该 diff 在哪个 slice 闭合（如 S1, S2, S3）或为何无法闭合（如 BLOCKED:reason）

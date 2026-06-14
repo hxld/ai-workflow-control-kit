@@ -13,7 +13,7 @@ BEFORE selecting a carrier for ANY family:
    - **DO NOT** select for core_entry family
    - **CONSIDER** selecting for stateful_side_effect family
 5. **IF** no valid carrier found in index:
-   - **EXECUTE** fallback: `rg "@Remote @CatfishRemote"` in claim-core
+   - **EXECUTE** fallback: `rg "@Remote @CatfishRemote"` in example-core
    - **IF** fallback returns empty: CREATE `planned_new_carrier` entry, DEFER to later slice
 
 ### Building the Index
@@ -32,10 +32,10 @@ To generate BASELINE_CARRIER_INDEX.json:
   "generated_at": "2026-06-05T10:00:00Z",
   "total_carriers": 42,
   "carriers": {
-    "AiApplyClaimApiTaskProcessor": {
+    "ExampleApiTaskProcessor": {
       "layer": "Task",
-      "module": "claim-core",
-      "file": "claim-core/src/main/java/.../AiApplyClaimApiTaskProcessor.java",
+      "module": "example-core",
+      "file": "example-core/src/main/java/.../ExampleApiTaskProcessor.java",
       "baseline_commit": "e19c16c",
       "type": "Task"
     }
@@ -65,7 +65,7 @@ BEFORE confirming carrier selection for ANY family:
 ### Get-CarrierLayer.ps1 Usage
 
 ```powershell
-$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "<PROJECT_ROOT>"
+$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "ExampleApiTaskProcessor" -BaselineRoot "<PROJECT_ROOT>"
 # Returns: @{ layer = "Task"; file = "..."; reason = $null }
 ```
 
@@ -90,8 +90,8 @@ $result = .\scripts\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor"
 $index = Get-Content "BASELINE_CARRIER_INDEX.json" | ConvertFrom-Json
 
 # Check if carrier exists
-if ($index.carriers.PSObject.Properties.Name -contains "AiApplyClaimApiTaskProcessor") {
-    $carrierInfo = $index.carriers."AiApplyClaimApiTaskProcessor"
+if ($index.carriers.PSObject.Properties.Name -contains "ExampleApiTaskProcessor") {
+    $carrierInfo = $index.carriers."ExampleApiTaskProcessor"
     Write-Host "Layer: $($carrierInfo.layer)"
 }
 ```
@@ -99,12 +99,12 @@ if ($index.carriers.PSObject.Properties.Name -contains "AiApplyClaimApiTaskProce
 ### Step 2: Validate Layer
 ```markdown
 # Execute layer validation
-$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor"
+$result = .\scripts\Get-CarrierLayer.ps1 -Carrier "ExampleApiTaskProcessor"
 
 # Check result
 if ($result.layer -eq "Facade" -or $result.layer -eq "Controller") {
     # Valid for core_entry family
-    $selected_carrier = "AiApplyClaimApiTaskProcessor"
+    $selected_carrier = "ExampleApiTaskProcessor"
 } elseif ($result.layer -eq "Task" -or $result.layer -eq "Service") {
     # Invalid for core_entry, defer or select alternative
     Write-Host "ERROR: Layer $($result.layer) not valid for core_entry family"

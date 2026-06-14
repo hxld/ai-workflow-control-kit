@@ -110,7 +110,7 @@ def run_pre_flight_check(worktree, target_module):
 如果任一检查失败:
 - 不要进入 Plan 阶段
 - 报告具体失败原因
-- 建议修复方案 (如 "在 claim-core/pom.xml 添加 JUnit 依赖")
+- 建议修复方案 (如 "在 example-core/pom.xml 添加 JUnit 依赖")
 
 预检查不是可选的。损坏的测试环境无法通过写更多测试来修复。
 ```
@@ -120,7 +120,7 @@ def run_pre_flight_check(worktree, target_module):
 ```bash
 # 运行 3 轮带预检查的 replay
 for i in {1..3}; do
-  ./run-replay.sh --feature=aiClaimV2 --pre-flight-check
+  ./run-replay.sh --feature=example-feature --pre-flight-check
   # 检查 phase0_status == BLOCKED at PreFlight stage
   # 检查 Phase 1 是否到达 GREEN phase
 done
@@ -140,4 +140,4 @@ done
 
 ---
 
-**演化来源**: aiClaimV2 replay v278-v293 deep review, RC6: Test environment failures (JUnit, compilation) not detected pre-flight
+**演化来源**: example-feature replay v278-v293 deep review, RC6: Test environment failures (JUnit, compilation) not detected pre-flight

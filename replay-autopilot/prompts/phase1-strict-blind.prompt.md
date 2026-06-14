@@ -37,8 +37,8 @@
 
 【上下文预算纪律】
 - 优先用 `rg` / `rg --files` / `Select-String` 定位文件和行号。
-- 当前执行环境会通过 `RIPGREP_CONFIG_PATH` 默认排除 `.git`、`target`、生产 SQL、min/map 文件和 `claim-web/src/main/webapp/**`；只有需求明确要求前端或 SQL 证据时，才用精确路径和小窗口临时解除。
-- PowerShell 下不要把 `claim-*` 这类裸通配作为路径参数传给 `rg`；用 `rg PATTERN . --glob 'claim-core/**'`，或传精确目录列表。
+- 当前执行环境会通过 `RIPGREP_CONFIG_PATH` 默认排除 `.git`、`target`、生产 SQL、min/map 文件和 `example-web/src/main/webapp/**`；只有需求明确要求前端或 SQL 证据时，才用精确路径和小窗口临时解除。
+- PowerShell 下不要把 `claim-*` 这类裸通配作为路径参数传给 `rg`；用 `rg PATTERN . --glob 'example-core/**'`，或传精确目录列表。
 - 禁止把大型源码文件、日志、XML、JS、需求文档或搜索结果整文件输出到对话；任何单次读取控制在约 80 行以内。
 - 读取文件时先用 `Select-String -Context` 或按行窗口读取，只打开与当前 slice 直接相关的片段。
 - 不要用 `Get-Content -Raw` 或无窗口 `Get-Content` 读取 `requirement_source`、`SKILL.md`、大型 Java/XML/SQL/JS 文件；先用标题/关键词定位，再读必要窗口。

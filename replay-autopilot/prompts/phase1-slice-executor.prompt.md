@@ -101,25 +101,25 @@ If you proceed WITHOUT carrier validation:
 ---
 
 【测试硬约束 — 必须遵守，否则 slice 会被验证器拒绝】
-1. 测试文件必须放在 `claim-server/src/test/` 目录下，不能放在 `claim-core/src/test/`。`claim-core` 没有测试依赖（JUnit、Mockito、Spring Test），只有 `claim-server` 有。
-2. 包路径示例：`claim-server/src/test/java/com/huize/claim/core/caseinfo/service/YourTest.java`
+1. 测试文件必须放在 `example-server/src/test/` 目录下，不能放在 `example-core/src/test/`。`example-core` 没有测试依赖（JUnit、Mockito、Spring Test），只有 `example-server` 有。
+2. 包路径示例：`example-server/src/test/java/com/example/project/core/caseinfo/service/YourTest.java`
 3. 正确的 import 路径（先 `rg` 或 `Get-Content` 确认再写）：
-   - `com.huize.claim.domain.insurance.Insure` / `InsureQuery` / `InsureResult`
-   - `com.huize.claim.domain.open.OpenInsureQuery`
-   - `com.huize.claim.domain.ResultModel`
-   - `com.huize.claim.core.insureData.InsureDataFacadeImpl`
-   - `com.huize.claim.common.constant.Constant`
-   - `com.huize.claim.domain.Pagination`
+   - `com.example.project.domain.insurance.Insure` / `ExampleQuery` / `ExampleResult`
+   - `com.example.project.domain.open.OpenExampleQuery`
+   - `com.example.project.domain.ResultModel`
+   - `com.example.project.core.insureData.ExampleDataFacadeImpl`
+   - `com.example.project.common.constant.Constant`
+   - `com.example.project.domain.Pagination`
 4. Mockito 版本是 1.10.19（古董版本）：
    - 用 `org.mockito.Matchers`（不是 `ArgumentMatchers`）
-   - 用 `org.mockito.Matchers.any(InsureQuery.class)`（不是 `any()`）
+   - 用 `org.mockito.Matchers.any(ExampleQuery.class)`（不是 `any()`）
    - 用 `org.mockito.Matchers.anySet()`（不是 `any()`）
    - `thenAnswer` 的 lambda 参数是 `invocation -> { ... }`
 5. JUnit 用 `org.junit.Assert`（不是 assertj）：`assertEquals`、`assertTrue`、`assertNotNull`、`assertFalse`
 6. 用 `ReflectionTestUtils.setField(service, "fieldName", mock)` 注入依赖（不是 `@InjectMocks`）
-7. 写完测试后必须实际运行 `mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl claim-server -am -Dtest=YourTest -Dsurefire.failIfNoSpecifiedTests=false` 并确认 `BUILD SUCCESS`。如果编译失败，必须修复到通过再继续。
-8. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若 `claim-core` 缺少测试依赖，这不是可修复的业务 diff；必须把 RED 测试放到 `claim-server` 现有测试 harness 中。
-9. 如果 `FIRST_SLICE_PROOF_PLAN.md` 只给出测试类名而没有路径或模块，默认把该测试创建在 `claim-server/src/test/java/...`，并用 `-pl claim-server -am` 运行。禁止自行改成 `claim-core/src/test` 或 `-pl claim-core`。
+7. 写完测试后必须实际运行 `mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=YourTest -Dsurefire.failIfNoSpecifiedTests=false` 并确认 `BUILD SUCCESS`。如果编译失败，必须修复到通过再继续。
+8. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若 `example-core` 缺少测试依赖，这不是可修复的业务 diff；必须把 RED 测试放到 `example-server` 现有测试 harness 中。
+9. 如果 `FIRST_SLICE_PROOF_PLAN.md` 只给出测试类名而没有路径或模块，默认把该测试创建在 `example-server/src/test/java/...`，并用 `-pl example-server -am` 运行。禁止自行改成 `example-core/src/test` 或 `-pl example-core`。
 
 【Test Contract Verification (MANDATORY)】
 写测试前必须核对 FIRST_SLICE_PROOF_PLAN 和 IMPLEMENTATION_CONTRACT 中的接口契约：
@@ -158,9 +158,9 @@ STRUCTURAL 测试只验证代码结构存在性，不足以驱动生产实现。
 **关键词**: exists、notexist、ClassNotFoundException、NoSuchMethodException、file、not、file、missing
 
 **禁止示例**:
-- ❌ "Class AiAutoClaimFlowService does not exist yet"
+- ❌ "Class ExampleFlowService does not exist yet"
 - ❌ "Method executeAutoFlow throws ClassNotFoundException"
-- ❌ "File claim-server/src/main/java/.../AiAutoClaimFlowService.java is missing"
+- ❌ "File example-server/src/main/java/.../ExampleFlowService.java is missing"
 
 ## 测试分类规则
 
@@ -272,7 +272,7 @@ runner 执行以下检查（通过 `calculate-coverage-penalty.py`）：
 
 ❌ **错误**：用 TODO 标记未实现功能
 ```java
-public void handle(Long caseId, AiApplyClaimApiTask task) {
+public void handle(Long caseId, ExampleApplyApiTask task) {
     // TODO: 验证参数
     // TODO: 写入补偿信息
     // TODO: 更新状态
@@ -282,7 +282,7 @@ public void handle(Long caseId, AiApplyClaimApiTask task) {
 
 ✅ **正确**：增量实现，每个步骤对应测试断言
 ```java
-public void handle(Long caseId, AiApplyClaimApiTask task) {
+public void handle(Long caseId, ExampleApplyApiTask task) {
     // Test 1 验证：参数校验
     if (!isSupportedScope(task)) {
         return;  // 测试验证提前返回
@@ -332,7 +332,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
     - `{{CARRIER_RANK}}` 中 rank 1 的 required OPEN/PARTIAL family 是本 slice 的最高优先级生产承载点。若 forced family/sibling 与 rank 1 冲突，必须以 runner 给出的 forced sibling 为准；禁止自行降级到 helper、DTO、常量、静态枚举或非边界 sibling。
     - 必须重新核对 `FIRST_SLICE_PROOF_PLAN.md` 中的 `real_carrier_kind`、`minimum_side_effect_or_blocker`、`forbidden_substitute_check`。`real_carrier_kind` 不是生产入口/服务/controller/mapper/payload/template/lifecycle 承载点，或 `forbidden_substitute_check` 不是 `passed` 时，不得写生产 diff。
     - 第一片必须从 `FIRST_SLICE_PROOF_PLAN.md` / `IMPLEMENTATION_CONTRACT.md` 原样复制 `selected_real_entry`、`selected_carrier`、`first_red_test`。如果计划写明 `TaskServiceTransformCaseTaskPolicyTest`，就必须创建/运行这个测试；测试文件不存在时创建 RED 测试或写 `BLOCKED_PLAN_MISMATCH`，禁止替换成另一个需求/另一个 family 的测试类。
-    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `AiClaimDataAssemblyHelper`、`InputData.policy_num`、`InputData.insure_num`、`AiPolicyNumSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
+    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `ExampleDataAssemblyHelper`、`InputData.policy_num`、`InputData.insure_num`、`AiPolicyNumSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
     - `selected_carrier -> production_boundary -> expected failing assertion -> command -> fail_closed_condition` 五项必须能连起来；如果只能新增日志型、委托型、占位型或 helper-only carrier，直接写 `PARTIAL/BLOCKED`，`coverage_delta=0`。
    - exact-contract 只允许业务可断言项：页码/窗口数、请求字段、响应字段、payload shape、展示值、状态写入、顺序、must-not side effect。规划文件名、路径、模块名、phase/status、branch/commit/hash、generic gap flag 都不是 literal。
    - 如果本 slice 触碰 exact-contract family，必须在 `SLICE_RESULT` 写 `exact_contract_assertions`，每项包含 `literal`、`symbol_or_field`、`db_or_wire_or_display`、`boundary_type`、`production_boundary`、`closure_proof`、`production_predicate`、`forbidden_extra_predicate`、`test_assertion`、`source_type=requirement|code_fact`、`status=CLOSED|BLOCKED`。`production_predicate` 只能包含需求字面量要求的判断；若新增状态、渠道、类型、环境、旧链路等额外谓词，必须在 `forbidden_extra_predicate` 写出并提供“该谓词由生产入口逻辑必然推出”的可执行证明，否则本 slice 只能 `PARTIAL/BLOCKED`，不得关闭 family。
@@ -527,11 +527,11 @@ Your TEST_CHARTER.md must contain ALL of the following sections:
 
 1. **Entry Point**: Exact Facade/Controller method to test
    - Format: `Entry Point: YourFacade.yourMethod(paramTypes)`
-   - Example: `Entry Point: AiAutoClaimFlowFacade.executeAutoFlow(AiApplyClaimApiTask)`
+   - Example: `Entry Point: ExampleAutoClaimFlowFacade.executeAutoFlow(ExampleApplyApiTask)`
 
 2. **Test Surface**: Test class at Facade/Controller layer, NOT Service layer
-   - ✅ Correct: `AiAutoClaimFlowFacadeTest` or `AiAutoClaimFlowControllerTest`
-   - ❌ Wrong: `AiAutoClaimFlowServiceTest` (Service layer - cannot verify full request/response flow)
+   - ✅ Correct: `ExampleAutoClaimFlowFacadeTest` or `ExampleAutoClaimFlowControllerTest`
+   - ❌ Wrong: `ExampleFlowServiceTest` (Service layer - cannot verify full request/response flow)
 
 3. **DB Verification**: SELECT queries for each side effect
    - Example: `SELECT * FROM t_compensate_detail WHERE case_id = ?`
@@ -611,7 +611,7 @@ compensateService.batchInsertCompensateDetail(list);
 
 #### Example correct pattern:
 ```java
-// Step 1: Read claim-core/.../CompensateService.java
+// Step 1: Read example-core/.../CompensateService.java
 // Step 2: Find: public void rewriteCompensateData(Long caseId, List<DetailBundle> bundles)
 // Step 3: Use verified signature
 compensateService.rewriteCompensateData(caseId, bundles);

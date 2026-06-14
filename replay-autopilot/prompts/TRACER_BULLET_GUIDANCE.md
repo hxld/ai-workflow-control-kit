@@ -16,15 +16,15 @@ S1 must touch **minimum 3 families**:
 
 | Category | Files/Packages | Examples |
 |----------|----------------|----------|
-| Frontend | `.jsp`, `.html`, `/web/`, `/ui/` | `ai-claim-management.jsp` |
-| Backend | `*Service.java`, `*Controller.java`, `/claim-core/` | `AiClaimModuleConfigService.java` |
-| Database | `*Mapper.java`, `T[A-Z]*.java`, `/claim-provider/` | `TAiClaimModuleConfig`, `AiClaimModuleConfigMapper` |
-| Test | `*Test.java`, `/test/` | `AiClaimModuleConfigServiceTest.java` |
+| Frontend | `.jsp`, `.html`, `/web/`, `/ui/` | `ai-example-management.jsp` |
+| Backend | `*Service.java`, `*Controller.java`, `/example-core/` | `ExampleModuleConfigService.java` |
+| Database | `*Mapper.java`, `T[A-Z]*.java`, `/example-provider/` | `TExampleModuleConfig`, `ExampleModuleConfigMapper` |
+| Test | `*Test.java`, `/test/` | `ExampleModuleConfigServiceTest.java` |
 | Deploy | `pom.xml`, `application.properties` | Maven config, Spring config |
-| External | Integration clients, callbacks | `InsureCompanyPushService` |
+| External | Integration clients, callbacks | `ExamplePushService` |
 | SideEffect | State/Status/Progress | `CaseFlowStatusService` |
 
-### Example Tracer Bullet for aiClaimV2
+### Example Tracer Bullet for example-feature
 
 **Requirement**: AI核赔管理免复核金额 (AI Claim Management - Exempt Review Amount)
 
@@ -32,10 +32,10 @@ S1 must touch **minimum 3 families**:
 
 | Family | File | Change |
 |--------|------|--------|
-| Frontend | `ai-claim-management.jsp` | Add `freeReviewAmount` input field |
-| Backend | `AiClaimModuleConfigService` | Add `validateFreeReviewAmount()` method |
-| Database | `TAiClaimModuleConfig` | Add `free_review_amount` column |
-| Test | `AiClaimModuleConfigServiceTest` | RED test for validation |
+| Frontend | `ai-example-management.jsp` | Add `freeReviewAmount` input field |
+| Backend | `ExampleModuleConfigService` | Add `validateFreeReviewAmount()` method |
+| Database | `TExampleModuleConfig` | Add `free_review_amount` column |
+| Test | `ExampleModuleConfigServiceTest` | RED test for validation |
 
 This touches **4 families** (Frontend, Backend, Database, Test) - meets minimum requirement.
 
@@ -45,7 +45,7 @@ This touches **4 families** (Frontend, Backend, Database, Test) - meets minimum 
 ```
 # Wrong: vertical slice within backend only
 Files Modified:
-- AiClaimModuleConfigService.java (backend only)
+- ExampleModuleConfigService.java (backend only)
 Families Touched: 1 (Backend only)
 Status: FAIL - Horizontal coverage insufficient
 ```
@@ -54,10 +54,10 @@ Status: FAIL - Horizontal coverage insufficient
 ```
 # Correct: horizontal slice across families
 Files Modified:
-- ai-claim-management.jsp (Frontend)
-- AiClaimModuleConfigService.java (Backend)
-- TAiClaimModuleConfig.java (Database)
-- AiClaimModuleConfigServiceTest.java (Test)
+- ai-example-management.jsp (Frontend)
+- ExampleModuleConfigService.java (Backend)
+- TExampleModuleConfig.java (Database)
+- ExampleModuleConfigServiceTest.java (Test)
 Families Touched: 4 (Frontend, Backend, Database, Test)
 Status: PASS - Horizontal coverage sufficient
 ```
@@ -78,16 +78,16 @@ Before claiming S1 complete:
    {
      "families_touched": ["Frontend", "Backend", "Database"],
      "files_modified": [
-       "ai-claim-management.jsp",
-       "AiClaimModuleConfigService.java",
-       "TAiClaimModuleConfig.java"
+       "ai-example-management.jsp",
+       "ExampleModuleConfigService.java",
+       "TExampleModuleConfig.java"
      ]
    }
    ```
 
 ### Oracle Reference
 
-Oracle implementation for aiClaimV2 touched **8 families**:
+Oracle implementation for example-feature touched **8 families**:
 - Frontend (UI contracts)
 - Backend (Service/Facade)
 - Database (Entity/Mapper)

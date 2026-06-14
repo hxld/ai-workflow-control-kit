@@ -19,7 +19,7 @@ compensateService.batchInsertCompensateDetail(list);
 
 ### Example correct pattern:
 ```java
-// Step 1: Read claim-core/.../CompensateService.java
+// Step 1: Read example-core/.../CompensateService.java
 // Step 2: Find: public void rewriteCompensateData(Long caseId, List<DetailBundle> bundles)
 // Step 3: Use verified signature
 compensateService.rewriteCompensateData(caseId, bundles);

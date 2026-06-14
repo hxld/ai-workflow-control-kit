@@ -46,8 +46,18 @@ class Example {
     $sliceResultPath = Join-Path $replayRoot 'SLICE_RESULT_01.json'
     [ordered]@{
         slice_status = 'PARTIAL'
-        implemented_files = @('src/main/java/Example.java')
+        implemented_files = @(
+            'src/main/java/Example.java',
+            'claim-server/src/test/java/ExampleTest.java'
+        )
         touched_requirement_families = @('core_entry')
+        tests = @(
+            [ordered]@{
+                phase = 'GREEN'
+                command = 'mvn test -pl claim-server -Dtest=ExampleTest'
+                evidence_file = 'claim-server/src/test/java/ExampleTest.java'
+            }
+        )
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $sliceResultPath -Encoding UTF8
 
     $sliceVerifyPath = Join-Path $replayRoot 'SLICE_VERIFY_01.json'
@@ -67,8 +77,16 @@ class Example {
 
     @"
 @echo off
+if "%1"=="--version" (
+  echo Python 3.14.0
+  exit /b 0
+)
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fakeBin 'python.cmd') -Encoding ASCII
+    @"
+@echo off
+exit /b 0
+"@ | Set-Content -LiteralPath (Join-Path $fakeBin 'mvn.cmd') -Encoding ASCII
     $env:PATH = $fakeBin + [System.IO.Path]::PathSeparator + $env:PATH
 
     $functionStart = $runSliceText.IndexOf('function Read-JsonObject')

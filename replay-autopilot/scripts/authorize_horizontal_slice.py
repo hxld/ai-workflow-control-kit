@@ -24,7 +24,7 @@ CATEGORY_RULES = {
         'Processor.java', 'Handler.java',
         'Manager.java', 'Helper.java',
         '/src/main/java/',
-        'example-core/', 'example-api/',
+        'claim-core/', 'claim-api/',
     ],
     'Database': [
         'Mapper.java', 'Mapper.xml',

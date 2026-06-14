@@ -11,40 +11,86 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Resolve-PythonLauncher {
+    $candidates = @(
+        [pscustomobject]@{ Command = 'python'; Arguments = @() },
+        [pscustomobject]@{ Command = 'py'; Arguments = @('-3') },
+        [pscustomobject]@{ Command = 'python3'; Arguments = @() }
+    )
+
+    foreach ($candidate in $candidates) {
+        $commandInfo = Get-Command $candidate.Command -ErrorAction SilentlyContinue
+        if ($null -eq $commandInfo) { continue }
+
+        $versionOutput = & $candidate.Command @($candidate.Arguments + @('--version')) 2>&1
+        $exitCode = $LASTEXITCODE
+        $versionText = ($versionOutput | Out-String).Trim()
+        if ($exitCode -eq 0 -and $versionText -match '^Python\s+3\.') {
+            return [pscustomobject]@{
+                Command = $candidate.Command
+                Arguments = @($candidate.Arguments)
+                Version = $versionText
+            }
+        }
+    }
+
+    throw 'No usable Python 3 launcher found. Tried python, py -3, python3.'
+}
+
 $gateScript = Join-Path $PSScriptRoot 'test_charter_prevalidator.py'
 $testCharterPath = Join-Path $WorkDir 'TEST_CHARTER.md'
 
 if (-not (Test-Path -LiteralPath $gateScript)) {
-    Write-Host "Test charter prevalidator: script missing at $gateScript" -ForegroundColor Yellow
     if ($PassThru) {
-        return @{ can_proceed = $true; verification_status = 'SCRIPT_MISSING' }
+        [ordered]@{
+            can_proceed = $true
+            verification_status = 'SCRIPT_MISSING'
+            failures = @()
+            warnings = @()
+            failure_count = 0
+            warning_count = 0
+        } | ConvertTo-Json -Depth 6
+        exit 0
     }
+    Write-Host "Test charter prevalidator: script missing at $gateScript" -ForegroundColor Yellow
     exit 0
 }
 
 if (-not (Test-Path -LiteralPath $testCharterPath)) {
-    Write-Host "Test charter prevalidator: TEST_CHARTER.md not found (skipping)" -ForegroundColor DarkGray
     if ($PassThru) {
-        return @{ can_proceed = $true; verification_status = 'NO_TEST_CHARTER' }
+        [ordered]@{
+            can_proceed = $false
+            verification_status = 'NO_TEST_CHARTER'
+            failures = @([ordered]@{ code = 'TEST_CHARTER_MISSING'; message = 'TEST_CHARTER.md is required before RED/test implementation.' })
+            warnings = @()
+            failure_count = 1
+            warning_count = 0
+        } | ConvertTo-Json -Depth 6
+        exit 1
     }
-    exit 0
+    Write-Host "Test charter prevalidator: TEST_CHARTER.md not found" -ForegroundColor Red
+    exit 1
 }
 
-Write-Host "Running test charter prevalidation..." -ForegroundColor Cyan
+if (-not $PassThru) {
+    Write-Host "Running test charter prevalidation..." -ForegroundColor Cyan
+}
 
-$result = & python3 $gateScript $testCharterPath --output json 2>&1
+$python = Resolve-PythonLauncher
+$result = & $python.Command @($python.Arguments + @($gateScript, $testCharterPath, '--output', 'json')) 2>&1
 $exitCode = $LASTEXITCODE
 
 if ($PassThru) {
     $resultObj = $result | ConvertFrom-Json
-    return @{
+    [ordered]@{
         can_proceed = $resultObj.valid
         verification_status = if ($resultObj.valid) { 'PASSED' } else { 'FAILED' }
         failures = $resultObj.failures
         warnings = $resultObj.warnings
         failure_count = $resultObj.failure_count
         warning_count = $resultObj.warning_count
-    }
+    } | ConvertTo-Json -Depth 12
+    exit $exitCode
 }
 
 if ($exitCode -eq 0) {

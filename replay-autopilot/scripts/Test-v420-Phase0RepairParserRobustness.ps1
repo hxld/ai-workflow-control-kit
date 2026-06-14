@@ -25,18 +25,18 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v420-test-" + [
 
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    $taskDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
+    $taskDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
     New-Item -ItemType Directory -Force -Path $taskDir | Out-Null
 
-    Write-Text (Join-Path $taskDir 'ExampleCalculatorApiTaskProcessor.java') @'
-package com.example.project.core.ai.task;
+    Write-Text (Join-Path $taskDir 'AiCalculateLossApiTaskProcessor.java') @'
+package com.huize.claim.core.ai.task;
 
-public class ExampleCalculatorApiTaskProcessor {
-    public void handleTaskResponse(ExampleCalculatorApiTask task, ExampleCalculatorApiTaskResponse response) {
+public class AiCalculateLossApiTaskProcessor {
+    public void handleTaskResponse(AiCalculateLossApiTask task, AiCalculateLossApiTaskResponse response) {
     }
 }
-class ExampleCalculatorApiTask {}
-class ExampleCalculatorApiTaskResponse {}
+class AiCalculateLossApiTask {}
+class AiCalculateLossApiTaskResponse {}
 '@
 
     Write-Text (Join-Path $testRoot 'PHASE0_RESULT.md') @'
@@ -48,7 +48,7 @@ class ExampleCalculatorApiTaskResponse {}
 
 ```
 category: core_entry
-primary: ExampleCalculatorApiTaskProcessor.handleTaskResponse
+primary: AiCalculateLossApiTaskProcessor.handleTaskResponse
 baseline_existing: true
 confidence: HIGH
 ```
@@ -56,17 +56,17 @@ confidence: HIGH
 # Search Commands Used
 
 ```
-rg -n "class.*ExampleCalculatorApiTaskProcessor" --glob "*.java" worktree
-rg -n "handleTaskResponse" --glob "*ExampleCalculatorApiTaskProcessor*.java" worktree
-rg -n "ExampleCalculatorApiTaskProcessor|handleTaskResponse" --glob "*.java" worktree
+rg -n "class.*AiCalculateLossApiTaskProcessor" --glob "*.java" worktree
+rg -n "handleTaskResponse" --glob "*AiCalculateLossApiTaskProcessor*.java" worktree
+rg -n "AiCalculateLossApiTaskProcessor|handleTaskResponse" --glob "*.java" worktree
 ```
 
-- result_summary: 3 search commands executed; selected ExampleCalculatorApiTaskProcessor.handleTaskResponse and excluded no baseline carrier.
+- result_summary: 3 search commands executed; selected AiCalculateLossApiTaskProcessor.handleTaskResponse and excluded no baseline carrier.
 '@
 
     $verifyJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $testRoot -Worktree $worktree | ConvertFrom-Json
     Assert-True ($verifyJson.verification_status -eq 'PASS') 'Verifier should pass single-# Search Commands and Selected Real Entry primary format'
-    Assert-True ([string]$verifyJson.selected_real_entry -eq 'ExampleCalculatorApiTaskProcessor.handleTaskResponse') 'Verifier should parse primary selected real entry'
+    Assert-True ([string]$verifyJson.selected_real_entry -eq 'AiCalculateLossApiTaskProcessor.handleTaskResponse') 'Verifier should parse primary selected real entry'
 
     Write-Text (Join-Path $testRoot 'PHASE0_RESULT.md') @'
 # Phase 0 Result
@@ -75,16 +75,16 @@ rg -n "ExampleCalculatorApiTaskProcessor|handleTaskResponse" --glob "*.java" wor
 
 # Selected Core Path
 
-**Selected Real Entry**: `com.example.project.core.ai.task.ExampleCalculatorApiTaskProcessor.handleTaskResponse`
+**Selected Real Entry**: `com.huize.claim.core.ai.task.AiCalculateLossApiTaskProcessor.handleTaskResponse`
 
 **Carrier Status**: EXISTING
 
 # Search Commands Used
 
 ```
-rg -n "class.*ExampleCalculatorApiTaskProcessor" --glob "*.java" worktree
+rg -n "class.*AiCalculateLossApiTaskProcessor" --glob "*.java" worktree
 rg -n "handleTaskResponse" --glob "*.java" worktree
-rg -n "ExampleCalculatorApiTaskProcessor|handleTaskResponse" --glob "*.java" worktree
+rg -n "AiCalculateLossApiTaskProcessor|handleTaskResponse" --glob "*.java" worktree
 ```
 
 - result_summary: selected entry exists in baseline worktree.
@@ -92,7 +92,7 @@ rg -n "ExampleCalculatorApiTaskProcessor|handleTaskResponse" --glob "*.java" wor
 
     $verifyJson2 = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $testRoot -Worktree $worktree | ConvertFrom-Json
     Assert-True ($verifyJson2.verification_status -eq 'PASS') 'Verifier should pass real v419 Selected Core Path format'
-    Assert-True ([string]$verifyJson2.selected_real_entry -eq 'ExampleCalculatorApiTaskProcessor.handleTaskResponse') 'Verifier should normalize package-qualified selected entry'
+    Assert-True ([string]$verifyJson2.selected_real_entry -eq 'AiCalculateLossApiTaskProcessor.handleTaskResponse') 'Verifier should normalize package-qualified selected entry'
 
     $runnerText = Get-Content -LiteralPath $runner -Raw -Encoding UTF8
     Assert-True ($runnerText -match 'function\s+Repair-Phase0ManualOracleWaitText') 'Runner should define Phase0 oracle-wait sanitizer'

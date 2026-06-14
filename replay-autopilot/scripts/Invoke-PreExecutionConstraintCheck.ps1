@@ -8,7 +8,8 @@ param(
     [string]$Worktree,
     [Parameter(Mandatory = $true)]
     [string]$PlanResultPath,
-    [string]$BaselineRoot = ''
+    [string]$BaselineRoot = '',
+    [string]$FeatureClassificationPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +38,276 @@ function Read-JsonObject {
     }
 }
 
+function Get-NonEmptyPlanValue {
+    param(
+        [object]$Plan,
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        if ($Plan.PSObject.Properties.Name -contains $name) {
+            $value = [string]$Plan.$name
+            if (-not [string]::IsNullOrWhiteSpace($value)) {
+                return $value.Trim()
+            }
+        }
+    }
+    return $null
+}
+
+function Get-ObjectPropertyValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Test-BooleanTrue {
+    param($Value)
+    if ($Value -is [bool]) { return [bool]$Value }
+    return ([string]$Value).Trim().ToLowerInvariant() -eq 'true'
+}
+
+function Test-RequiredValuePresent {
+    param($Value)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [string]) {
+        return -not [string]::IsNullOrWhiteSpace($Value)
+    }
+    if ($Value -is [System.Array]) {
+        return $Value.Count -gt 0
+    }
+    return $true
+}
+
+function Read-FeatureClassification {
+    param(
+        [string]$ReplayRoot,
+        [string]$Path
+    )
+
+    $candidate = $Path
+    if ([string]::IsNullOrWhiteSpace($candidate)) {
+        $candidate = Join-Path $ReplayRoot 'FEATURE_CLASSIFICATION.json'
+    }
+    return Read-JsonObject -Path $candidate
+}
+
+function Test-NarrowBackendReadOnlyFeature {
+    param($FeatureClassification)
+
+    if ($null -eq $FeatureClassification) { return $false }
+    $classification = [string](Get-ObjectPropertyValue -Object $FeatureClassification -Name 'classification')
+    $baseClassification = [string](Get-ObjectPropertyValue -Object $FeatureClassification -Name 'base_classification')
+    $readOnlyValue = Get-ObjectPropertyValue -Object $FeatureClassification -Name 'read_only'
+    $readOnly = $false
+    if ($readOnlyValue -is [bool]) {
+        $readOnly = [bool]$readOnlyValue
+    } elseif ($null -ne $readOnlyValue) {
+        $readOnly = ([string]$readOnlyValue).Trim().ToLowerInvariant() -eq 'true'
+    }
+
+    $statefulRequired = $true
+    $adjustments = Get-ObjectPropertyValue -Object $FeatureClassification -Name 'verifier_adjustments'
+    if ($null -ne $adjustments) {
+        $statefulValue = Get-ObjectPropertyValue -Object $adjustments -Name 'stateful_side_effect_required'
+        if ($statefulValue -is [bool]) {
+            $statefulRequired = [bool]$statefulValue
+        } elseif ($null -ne $statefulValue) {
+            $statefulRequired = ([string]$statefulValue).Trim().ToLowerInvariant() -eq 'true'
+        }
+    }
+
+    return (
+        $readOnly -and
+        -not $statefulRequired -and
+        ($classification -eq 'narrow_backend_read_only_fix' -or $baseClassification -eq 'narrow_backend_fix')
+    )
+}
+
+function Test-PathInsideRoot {
+    param([string]$Path, [string]$Root)
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Root)) { return $false }
+    $pathFull = [System.IO.Path]::GetFullPath($Path)
+    $rootFull = [System.IO.Path]::GetFullPath($Root)
+    if (-not $rootFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $rootFull += [System.IO.Path]::DirectorySeparatorChar
+    }
+    return $pathFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Resolve-ReplayEvidencePath {
+    param([string]$Path, [string]$ReplayRoot)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $cleanPath = $Path.Trim().Trim('`').Trim('"').Trim("'")
+    if ([System.IO.Path]::IsPathRooted($cleanPath)) {
+        return [System.IO.Path]::GetFullPath($cleanPath)
+    }
+    return [System.IO.Path]::GetFullPath((Join-Path $ReplayRoot $cleanPath))
+}
+
+function Get-TestInfrastructureRealityIssues {
+    param(
+        $Infra,
+        [string]$Worktree,
+        [string]$ReplayRoot
+    )
+
+    $issues = @()
+    $moduleName = [string](Get-ObjectPropertyValue -Object $Infra -Name 'test_module_for_target')
+    $dryRunCommand = [string](Get-ObjectPropertyValue -Object $Infra -Name 'compilation_dry_run_command')
+    $evidenceFile = [string](Get-ObjectPropertyValue -Object $Infra -Name 'compilation_dry_run_evidence_file')
+
+    if ([string]::IsNullOrWhiteSpace($moduleName)) {
+        $issues += 'test_infrastructure_check.test_module_for_target empty'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($dryRunCommand)) {
+        $issues += 'test_infrastructure_check.compilation_dry_run_command missing'
+    } else {
+        $commandText = $dryRunCommand.Trim().ToLowerInvariant()
+        if ($commandText -notmatch '(^|\s)mvn(\.cmd|\.bat)?(\s|$)') {
+            $issues += 'test_infrastructure_check.compilation_dry_run_command must invoke mvn'
+        }
+        if (-not $commandText.Contains('test-compile')) {
+            $issues += 'test_infrastructure_check.compilation_dry_run_command must run test-compile'
+        }
+        if (-not $commandText.Contains('-am')) {
+            $issues += 'test_infrastructure_check.compilation_dry_run_command must include -am'
+        }
+        if (-not $commandText.Contains('-pl')) {
+            $issues += 'test_infrastructure_check.compilation_dry_run_command must include -pl'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($moduleName) -and -not $commandText.Contains($moduleName.ToLowerInvariant())) {
+            $issues += "test_infrastructure_check.compilation_dry_run_command must target module $moduleName"
+        }
+        $normalizedCommand = $commandText.Replace('/', '\')
+        if ($normalizedCommand.Contains('d:\opt\lipei\claim\pom.xml')) {
+            $issues += 'test_infrastructure_check.compilation_dry_run_command must not target protected project root pom'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Worktree)) {
+            $worktreePom = ([System.IO.Path]::GetFullPath((Join-Path $Worktree 'pom.xml'))).ToLowerInvariant().Replace('/', '\')
+            $usesWorktreePlaceholder = ($normalizedCommand.Contains('<worktree>\pom.xml') -or $normalizedCommand.Contains('{{worktree}}\pom.xml') -or $normalizedCommand.Contains('$worktree\pom.xml'))
+            if (-not ($normalizedCommand.Contains($worktreePom) -or $usesWorktreePlaceholder)) {
+                $issues += 'test_infrastructure_check.compilation_dry_run_command must target isolated worktree root pom'
+            }
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Worktree) -and (Test-Path -LiteralPath $Worktree) -and -not [string]::IsNullOrWhiteSpace($moduleName)) {
+        $modulePath = Join-Path $Worktree $moduleName
+        if (-not (Test-Path -LiteralPath $modulePath -PathType Container)) {
+            $issues += "test_module_missing:$moduleName"
+        } else {
+            if (-not (Test-Path -LiteralPath (Join-Path $modulePath 'pom.xml') -PathType Leaf)) {
+                $issues += "test_module_pom_missing:$moduleName"
+            }
+            $srcTestPath = Join-Path $modulePath 'src\test'
+            if (-not (Test-Path -LiteralPath $srcTestPath -PathType Container)) {
+                $issues += "test_module_missing_src_test:$moduleName"
+            } else {
+                $testSource = Get-ChildItem -LiteralPath $srcTestPath -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($null -eq $testSource) {
+                    $issues += "test_module_has_no_test_sources:$moduleName"
+                }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($evidenceFile)) {
+        $issues += 'test_infrastructure_check.compilation_dry_run_evidence_file missing'
+    } else {
+        $evidencePath = Resolve-ReplayEvidencePath -Path $evidenceFile -ReplayRoot $ReplayRoot
+        if (-not (Test-PathInsideRoot -Path $evidencePath -Root $ReplayRoot)) {
+            $issues += 'test_infrastructure_check.compilation_dry_run_evidence_file must be under replay root'
+        } elseif (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
+            $issues += "compilation_dry_run_evidence_file_not_found:$evidenceFile"
+        } else {
+            $evidenceText = Get-Content -LiteralPath $evidencePath -Raw -Encoding UTF8
+            $evidenceExitCode = $null
+            $evidenceCommand = ''
+            try {
+                $evidenceJson = $evidenceText | ConvertFrom-Json
+                $exitProperty = $evidenceJson.PSObject.Properties['exit_code']
+                if ($null -ne $exitProperty) {
+                    $evidenceExitCode = [string]$exitProperty.Value
+                }
+                $commandProperty = $evidenceJson.PSObject.Properties['command']
+                if ($null -ne $commandProperty) {
+                    $evidenceCommand = [string]$commandProperty.Value
+                }
+            } catch { }
+
+            if ($null -ne $evidenceExitCode -and $evidenceExitCode.Trim() -match '^-?\d+$' -and [int]$evidenceExitCode -ne 0) {
+                $issues += "compilation_dry_run_evidence_exit_code:$evidenceExitCode"
+            }
+            if (-not [string]::IsNullOrWhiteSpace($evidenceCommand)) {
+                $evidenceCommandText = $evidenceCommand.ToLowerInvariant()
+                if (-not [string]::IsNullOrWhiteSpace($moduleName) -and -not $evidenceCommandText.Contains($moduleName.ToLowerInvariant())) {
+                    $issues += "compilation_dry_run_evidence_command_wrong_module:$moduleName"
+                }
+                if (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile')) {
+                    $issues += 'compilation_dry_run_evidence_command_incomplete'
+                }
+                if ($evidenceCommandText.Replace('/', '\').Contains('d:\opt\lipei\claim\pom.xml')) {
+                    $issues += 'compilation_dry_run_evidence_command_must_not_target_protected_root_pom'
+                }
+            }
+            if ($evidenceText -notmatch '(?i)BUILD SUCCESS' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
+                $issues += 'compilation_dry_run_evidence_missing_success_signal'
+            }
+        }
+    }
+
+    return @($issues)
+}
+
+function Get-CarrierClassName {
+    param([string]$Carrier)
+
+    if ([string]::IsNullOrWhiteSpace($Carrier)) {
+        return ''
+    }
+
+    $value = $Carrier.Trim()
+    if ($value -match '[\\/]|\.java$') {
+        $leaf = Split-Path -Leaf $value
+        if ($leaf -match '\.java$') {
+            return [System.IO.Path]::GetFileNameWithoutExtension($leaf)
+        }
+    }
+
+    $value = $value -replace '\(.*$', ''
+    if ($value -match '\.') {
+        return ($value -split '\.')[-1]
+    }
+    return $value
+}
+
+function Find-JavaFileByClassName {
+    param(
+        [string]$ClassName,
+        [string]$Root
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClassName) -or
+        [string]::IsNullOrWhiteSpace($Root) -or
+        -not (Test-Path -LiteralPath $Root -PathType Container)) {
+        return ''
+    }
+
+    $expectedName = "$ClassName.java"
+    $match = Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name.Equals($expectedName, [System.StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -First 1
+
+    if ($null -eq $match) {
+        return ''
+    }
+    return $match.FullName
+}
+
 function Test-CarrierInBaseline {
     param(
         [string]$Carrier,
@@ -47,19 +318,43 @@ function Test-CarrierInBaseline {
         return @{ Exists = $false; Reason = 'Carrier is empty or null' }
     }
 
-    # Extract simple class name from full qualified name or method signature
-    $simpleName = $Carrier -replace '.*\.([^\.]+)\..*$', '$1'
-    $simpleName = $simpleName -replace '\(.*$', ''
+    if ($Carrier -match '\.java$') {
+        $candidate = if ([System.IO.Path]::IsPathRooted($Carrier)) {
+            $Carrier
+        } else {
+            Join-Path $Worktree $Carrier
+        }
+        if (Test-Path -LiteralPath $candidate) {
+            return @{ Exists = $true; Path = $candidate; Reason = $null }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($BaselineRoot)) {
+            $baselineCandidate = if ([System.IO.Path]::IsPathRooted($Carrier)) {
+                $Carrier
+            } else {
+                Join-Path $BaselineRoot $Carrier
+            }
+            if (Test-Path -LiteralPath $baselineCandidate) {
+                return @{ Exists = $true; Path = $baselineCandidate; Reason = $null }
+            }
+        }
+    }
+
+    # Extract simple class name from path, fully qualified name, or method signature.
+    $simpleName = Get-CarrierClassName -Carrier $Carrier
+    if ([string]::IsNullOrWhiteSpace($simpleName)) {
+        return @{ Exists = $false; Reason = "Carrier '$Carrier' did not resolve to a class name" }
+    }
 
     # Search in worktree first
-    $rgResult = rg "--type=java" "--files-matching-match" $simpleName $Worktree 2>$null
+    $rgResult = rg "--type=java" "--fixed-strings" "--files-matching-match" $simpleName $Worktree 2>$null
     if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($rgResult)) {
         return @{ Exists = $true; Path = $rgResult; Reason = $null }
     }
 
     # Search in baseline if provided
     if (-not [string]::IsNullOrWhiteSpace($BaselineRoot) -and (Test-Path -LiteralPath $BaselineRoot)) {
-        $rgResult = rg "--type=java" "--files-matching-match" $simpleName $BaselineRoot 2>$null
+        $rgResult = rg "--type=java" "--fixed-strings" "--files-matching-match" $simpleName $BaselineRoot 2>$null
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($rgResult)) {
             return @{ Exists = $true; Path = $rgResult; Reason = $null }
         }
@@ -76,8 +371,7 @@ function Test-ValidLayer {
     }
 
     # Extract class name
-    $className = $Carrier -replace '.*\.([^\.]+)$', '$1'
-    $className = $className -replace '\(.*$', ''
+    $className = Get-CarrierClassName -Carrier $Carrier
 
     # Check layer based on naming pattern
     if ($className -match 'Facade$|FacadeImpl$') {
@@ -89,12 +383,16 @@ function Test-ValidLayer {
     if ($className -match 'Service$') {
         return @{ Valid = $false; Layer = 'Service'; Reason = 'Service layer not valid for core_entry without existing entry point' }
     }
-    if ($className -match 'TaskProcessor$|Task$') {
+    if ($className -match 'TaskProcessor$') {
+        return @{ Valid = $true; Layer = 'TaskProcessor'; Reason = $null }
+    }
+    if ($className -match 'Task$') {
         return @{ Valid = $false; Layer = 'Task'; Reason = 'Task layer not valid for core_entry' }
     }
 
-    # Try to find file and check package
-    $filePath = rg "--type=java" "-l" "-g" "*$className.java" $Worktree 2>$null | Select-Object -First 1
+    # Try to find file and check package. Avoid invoking rg without a pattern;
+    # otherwise PowerShell paths can be interpreted as a malformed regex.
+    $filePath = Find-JavaFileByClassName -ClassName $className -Root $Worktree
     if ($filePath) {
         $content = Get-Content -LiteralPath $filePath
         $contentText = $content -join "`n"
@@ -112,6 +410,8 @@ $planResultFull = Resolve-AbsolutePath $PlanResultPath
 
 # Load plan result
 $plan = Read-JsonObject -Path $planResultFull
+$featureClassification = Read-FeatureClassification -ReplayRoot $replayRootFull -Path $FeatureClassificationPath
+$narrowBackendReadOnlyFeature = Test-NarrowBackendReadOnlyFeature -FeatureClassification $featureClassification
 
 if ($null -eq $plan) {
     $result = [ordered]@{
@@ -125,11 +425,18 @@ if ($null -eq $plan) {
     exit 1
 }
 
+$planStatus = ''
+if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+    $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+} elseif ($plan.PSObject.Properties.Name -contains 'status') {
+    $planStatus = ([string]$plan.status).Trim().ToUpperInvariant()
+}
+
 $checks = @()
 $overallStatus = 'PASS'
 
 # Check 1: Carrier exists in baseline
-$selectedCarrier = if ($plan.PSObject.Properties.Name -contains 'selected_carrier') { $plan.selected_carrier } elseif ($plan.PSObject.Properties.Name -contains 'target_carrier') { $plan.target_carrier } else { $null }
+$selectedCarrier = Get-NonEmptyPlanValue -Plan $plan -Names @('selected_carrier', 'target_carrier', 'target_carrier_file_path')
 $carrierExists = Test-CarrierInBaseline -Carrier $selectedCarrier -Worktree $worktreeFull -BaselineRoot $BaselineRoot
 
 $checks += [ordered]@{
@@ -158,13 +465,16 @@ if (-not $layerValid.Valid) {
 }
 
 # Check 3: Plan schema is complete
-$requiredFields = @('target_carrier_file_path', 'expected_test_class', 'side_effects')
+$requiredFields = @('target_carrier_file_path', 'expected_test_class')
+if (-not $narrowBackendReadOnlyFeature) {
+    $requiredFields += 'side_effects'
+}
 $missingFields = @()
 
 foreach ($field in $requiredFields) {
     if (-not $plan.PSObject.Properties.Name -contains $field) {
         $missingFields += $field
-    } elseif ([string]::IsNullOrWhiteSpace($plan.$field) -or $plan.$field -eq 'TBD' -or $plan.$field -eq 'NEW') {
+    } elseif (-not (Test-RequiredValuePresent $plan.$field) -or ($plan.$field -is [string] -and ($plan.$field -eq 'TBD' -or $plan.$field -eq 'NEW'))) {
         $missingFields += "$field (value: $($plan.$field))"
     }
 }
@@ -174,20 +484,80 @@ $checks += [ordered]@{
     status = if ($missingFields.Count -eq 0) { 'PASS' } else { 'FAIL' }
     required_fields = $requiredFields
     missing_fields = $missingFields
+    feature_classification = if ($featureClassification) { [string](Get-ObjectPropertyValue -Object $featureClassification -Name 'classification') } else { '' }
+    stateful_side_effect_required = (-not $narrowBackendReadOnlyFeature)
+    side_effect_schema_mode = if ($narrowBackendReadOnlyFeature) { 'read_only_memory_or_not_required' } else { 'stateful_required' }
 }
 
 if ($missingFields.Count -gt 0) {
     $overallStatus = 'FAIL'
 }
 
-# Check 4: TEST_CHARTER.md exists and is valid
+# Check 4: Test module strategy is executable before Phase 1
+$infra = Get-ObjectPropertyValue -Object $plan -Name 'test_infrastructure_check'
+$infraIssues = @()
+if ($planStatus -eq 'PROCEED') {
+    if ($null -eq $infra) {
+        $infraIssues += 'missing_test_infrastructure_check'
+    } else {
+        foreach ($field in @(
+                'test_module_for_target',
+                'test_module_has_dependencies',
+                'test_harness_available',
+                'can_import_production_classes',
+                'compilation_dry_run_exit_code',
+                'compilation_dry_run_command',
+                'compilation_dry_run_evidence_file',
+                'blocker_reason'
+            )) {
+            if ($null -eq (Get-ObjectPropertyValue -Object $infra -Name $field)) {
+                $infraIssues += "missing:$field"
+            }
+        }
+        foreach ($field in @('test_module_has_dependencies', 'test_harness_available', 'can_import_production_classes')) {
+            $value = Get-ObjectPropertyValue -Object $infra -Name $field
+            if ($null -ne $value -and -not (Test-BooleanTrue $value)) {
+                $infraIssues += "$field=false"
+            }
+        }
+        $exitValue = Get-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_exit_code'
+        if ($null -ne $exitValue) {
+            $exitText = ([string]$exitValue).Trim()
+            if ($exitText -notmatch '^-?\d+$') {
+                $infraIssues += 'compilation_dry_run_exit_code:not_integer'
+            } elseif ([int]$exitText -ne 0) {
+                $infraIssues += "compilation_dry_run_exit_code:$exitText"
+            }
+        }
+        $blockerReason = [string](Get-ObjectPropertyValue -Object $infra -Name 'blocker_reason')
+        if (-not [string]::IsNullOrWhiteSpace($blockerReason) -and $blockerReason.Trim() -notmatch '^(?i:none|no_blocker|not_blocked)$') {
+            $infraIssues += "blocker_reason_present:$blockerReason"
+        }
+        $infraIssues += Get-TestInfrastructureRealityIssues -Infra $infra -Worktree $worktreeFull -ReplayRoot $replayRootFull
+    }
+}
+
+$checks += [ordered]@{
+    name = 'test_infrastructure_check'
+    status = if ($infraIssues.Count -eq 0) { 'PASS' } else { 'FAIL' }
+    required_for_proceed = $true
+    plan_status = $planStatus
+    issues = @($infraIssues)
+    test_module_for_target = if ($null -ne $infra) { [string](Get-ObjectPropertyValue -Object $infra -Name 'test_module_for_target') } else { '' }
+}
+
+if ($infraIssues.Count -gt 0) {
+    $overallStatus = 'FAIL'
+}
+
+# Check 5: TEST_CHARTER.md exists and is valid
 $testCharterPath = Join-Path $replayRootFull 'TEST_CHARTER.md'
 $testCharterExists = Test-Path -LiteralPath $testCharterPath
 
 if ($testCharterExists) {
     $testCharterContent = Get-Content -LiteralPath $testCharterPath
     $testCharterText = $testCharterContent -join "`n"
-    $hasTestSurface = $testCharterText -match 'test_surface|entry_point|test_method'
+    $hasTestSurface = $testCharterText -match 'test_surface|entry[_\s-]*point|test[_\s-]*method|test[_\s-]*class|test[_\s-]*scenario'
 } else {
     $hasTestSurface = $false
     $testCharterText = ''
@@ -204,7 +574,7 @@ if (-not ($testCharterExists -and $hasTestSurface)) {
     $overallStatus = 'FAIL'
 }
 
-# Check 5: FIRST_SLICE_PROOF_PLAN.md schema validation (v466)
+# Check 6: FIRST_SLICE_PROOF_PLAN.md schema validation (v466)
 $firstSliceProofPath = Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md'
 $firstSliceProofExists = Test-Path -LiteralPath $firstSliceProofPath
 $firstSliceProofSchemaValid = $false
@@ -273,7 +643,7 @@ if (-not ($firstSliceProofExists -and $firstSliceProofSchemaValid)) {
     $overallStatus = 'FAIL'
 }
 
-# Check 6: Family-specific layer validation (v466)
+# Check 7: Family-specific layer validation (v466)
 # core_entry family requires Facade or Controller layer, not Service
 $combinedArtifacts = "$firstSliceProofContent $testCharterContent"
 $highestWeightGatePattern = '(?m)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?highest_weight_open_gate\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'

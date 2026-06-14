@@ -6,8 +6,8 @@ Describe "v317-StopAndEvolve-Tooling" {
         $ScriptRoot = $PSScriptRoot
         $ScriptsRoot = Join-Path $ScriptRoot ".." -Resolve
         $Python = "python"
-        $TestRepo = "$env:AI_WORKFLOW_PROJECT_ROOT"
-        $TestWorktree = "$env:AI_WORKFLOW_PROJECT_ROOT\.git\worktrees\test-worktree"
+        $TestRepo = "D:\opt\claim"
+        $TestWorktree = "D:\opt\claim\.git\worktrees\test-worktree"
     }
 
     Context "Priority 1: Exact Contract Pre-Binding" {
@@ -52,7 +52,7 @@ Describe "v317-StopAndEvolve-Tooling" {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.example.project.test;
+package com.huize.claim.test;
 
 import org.junit.Test;
 import org.junit.Assert;
@@ -96,7 +96,7 @@ public class BehavioralTest {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.example.project.test;
+package com.huize.claim.test;
 
 import org.junit.Test;
 
@@ -104,13 +104,13 @@ public class StructuralTest {
     @Test
     public void testClassExists() {
         // This only tests structure, not behavior
-        ExampleFlowService service = new ExampleFlowService();
+        AiAutoClaimFlowService service = new AiAutoClaimFlowService();
         Assert.assertNotNull(service);
     }
 
     @Test(expected = ClassNotFoundException.class)
     public void testMethodMissing() throws ClassNotFoundException {
-        Class.forName("com.example.project.NonExistentClass");
+        Class.forName("com.huize.claim.NonExistentClass");
     }
 }
 "@
@@ -153,7 +153,7 @@ public class StructuralTest {
             New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 
             $testContent = @"
-package com.example.project.test;
+package com.huize.claim.test;
 
 import org.junit.Test;
 

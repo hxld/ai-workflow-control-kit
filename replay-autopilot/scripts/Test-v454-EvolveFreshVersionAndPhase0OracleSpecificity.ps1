@@ -27,7 +27,7 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v454-test-" + [
 
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\example') | Out-Null
 
     Write-Text (Join-Path $testRoot 'EXPLORATION_REPORT.md') @'
 # Exploration Report
@@ -39,7 +39,7 @@ baseline worktree only
 literal present
 
 ## Candidate Surface Map
-ExampleApplyClaimApiTaskProcessor.handleTaskResponse exists
+AiApplyClaimApiTaskProcessor.handleTaskResponse exists
 
 ## Uncertainty Ledger
 planned_new_carrier uses oracle additions for scope only.
@@ -48,9 +48,9 @@ planned_new_carrier uses oracle additions for scope only.
 entity mapper dto service xml searched
 
 ## Selected Real Entry
-selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse
 carrier_status: EXISTING
-planned_new_carrier: ExampleFlowService
+planned_new_carrier: AiAutoClaimFlowService
 oracle additions: allowed here as planned-new-carrier scope, not selected-entry authority.
 '@
 
@@ -58,16 +58,16 @@ oracle additions: allowed here as planned-new-carrier scope, not selected-entry 
 # Phase 0 Result
 
 - phase0_status: PROCEED
-- selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+- selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse
 - first_executable_slice: S1
 - first_slice_type: core_path_with_existing_entry
 
 ## Search Commands Used
-rg "class ExampleApplyClaimApiTaskProcessor" worktree --glob "*.java"
+rg "class AiApplyClaimApiTaskProcessor" worktree --glob "*.java"
 # result_summary: FOUND
 rg "handleTaskResponse" worktree --glob "*.java"
 # result_summary: FOUND
-rg "ExampleFlowService" worktree --glob "*.java"
+rg "AiAutoClaimFlowService" worktree --glob "*.java"
 # result_summary: NOT_FOUND, planned_new_carrier only
 '@
 
@@ -78,13 +78,13 @@ rg "ExampleFlowService" worktree --glob "*.java"
 core_entry
 
 ## Real Entry Discovery Matrix
-selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse
 
 ## Behavior Test Charter
 side effect assertion
 
 ## Critical Surface Allocation Plan
-planned_new_carrier: ExampleFlowService
+planned_new_carrier: AiAutoClaimFlowService
 oracle additions may describe planned-new scope only.
 
 ## side-effect ledger
@@ -98,14 +98,14 @@ DB/state/log proof
 {
   "schema_version": 1,
   "phase0_status": "PROCEED",
-  "selected_real_entry": "ExampleApplyClaimApiTaskProcessor.handleTaskResponse",
+  "selected_real_entry": "AiApplyClaimApiTaskProcessor.handleTaskResponse",
   "first_executable_slice": "S1",
   "families": [
     {
       "id": "core_entry",
       "required": true,
-      "first_executable_carrier": "ExampleApplyClaimApiTaskProcessor.handleTaskResponse",
-      "planned_new_carrier": "ExampleFlowService",
+      "first_executable_carrier": "AiApplyClaimApiTaskProcessor.handleTaskResponse",
+      "planned_new_carrier": "AiAutoClaimFlowService",
       "coverage_cap_if_open": 85
     }
   ]

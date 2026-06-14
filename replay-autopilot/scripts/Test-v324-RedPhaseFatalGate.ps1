@@ -7,8 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$testRoot = (Split-Path $PSScriptRoot -Parent)
-$replayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\test-v324-red-phase-fatal-gate"
+$testRoot = "D:\opt\replay-autopilot"
+$replayRoot = "D:\opt\replay-evidence\test-v324-red-phase-fatal-gate"
 
 Write-Host "=== Test v324 RED Phase FATAL Gate ===" -ForegroundColor Cyan
 

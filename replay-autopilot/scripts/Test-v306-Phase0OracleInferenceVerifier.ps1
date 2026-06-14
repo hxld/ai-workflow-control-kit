@@ -30,10 +30,10 @@ try {
 
 **phase0_status**: `PROCEED_WITH_CAVEATS`
 
-**selected_real_entry**: `ExampleFlowService`
+**selected_real_entry**: `AiAutoClaimFlowService`
 
 **Oracle Evidence**:
-- Path: `example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java`
+- Path: `claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java`
 
 **Inference Confidence**: HIGH (based on Oracle metadata)
 
@@ -49,7 +49,7 @@ ok
 ## Requirement Literal Inventory
 ok
 ## Selected Real Entry
-selected_real_entry: ExampleFlowService
+selected_real_entry: AiAutoClaimFlowService
 ## Domain Fact Sheet
 ok
 ## Candidate Surface Map
@@ -60,20 +60,20 @@ ok
 ok
 '@
     Write-Text (Join-Path $tmp 'ROUND_CONTRACT.md') @'
-selected_real_entry: ExampleFlowService
+selected_real_entry: AiAutoClaimFlowService
 ## Critical Surface Allocation Plan
 | Surface / family | Why required | First executable slice | Carrier / entry | Proof required | Deferred blocker / coverage cap |
 | --- | --- | --- | --- | --- | --- |
-| core_entry | required | S1 | ExampleFlowService | real behavior | none |
+| core_entry | required | S1 | AiAutoClaimFlowService | real behavior | none |
 '@
     [ordered]@{
-        selected_real_entry = 'ExampleFlowService'
+        selected_real_entry = 'AiAutoClaimFlowService'
         first_executable_slice = 'S1'
         families = @(
             [ordered]@{
                 id = 'core_entry'
                 required = $true
-                first_executable_carrier = 'ExampleFlowService'
+                first_executable_carrier = 'AiAutoClaimFlowService'
                 coverage_cap_if_open = 60
             }
         )

@@ -31,8 +31,8 @@ New-Item -ItemType Directory -Force -Path $TestRoot | Out-Null
 
 $oracle = [ordered]@{
     files = @(
-        [ordered]@{ path = 'example-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' },
-        [ordered]@{ path = 'example-core/src/main/java/com/acme/StatefulSideEffectService.java'; is_production = $true; weight = 'HIGH' }
+        [ordered]@{ path = 'claim-core/src/main/java/com/acme/CoreFlowService.java'; is_production = $true; weight = 'HIGH' },
+        [ordered]@{ path = 'claim-core/src/main/java/com/acme/StatefulSideEffectService.java'; is_production = $true; weight = 'HIGH' }
     )
 } | ConvertTo-Json -Depth 6
 Write-Utf8 (Join-Path $TestRoot 'ORACLE_DIFF_ANALYSIS.json') $oracle
@@ -45,7 +45,7 @@ Write-Utf8 (Join-Path $TestRoot 'PLAN_RESULT.md') @'
 **oracle_production_file_overlap**: 100%
 **oracle_high_weight_coverage**: 2/2
 **carrier_search**: performed
-**carrier_search_queries**: rg "ExistingCoreFlowService" example-core; rg "CoreFlowService" example-core; rg "StatefulSideEffectService" example-core
+**carrier_search_queries**: rg "ExistingCoreFlowService" claim-core; rg "CoreFlowService" claim-core; rg "StatefulSideEffectService" claim-core
 **existing_production_carriers**: ExistingCoreFlowService.process
 **selected_carrier_from_search**: ExistingCoreFlowService.process
 **new_service_proposed**: false
@@ -71,7 +71,7 @@ highest_weight_open_gate: core_path
 selected_real_entry: ExistingCoreFlowService.process
 selected_carrier: ExistingCoreFlowService.process
 target_subsurface_or_carrier: ExistingCoreFlowService.process
-production_boundary: example-core production service
+production_boundary: claim-core production service
 proof_kind: real_entry_behavior_test
 real_carrier_kind: production_service
 first_red_test: ExistingCoreFlowServiceTest.shouldCloseCoreFlow

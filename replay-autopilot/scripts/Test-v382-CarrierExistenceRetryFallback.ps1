@@ -24,12 +24,12 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v382-test-" + [
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    $claimCorePath = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\service'
+    $claimCorePath = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\service'
     New-Item -ItemType Directory -Force -Path $claimCorePath | Out-Null
 
     # Create a test carrier file
     $carrierContent = @'
-package com.example.project.core.ai.service;
+package com.huize.claim.core.ai.service;
 
 /**
  * Test carrier for v382 verification
@@ -50,7 +50,7 @@ public class ClaimAgentService {
 - plan_status: PROCEED
 - selected_strategy: exact-contract-and-test-first
 - carrier_search: performed
-- carrier_search_queries: rg "class ClaimAgentService" example-core; rg "class.*Service" example-core/src/main/java/com/example/project/core/ai/service; rg "batchQueryCaseDetail" example-core
+- carrier_search_queries: rg "class ClaimAgentService" claim-core; rg "class.*Service" claim-core/src/main/java/com/huize/claim/core/ai/service; rg "batchQueryCaseDetail" claim-core
 - existing_production_carriers: ClaimAgentService.batchQueryCaseDetail
 - selected_carrier_from_search: ClaimAgentService.batchQueryCaseDetail
 - new_service_proposed: false
@@ -97,7 +97,7 @@ public class ClaimAgentService {
 - interface_contract_return_type: AutoTestCaseQueryResponse
 - interface_contract_error_handling: BusinessException for invalid caseId
 - pattern_to_follow: Refer to ExamineFlowFacadeImpl for similar facade pattern
-- pattern_evidence_source: rg "class ExamineFlowFacadeImpl" example-core
+- pattern_evidence_source: rg "class ExamineFlowFacadeImpl" claim-core
 "@
         } elseif ($file -eq 'TEST_CHARTER.md') {
             Write-Text (Join-Path $testRoot $file) @"
@@ -111,7 +111,7 @@ public class ClaimAgentService {
     }
 
     # Create ORACLE_DIFF_ANALYSIS.json to satisfy oracle requirement with overlap data
-    Write-Text (Join-Path $testRoot 'ORACLE_DIFF_ANALYSIS.json') '{"files":[{"path":"example-core/src/main/java/com/example/project/core/ai/service/ClaimAgentService.java","is_production":true,"weight":"HIGH","added_lines":10}]}'
+    Write-Text (Join-Path $testRoot 'ORACLE_DIFF_ANALYSIS.json') '{"files":[{"path":"claim-core/src/main/java/com/huize/claim/core/ai/service/ClaimAgentService.java","is_production":true,"weight":"HIGH","added_lines":10}]}'
     Write-Text (Join-Path $testRoot 'ORACLE_COMMIT.txt') 'abc123'
 
     # Update PLAN_RESULT.md with oracle overlap field and oracle file mention
@@ -135,7 +135,7 @@ public class ClaimAgentService {
 
 - plan_status: PROCEED
 - carrier_search: performed
-- carrier_search_queries: rg "class SyntheticCarrierService" example-core
+- carrier_search_queries: rg "class SyntheticCarrierService" claim-core
 - existing_production_carriers: None
 - selected_carrier_from_search: SyntheticCarrierService.doSomething
 - new_service_proposed: true

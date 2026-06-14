@@ -1,17 +1,17 @@
 param(
     [ValidateSet('Init', 'Status', 'ClaudeDone', 'CodexDone', 'RunLoop', 'RestoreProtectedAccess', 'ValidateOnly')]
     [string]$Action = 'Status',
-    [string]$BridgeRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\current",
-    [string]$ArchiveRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs",
+    [string]$BridgeRoot = 'D:\opt\replay-evidence\_agent-bridge\current',
+    [string]$ArchiveRoot = 'D:\opt\replay-evidence\_agent-bridge\runs',
     [string]$InitialPromptPath = '',
     [string]$InitialPromptText = '',
     [ValidateSet('claude', 'codex', 'manual')]
     [string]$ClaudeExecutor = 'claude',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$CodexExecutor = 'codex',
-    [string]$ClaudeWorkDir = "$env:AI_WORKFLOW_PROJECT_ROOT",
-    [string]$CodexWorkDir = "$env:AI_WORKFLOW_PROJECT_ROOT",
-    [string[]]$ProtectedGitRoots = @("$env:AI_WORKFLOW_PROJECT_ROOT"),
+    [string]$ClaudeWorkDir = 'D:\opt\claim',
+    [string]$CodexWorkDir = 'D:\opt\claim',
+    [string[]]$ProtectedGitRoots = @('D:\opt\claim'),
     [int]$MaxCycles = 1,
     [int]$TimeoutMinutes = 240,
     [int]$CompletionQuietSeconds = 30,

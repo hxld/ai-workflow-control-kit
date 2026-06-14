@@ -40,7 +40,8 @@ WHERE {{KEY_COLUMN}} = ?
 // Capture the operation
 AtomicReference<{{ENTITY_NAME}}> captured{{ENTITY_NAME}} = new AtomicReference<>();
 doAnswer(invocation -> {
-    captured{{ENTITY_NAME}}.set(invocation.getArgument(0));
+    Object[] args = invocation.getArguments();
+    captured{{ENTITY_NAME}}.set(({{ENTITY_NAME}}) args[0]);
     return 1;
 }).when({{MAPPER_NAME}}).{{METHOD_NAME}}(any());
 
@@ -127,25 +128,29 @@ A slice with side effects is COMPLETE only when:
 @Transactional
 public void testHandleAutoClaim_AllSideEffectsVerified() {
     // GIVEN
-    Long caseId = 12345L;
-    ExampleApplyApiTask task = setupFlashCase();
+    Long fixtureCaseId = Long.valueOf(Math.abs("CarrierUnderTest".hashCode()));
+    AiApplyClaimApiTask task = setupFlashCase();
 
     // Capture CompensateInfo
     AtomicReference<CompensateInfo> capturedInfo = new AtomicReference<>();
     doAnswer(invocation -> {
-        capturedInfo.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        capturedInfo.set((CompensateInfo) args[0]);
         return 1;
     }).when(compensateInfoMapper).insert(any());
 
     // Capture CompensateDetail list
     AtomicReference<List<CompensateDetail>> capturedDetails = new AtomicReference<>();
     doAnswer(invocation -> {
-        capturedDetails.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        @SuppressWarnings("unchecked")
+        List<CompensateDetail> details = (List<CompensateDetail>) args[0];
+        capturedDetails.set(details);
         return 1;
     }).when(compensateDetailMapper).insertList(any());
 
     // WHEN
-    boolean result = exampleFacade.handleExample(caseId, task);
+    boolean result = aiClaimFacade.handleAutoClaim(caseId, task);
 
     // THEN: Side effects verified
     assertThat(result).isTrue();

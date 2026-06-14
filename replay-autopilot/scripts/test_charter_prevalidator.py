@@ -27,17 +27,24 @@ class TestCharterValidator:
     SERVICE_LAYER_PATTERNS = [r'\w+Service', r'\w+ServiceImpl']
     FACADE_LAYER_PATTERNS = [r'\w+Facade', r'\w+FacadeImpl', r'\w+Controller']
 
+    MARKDOWN_LABEL_PREFIX = r'(?im)^\s*(?:[-*+]\s+|>\s+)?(?:#{1,6}\s*)?(?:\*\*|__)?\s*'
+    MARKDOWN_LABEL_SUFFIX = r'\s*(?:\*\*|__)?\s*[:：]'
+
     # Required section patterns
     ENTRY_POINT_PATTERNS = [
+        MARKDOWN_LABEL_PREFIX + r'(?:Entry Point|Target Entry|Testing Entry|测试入口)' + MARKDOWN_LABEL_SUFFIX,
+        MARKDOWN_LABEL_PREFIX + r'(?:Method to Test|Target Method)' + MARKDOWN_LABEL_SUFFIX,
         r'Entry Point:|Target Entry:|Testing Entry:|测试入口:',
         r'Method to Test:|Target Method:',
     ]
     DB_VERIFICATION_PATTERNS = [
         r'SELECT\s+',
+        MARKDOWN_LABEL_PREFIX + r'(?:DB Query|数据库查询|Verification Query|验证查询|DB Verification)' + MARKDOWN_LABEL_SUFFIX,
         r'DB Query:|数据库查询:',
         r'Verification Query:|验证查询:',
     ]
     SIDE_EFFECT_PATTERNS = [
+        MARKDOWN_LABEL_PREFIX + r'(?:Side Effects?|副作用|Expected DB Changes|预期数据库变更|DB State Change|数据库状态变更)' + MARKDOWN_LABEL_SUFFIX,
         r'Side Effects?:|副作用:',
         r'Expected DB Changes:|预期数据库变更:',
         r'DB State Change:|数据库状态变更:',
@@ -46,6 +53,21 @@ class TestCharterValidator:
         r'@Transactional',
         r'transaction.*rollback',
         r'事务.*回滚',
+    ]
+    SOURCE_CHAIN_HINT_PATTERNS = [
+        r'rebuildTaskData',
+        r'source[-\s]?chain',
+        r'RequestBuildContext',
+        r'buildRequestCommon',
+    ]
+    SYNTHETIC_SOURCE_CHAIN_PATTERNS = [
+        r'return\s+new\s+\w*Request\s*\(',
+        r'new\s+\w*TaskData\s*\(',
+        r'hand[-\s]?built',
+        r'manual(?:ly)?\s+injected',
+        r'terminal\s+payload',
+        r'getter/setter',
+        r'field\s+existence',
     ]
 
     def __init__(self, charter_path: Path):
@@ -69,6 +91,7 @@ class TestCharterValidator:
         self._validate_db_verifications()
         self._validate_transaction_tests()
         self._validate_side_effects()
+        self._validate_non_synthetic_source_chain()
 
         return len(self.failures) == 0
 
@@ -90,7 +113,8 @@ class TestCharterValidator:
         """Check if test surface is at correct layer (Facade/Controller, not Service)."""
         # Extract test class pattern
         test_class_match = re.search(
-            r'Test Class:|测试类:|Target Test:|test class:',
+            self.MARKDOWN_LABEL_PREFIX + r'(?:Test Class|测试类|Target Test|test class)' + self.MARKDOWN_LABEL_SUFFIX
+            + r'|Test Class:|测试类:|Target Test:|test class:',
             self.content,
             re.IGNORECASE
         )
@@ -157,7 +181,8 @@ class TestCharterValidator:
     def _validate_side_effects(self):
         """Check if side effects are listed with verification method."""
         side_effect_match = re.search(
-            r'Side Effects?:|副作用:|Expected DB Changes:|预期数据库变更:',
+            self.MARKDOWN_LABEL_PREFIX + r'(?:Side Effects?|副作用|Expected DB Changes|预期数据库变更)' + self.MARKDOWN_LABEL_SUFFIX
+            + r'|Side Effects?:|副作用:|Expected DB Changes:|预期数据库变更:',
             self.content,
             re.IGNORECASE
         )
@@ -184,6 +209,28 @@ class TestCharterValidator:
                 'code': 'SIDE_EFFECTS_NOT_VERIFIED',
                 'message': 'Side effects listed but no verification method specified',
                 'detail': 'Each side effect must have verification (assert, verify, SELECT query, or AtomicReference)'
+            })
+
+    def _validate_non_synthetic_source_chain(self):
+        """Reject source-chain charters that plan to bypass the production builder/carrier."""
+        requires_source_chain = any(
+            re.search(pattern, self.content, re.IGNORECASE)
+            for pattern in self.SOURCE_CHAIN_HINT_PATTERNS
+        )
+        if not requires_source_chain:
+            return
+
+        synthetic_hits = []
+        for pattern in self.SYNTHETIC_SOURCE_CHAIN_PATTERNS:
+            if re.search(pattern, self.content, re.IGNORECASE):
+                synthetic_hits.append(pattern)
+
+        if synthetic_hits:
+            self.failures.append({
+                'code': 'SYNTHETIC_SOURCE_CHAIN_CHARTER',
+                'message': 'Source-chain test charter plans a synthetic or hand-built carrier',
+                'detail': 'Source-chain tests must exercise the real production builder/carrier path; do not return hand-built Request/TaskData objects or assert terminal DTO fields only.',
+                'patterns': synthetic_hits
             })
 
     def report(self) -> Dict:
@@ -217,7 +264,7 @@ class TestCharterValidator:
             lines.append("")
             lines.append("For WRONG_TEST_SURFACE:")
             lines.append("  - Change test class from Service to Facade/Controller")
-            lines.append("  - Example: ExampleFlowServiceTest → ExampleAutoClaimFlowFacadeTest")
+            lines.append("  - Example: AiAutoClaimFlowServiceTest → AiAutoClaimFlowFacadeTest")
 
         if 'MISSING_ENTRY_POINT' in codes:
             lines.append("")
@@ -229,6 +276,12 @@ class TestCharterValidator:
             lines.append("For SIDE_EFFECTS_NOT_VERIFIED:")
             lines.append("  - Add verification method for each side effect")
             lines.append("  - Example: 'SELECT * FROM t_compensate_detail WHERE case_id = ?'")
+
+        if 'SYNTHETIC_SOURCE_CHAIN_CHARTER' in codes:
+            lines.append("")
+            lines.append("For SYNTHETIC_SOURCE_CHAIN_CHARTER:")
+            lines.append("  - Exercise the real production builder/carrier path")
+            lines.append("  - Do not return hand-built Request/TaskData objects from the test harness")
 
         return "\n".join(lines)
 

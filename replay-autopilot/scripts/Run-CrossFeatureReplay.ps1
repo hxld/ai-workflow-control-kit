@@ -1,7 +1,7 @@
 param(
     [string]$RegistryPath = (Join-Path $PSScriptRoot '..\features\replay-feature-registry.json'),
     [string]$BaseConfigPath = (Join-Path $PSScriptRoot '..\config.yaml'),
-    [string]$EvidenceRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$EvidenceRoot = 'D:\opt\replay-evidence',
     [int]$StartIndex = 0,
     [int]$MaxFeatures = 1,
     [int]$RoundsPerFeature = 1,

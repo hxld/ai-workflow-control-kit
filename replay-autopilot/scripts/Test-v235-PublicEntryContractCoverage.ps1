@@ -20,8 +20,8 @@ try {
 
 first_slice: S1_public_facade
 highest_weight_open_gate: core_entry
-first_red_test: DemoFacadeImplExampleTicketTest#should_return_public_success_and_write_side_effects
-selected_real_entry: example-core/src/main/java/demo/facade/DemoFacadeImpl.java#returnTicket
+first_red_test: DemoFacadeImplReturnTicketTest#should_return_public_success_and_write_side_effects
+selected_real_entry: claim-core/src/main/java/demo/facade/DemoFacadeImpl.java#returnTicket
 public_entry_contract_coverage: assert public ResultModel success/error contract through DemoFacadeImpl and verify downstream side effects
 selected_carrier: DemoFacadeImpl.returnTicket -> DemoService.returnTicket
 target_subsurface_or_carrier: DemoFacadeImpl.returnTicket public callback response

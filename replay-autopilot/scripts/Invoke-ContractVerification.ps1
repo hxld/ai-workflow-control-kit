@@ -12,6 +12,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$pythonResolver = Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'
+if (Test-Path -LiteralPath $pythonResolver) {
+    . $pythonResolver
+} else {
+    throw "Python launcher resolver missing: $pythonResolver"
+}
+
 # Ensure we're in the work directory
 Push-Location $WorkDir
 
@@ -33,7 +40,8 @@ try {
 
     Write-Host "Running contract verification..." -ForegroundColor Cyan
 
-    $result = & python3 $scriptPath 2>&1
+    $python = Resolve-PythonLauncher
+    $result = & $python.Command @($python.Arguments + @($scriptPath)) 2>&1
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 0) {

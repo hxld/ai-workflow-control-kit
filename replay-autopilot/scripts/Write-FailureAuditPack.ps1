@@ -1,5 +1,5 @@
 param(
-    [string]$EvidenceRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$EvidenceRoot = 'D:\opt\replay-evidence',
     [string]$ReplayRoot = '',
     [string]$ControlSummaryPath = '',
     [string]$BlockerRegistryPath = '',
@@ -53,6 +53,19 @@ function Get-BlockerRule {
     param([string]$Fingerprint)
 
     switch -Regex ($Fingerprint) {
+        '^policy_rebuild_claim_core_harness$' {
+            return [ordered]@{
+                blocker = $Fingerprint
+                root_cause_layer = 'plan_authorization'
+                root_cause = 'Policy rebuild planning confuses the claim-core production carrier with the claim-server executable test harness.'
+                required_fix = 'Add a pre-Maven policy gate and Plan authorization rule: policyNum/insureNum rebuild may target claim-core production files, but tests and dry-run evidence must use claim-server with -pl claim-server -am test-compile.'
+                prevention_gate = 'Do not materialize Maven evidence for claim-core when policy rebuild keywords are present; stop or deterministically repair before Maven.'
+                regression_test = 'r17-shaped Plan fixture emits policy_rebuild_claim_core_harness and proves no claim-core Maven evidence is generated.'
+                next_validation = 'Next replay either uses claim-server harness and passes Plan authorization, or stops immediately with this fingerprint before Maven.'
+                machine_gate = 'policy_rebuild_claim_server_harness_required'
+                severity = 'P0'
+            }
+        }
         '^low_verification_cap$' {
             return [ordered]@{
                 blocker = $Fingerprint
@@ -209,6 +222,32 @@ function Get-BlockerRule {
                 severity = 'P1'
             }
         }
+        '^executor_credit_required$' {
+            return [ordered]@{
+                blocker = $Fingerprint
+                root_cause_layer = 'executor_resource'
+                root_cause = 'Primary executor cannot run because the account has no required credit or positive balance.'
+                required_fix = 'Restore Claude/executor account credit, or intentionally change executor policy with audit disclosure before replay resumes.'
+                prevention_gate = 'Credit-required errors stop as resource blockers and are not scored as evaluation or implementation failures.'
+                regression_test = 'Invoke-AgentPrompt fixture classifies Claude 402 Credit required as executor_credit_required and exits with resource code 86.'
+                next_validation = 'Next run either reaches slice execution after credit is restored or stops before replay with executor_credit_required.'
+                machine_gate = 'executor_credit_required_stopline'
+                severity = 'P0'
+            }
+        }
+        '^protected_root_isolation_violation$' {
+            return [ordered]@{
+                blocker = $Fingerprint
+                root_cause_layer = 'runner_isolation'
+                root_cause = 'Replay executor attempted forbidden commands or writes against the protected main project root.'
+                required_fix = 'Kill the offending process tree, preserve command-guard evidence, audit protected-root git status, and stop before another replay round.'
+                prevention_gate = 'Any protected-root POM command or protected-root status mutation exits with an isolation blocker.'
+                regression_test = 'Invoke-AgentPrompt command-guard fixture proves forbidden protected-root commands produce exit 92/93 and blocker classification.'
+                next_validation = 'FAILURE_AUDIT_PACK classifies protected_root_isolation_violation instead of unknown.'
+                machine_gate = 'protected_root_isolation_required'
+                severity = 'P0'
+            }
+        }
         '^schema_contract_discovery_gap$' {
             return [ordered]@{
                 blocker = $Fingerprint
@@ -306,6 +345,7 @@ if ($null -ne $control -and $null -ne $control.control_decision) {
 $diagnoses = New-Object System.Collections.Generic.List[object]
 $mustFix = New-Object System.Collections.Generic.List[string]
 $goldenBlockers = @(
+    'policy_rebuild_claim_core_harness',
     'low_verification_cap',
     'wrong_test_surface',
     'core_entry_unclosed',

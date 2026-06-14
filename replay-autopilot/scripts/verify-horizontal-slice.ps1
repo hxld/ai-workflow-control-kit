@@ -6,7 +6,8 @@
 
 param(
     [Parameter(Mandatory = $true)]
-    [string]$SliceResultFile
+    [string]$SliceResultFile,
+    [string]$FeatureClassificationPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,8 +28,8 @@ $familyWeights = @{
 # File family mappings based on path patterns
 $fileFamilyPatterns = @{
     "Frontend" = @("\.jsp$", "\.html$", "\.vue$", "\.jsx?$", "/web/", "/ui/", "/view/")
-    "Backend" = @("Service\.java$", "Facade\.java$", "Controller\.java$", "/example-core/", "/example-server/")
-    "Database" = @("Mapper\.java$", "Entity\.java$", "T[A-Z]", "TExample", "/example-provider/")
+    "Backend" = @("Service\.java$", "Facade\.java$", "Controller\.java$", "/claim-core/", "/claim-server/")
+    "Database" = @("Mapper\.java$", "Entity\.java$", "T[A-Z]", "TAiClaim", "/claim-provider/")
     "Test" = @("Test\.java$", "/test/")
     "Deploy" = @("pom\.xml", "\.yml$", "\.yaml$", "application\.properties")
     "External" = @("Push", "Insure", "Callback", "/integration/")
@@ -39,21 +40,54 @@ $fileFamilyPatterns = @{
 function Get-FileFamily {
     param([string]$FilePath)
 
+    $normalizedPath = ([string]$FilePath) -replace '\\', '/'
+    if ($normalizedPath -match '(?i)(^|/)src/test/(java|resources)/' -or $normalizedPath -match '(?i)Test\.java$') {
+        return "Test"
+    }
+
     foreach ($family in $fileFamilyPatterns.Keys) {
         foreach ($pattern in $fileFamilyPatterns[$family]) {
-            if ($FilePath -match $pattern) {
+            if ($normalizedPath -match $pattern) {
                 return $family
             }
         }
     }
 
     # Default classification by directory
-    if ($FilePath -match "/example-web/") { return "Frontend" }
-    if ($FilePath -match "/example-core/") { return "Backend" }
-    if ($FilePath -match "/example-provider/") { return "Database" }
-    if ($FilePath -match "/example-server/") { return "Backend" }
+    if ($normalizedPath -match "/claim-web/") { return "Frontend" }
+    if ($normalizedPath -match "/claim-core/") { return "Backend" }
+    if ($normalizedPath -match "/claim-provider/") { return "Database" }
+    if ($normalizedPath -match "/claim-server/") { return "Backend" }
 
     return "Unknown"
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value | ForEach-Object { [string]$_ }) }
+    return @([string]$Value)
+}
+
+function Add-UniqueStringToList {
+    param(
+        [System.Collections.Generic.List[string]]$List,
+        [string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return }
+    if (-not $List.Contains($Value)) {
+        $List.Add($Value) | Out-Null
+    }
 }
 
 # Read slice result
@@ -85,6 +119,28 @@ try {
         @()
     }
 
+    $sliceFiles = New-Object System.Collections.Generic.List[string]
+    foreach ($propertyName in @('implemented_files', 'current_slice_changed_files', 'round_changed_files_snapshot', 'changed_files', 'files_modified')) {
+        if ($sliceResult.PSObject.Properties.Name -contains $propertyName) {
+            foreach ($file in @(Get-StringArray $sliceResult.$propertyName)) {
+                Add-UniqueStringToList -List $sliceFiles -Value ([string]$file)
+            }
+        }
+    }
+    if ($sliceResult.PSObject.Properties.Name -contains 'behavior_test_charter' -and $null -ne $sliceResult.behavior_test_charter) {
+        $charter = $sliceResult.behavior_test_charter
+        if ($charter.PSObject.Properties.Name -contains 'evidence_file') {
+            foreach ($file in @(([string]$charter.evidence_file) -split "[,;`r`n]+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+                Add-UniqueStringToList -List $sliceFiles -Value ([string]$file)
+            }
+        }
+        if ($charter.PSObject.Properties.Name -contains 'evidence_files') {
+            foreach ($file in @(Get-StringArray $charter.evidence_files)) {
+                Add-UniqueStringToList -List $sliceFiles -Value ([string]$file)
+            }
+        }
+    }
+
     $sliceIndex = if ($sliceResult.slice_index) { $sliceResult.slice_index } elseif ($sliceResult.slice_number) { $sliceResult.slice_number } else { 1 }
 
 } catch {
@@ -113,6 +169,7 @@ try {
     }
 
     $touchedFamilies = @($touchedFamilies)
+    $sliceFiles = New-Object System.Collections.Generic.List[string]
     $sliceIndex = 1
 }
 
@@ -138,9 +195,31 @@ foreach ($family in $touchedFamilies) {
     }
 }
 
+foreach ($file in @($sliceFiles)) {
+    $category = Get-FileFamily -FilePath ([string]$file)
+    if ($horizontalCategories.ContainsKey($category)) {
+        $horizontalCategories[$category]++
+    }
+}
+
 # Calculate horizontal coverage score
 $categoriesTouched = ($horizontalCategories.Values | Where-Object { $_ -gt 0 }).Count
 $minimumRequired = 3
+$requiredCategories = @('Frontend', 'Backend', 'Database')
+$featureClassification = $null
+if ([string]::IsNullOrWhiteSpace($FeatureClassificationPath)) {
+    $FeatureClassificationPath = Join-Path (Split-Path -Parent ([System.IO.Path]::GetFullPath($SliceResultFile))) 'FEATURE_CLASSIFICATION.json'
+}
+$featureClassification = Read-JsonIfExists -Path $FeatureClassificationPath
+if ($null -ne $featureClassification -and $null -ne $featureClassification.verifier_adjustments) {
+    $minText = [string]$featureClassification.verifier_adjustments.horizontal_minimum
+    if ($minText -match '^\d+$') {
+        $minimumRequired = [int]$minText
+    }
+    if ($featureClassification.verifier_adjustments.PSObject.Properties.Name -contains 'horizontal_required_categories') {
+        $requiredCategories = @(Get-StringArray $featureClassification.verifier_adjustments.horizontal_required_categories)
+    }
+}
 
 # Build result
 $result = [ordered]@{
@@ -150,8 +229,11 @@ $result = [ordered]@{
     horizontal_coverage_score = [math]::Min(100, [math]::Round(($categoriesTouched / $minimumRequired) * 100))
     categories_touched = $categoriesTouched
     minimum_required = $minimumRequired
+    required_categories = @($requiredCategories)
     meets_minimum = ($categoriesTouched -ge $minimumRequired)
     horizontal_breakdown = $horizontalCategories
+    feature_classification = $(if ($null -ne $featureClassification) { [string]$featureClassification.classification } else { '' })
+    feature_classification_path = $FeatureClassificationPath
 }
 
 if ($categoriesTouched -ge $minimumRequired) {
@@ -162,7 +244,7 @@ if ($categoriesTouched -ge $minimumRequired) {
     Write-Host "Horizontal Slice Verification: FAIL - S$($sliceIndex) must touch minimum $minimumRequired categories"
     Write-Host "  Current categories touched: $categoriesTouched"
     Write-Host "  Horizontal breakdown: $($horizontalCategories | Format-Table -AutoSize | Out-String)"
-    Write-Host "  Required: Frontend + Backend + Database (minimum)"
+    Write-Host "  Required: $($requiredCategories -join ' + ') (minimum)"
     $result | ConvertTo-Json -Depth 4 | Write-Host
     exit 1
 }

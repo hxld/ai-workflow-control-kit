@@ -196,7 +196,7 @@ function Test-MetadataLiteral {
     if ($value -match '^(PASS|FAIL|DONE|PARTIAL|BLOCKED|OPEN|CLOSED|PROCEED|VALID|INVALID_REPLAY)$') { return $true }
     if ($value -match '^(phase0_status|plan_status|final_status|blocker|decision)\s*[:=]') { return $true }
     if ($value -match '(?i)(gap|blocker|stop|authorization|workflow|coverage).*(gap|blocked|stop|partial|fail)') { return $true }
-    if ($value -match '^(example-core|example-server|example-web|example-api|example-domain)$') { return $true }
+    if ($value -match '^(claim-core|claim-server|claim-web|claim-api|claim-domain)$') { return $true }
     if ($value -match '^--%$|^-s$|^-f$|^-D') { return $true }
     if ($value -match '^(Noop|Stub|Fake|Dummy|Placeholder|Mock|InMemory|TestOnly|Scaffold)$') { return $true }
     if ($value -match '^[A-Z][A-Za-z0-9_]*(?:Test|Service|Controller|Mapper|Facade|Impl|Dto|DTO|VO|Vo|Request|Response|Query)?(?:#[A-Za-z0-9_]+)?$') { return $true }
@@ -304,6 +304,28 @@ function Get-SlicePlannedTestName {
     return ''
 }
 
+function Get-AnyPlannedTestName {
+    param([string]$ReplayRoot)
+
+    $textParts = New-Object System.Collections.Generic.List[string]
+    foreach ($fileName in @('TEST_CHARTER.md', 'REPLAY_PLAN.md', 'IMPLEMENTATION_CONTRACT.md')) {
+        $textParts.Add((Read-TextIfExists -Path (Join-Path $ReplayRoot $fileName))) | Out-Null
+    }
+    $texts = @($textParts.ToArray()) -join "`n"
+    if ([string]::IsNullOrWhiteSpace($texts)) { return '' }
+
+    $commandMatch = [regex]::Match($texts, '(?i)-Dtest=([A-Z][A-Za-z0-9_]*Test(?:[#.][A-Za-z_][A-Za-z0-9_]*)?)')
+    if ($commandMatch.Success) { return $commandMatch.Groups[1].Value.Trim() }
+
+    $methodMatch = [regex]::Match($texts, '\b([A-Z][A-Za-z0-9_]*Test\.[A-Za-z_][A-Za-z0-9_]*)\b')
+    if ($methodMatch.Success) { return $methodMatch.Groups[1].Value.Trim() }
+
+    $classMatch = [regex]::Match($texts, '\b([A-Z][A-Za-z0-9_]*Test)\b')
+    if ($classMatch.Success) { return $classMatch.Groups[1].Value.Trim() }
+
+    return ''
+}
+
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $ledgerFull = Resolve-AbsolutePath $RequirementFamilyLedger
@@ -380,7 +402,7 @@ if ($null -ne $sourceChain -and [bool]$sourceChain.required_source_chain -and $n
         [string]$ForcedSliceType -eq 'exact_contract_slice' -and
         (
             [string]$ForcedSiblingSurface -eq $sourceCarrier -or
-            [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|source' -or
+            [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|source' -or
             [string]$ForcedRequirementFamily -eq 'core_entry'
         )
     )
@@ -430,6 +452,13 @@ $requiresExactContract = (
     @('wire_payload_api_contract', 'config_policy_threshold', 'deploy_export_page', 'generated_artifact_template_upload', 'automation_test_interface', 'external_integration', 'lifecycle_cleanup_retention') -contains $ForcedRequirementFamily -or
     (($proofRequired -join ' ') -match '(?i)exact|literal|field|wire|display|payload|header|column|copy|string|contract')
 )
+if ([string]::IsNullOrWhiteSpace($plannedTestName) -and $requiresExactContract) {
+    $plannedTestName = Get-AnyPlannedTestName -ReplayRoot $replayRootFull
+    if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
+        $plannedRedResult = 'PENDING_BUSINESS_ASSERTION'
+        $warnings.Add("planned_test_name_inferred_for_exact_contract:$plannedTestName") | Out-Null
+    }
+}
 $preGuardWrites = @()
 if ($requiresSideEffectEvidence -and [string]$ForcedSliceType -match '(?i)stateful|lifecycle') {
     $preGuardWrites = @(Find-PreGuardWriteCalls -WorktreeRoot $worktreeFull -Carrier $selectedCarrier)

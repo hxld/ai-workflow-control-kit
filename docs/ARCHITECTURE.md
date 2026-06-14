@@ -366,6 +366,8 @@ When these scripts need another executable, they call it directly with `execFile
 
 `replay-autopilot/` is a control system for evaluating whether the workflow can drive AI coding tasks through repeatable gates.
 
+The directory contains generic control-plane scripts plus benchmark-derived configs, requirements, and fixtures used as regression cases. Treat those benchmark files as evaluation inputs for the control plane. They are not installed credentials, runtime logs, private oracle diffs, or business source code, and new projects should add their own local configs instead of treating the bundled benchmark case as the default project.
+
 ```mermaid
 flowchart TD
     Input["Requirement, branch, commit, or replay case"] --> Controller["Run-UnattendedReplayControl.ps1"]

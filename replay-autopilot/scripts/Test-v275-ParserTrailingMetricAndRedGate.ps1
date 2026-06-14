@@ -51,7 +51,12 @@ try {
     @'
 # FINAL_REPLAY_REPORT
 
-- final_status: `BLOCKED`
+| Metric | Value |
+|---|---|
+| **Final Status** | BLOCKED |
+| **Production Match** | 100% |
+
+- Oracle Test Coverage: NONE
 - oracle_adjusted_coverage: `100`
 '@ | Set-Content -LiteralPath (Join-Path $tmpRoot 'FINAL_REPLAY_REPORT.md') -Encoding UTF8
 
@@ -64,6 +69,14 @@ try {
         'Parser must evidence-cap oracle coverage to 0 when verification cap is 0'
     Assert-True ($summary -match '(?m)^-\s*reported_oracle_adjusted_coverage:\s*100\s*$') `
         'Parser must preserve the originally reported oracle score'
+    Assert-True ($summary -match '(?m)^-\s*final_status:\s*BLOCKED\s*$') `
+        'Parser must read Final Status from Markdown table rows before falling back to weaker status sources'
+    Assert-True ($summary -match '(?m)^-\s*production_match:\s*100\s*$') `
+        'Parser must capture production match from Markdown table rows'
+    Assert-True ($summary -match '(?m)^-\s*replay_classification:\s*production_match_only\s*$') `
+        'Parser must classify oracle-zero-test plus 100% production match as production_match_only'
+    Assert-True ($summary -match '(?m)^-\s*requires_evolution:\s*True\s*$') `
+        'production_match_only replay must require workflow evolution'
 } finally {
     if (Test-Path -LiteralPath $tmpRoot) {
         Remove-Item -LiteralPath $tmpRoot -Recurse -Force
@@ -95,11 +108,15 @@ Assert-True ($phase1Prompt -match 'do not edit production files') `
 
 [ordered]@{
     status = 'PASS'
-    assertions = 11
+    assertions = 15
     cases = @(
         'parse_trailing_verification_metric',
         'parser_oracle_cap_after_trailing_metric',
         'parser_preserves_reported_oracle',
+        'parser_final_status_table_row',
+        'parser_production_match_table_row',
+        'parser_production_match_only_classification',
+        'parser_production_match_only_requires_evolution',
         'parser_metric_regex_trailing_text',
         'runner_metric_regex_trailing_text',
         'stop_loss_counts_blocked_red_edit',

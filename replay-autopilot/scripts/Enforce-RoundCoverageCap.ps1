@@ -123,22 +123,30 @@ if (-not $finalPassAllowed -or $hasNonAuthorizingEvidence) {
     $text = $statusPattern.Replace($text, { param($m) $m.Groups[1].Value + 'BLOCKED' + $m.Groups[3].Value }, 1)
 }
 
-if ($text -notmatch '(?m)^## Runner Cap Enforcement\s*$') {
-    $originalBlindText = if ($null -ne $blindResult.original) { [string]$blindResult.original } else { 'N/A' }
-    $originalCappedText = if ($null -ne $cappedResult.original) { [string]$cappedResult.original } else { 'N/A' }
-    $signalsText = if ($authorizationSignals.Count -gt 0) { $authorizationSignals -join ', ' } else { 'none' }
-    $enforcementLines = @(
-        '',
-        '## Runner Cap Enforcement',
-        "- family_router_and_cap: $RouterCapPath",
-        "- coverage_cap_from_ledger: $ledgerCap",
-        "- original_blind_self_assessed_coverage: $originalBlindText",
-        "- original_verification_capped_coverage: $originalCappedText",
-        "- final_pass_allowed_by_ledger: $finalPassAllowed",
-        "- non_authorizing_signals: $signalsText",
-        '- enforcement: `blind_self_assessed_coverage`, `verification_capped_coverage`, and `final_status` must not exceed ledger cap/final-pass authorization'
-    ) -join "`n"
-    $text = $text.TrimEnd() + $enforcementLines
+$originalBlindText = if ($null -ne $blindResult.original) { [string]$blindResult.original } else { 'N/A' }
+$originalCappedText = if ($null -ne $cappedResult.original) { [string]$cappedResult.original } else { 'N/A' }
+$signalsText = if ($authorizationSignals.Count -gt 0) { $authorizationSignals -join ', ' } else { 'none' }
+$effectiveFinalStatus = if ($hasNonAuthorizingEvidence) { 'BLOCKED' } else { 'PASS' }
+$enforcementLines = @(
+    '## Runner Cap Enforcement',
+    "- family_router_and_cap: $RouterCapPath",
+    "- coverage_cap_from_ledger: $ledgerCap",
+    "- blind_self_assessed_coverage: $ledgerCap",
+    "- verification_capped_coverage: $ledgerCap",
+    "- final_status: $effectiveFinalStatus",
+    "- original_blind_self_assessed_coverage: $originalBlindText",
+    "- original_verification_capped_coverage: $originalCappedText",
+    "- final_pass_allowed_by_ledger: $finalPassAllowed",
+    "- non_authorizing_signals: $signalsText",
+    "- authorization_enforced: $hasNonAuthorizingEvidence",
+    '- enforcement: `blind_self_assessed_coverage`, `verification_capped_coverage`, and `final_status` must not exceed ledger cap/final-pass authorization'
+) -join "`n"
+
+$enforcementPattern = [regex]'(?ms)^## Runner Cap Enforcement\s*.*?(?=^## |\z)'
+if ($enforcementPattern.IsMatch($text)) {
+    $text = $enforcementPattern.Replace($text, ($enforcementLines + "`n"), 1).TrimEnd()
+} else {
+    $text = $text.TrimEnd() + "`n`n" + $enforcementLines
 }
 
 Set-Content -LiteralPath $RoundResultPath -Value $text -Encoding UTF8

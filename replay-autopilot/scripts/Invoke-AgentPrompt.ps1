@@ -27,19 +27,19 @@ function Test-CarrierLayer {
     Validates that a carrier path is in an executable architectural layer.
 
     .DESCRIPTION
-    Checks if the carrier is in example-api (Facade), example-web (Controller),
-    or example-core/facade (Facade implementation). Returns $false for
-    Service layer (example-core without /facade/) and other internal layers.
+    Checks if the carrier is in claim-api (Facade), claim-web (Controller),
+    or claim-core/facade (Facade implementation). Returns $false for
+    Service layer (claim-core without /facade/) and other internal layers.
 
     .PARAMETER CarrierPath
     The file path to the carrier class.
 
     .EXAMPLE
-    Test-CarrierLayer "example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java"
+    Test-CarrierLayer "claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java"
     Returns $false (Service layer)
 
     .EXAMPLE
-    Test-CarrierLayer "example-api/src/main/java/com/example/project/api/facade/ExampleFacade.java"
+    Test-CarrierLayer "claim-api/src/main/java/com/huize/claim/api/facade/AiClaimFacade.java"
     Returns $true (Facade layer)
     #>
     param(
@@ -50,18 +50,18 @@ function Test-CarrierLayer {
     # Normalize path
     $CarrierPath = $CarrierPath -replace '\\', '/'
 
-    # Check for Facade layer (example-api)
-    if ($CarrierPath -match 'example-api/.*Facade\.java') {
+    # Check for Facade layer (claim-api)
+    if ($CarrierPath -match 'claim-api/.*Facade\.java') {
         return $true
     }
 
-    # Check for Controller layer (example-web)
-    if ($CarrierPath -match 'example-web/.*Controller\.java') {
+    # Check for Controller layer (claim-web)
+    if ($CarrierPath -match 'claim-web/.*Controller\.java') {
         return $true
     }
 
-    # Check for Facade implementation in example-core
-    if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
+    # Check for Facade implementation in claim-core
+    if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
         return $true
     }
 
@@ -142,9 +142,9 @@ function Test-TodoPlaceholder {
         [string]$WorkDir,
 
         [string[]]$ForbiddenPaths = @(
-            "example-core/src/main/java",
-            "example-api/src/main/java",
-            "example-web/src/main/java"
+            "claim-core/src/main/java",
+            "claim-api/src/main/java",
+            "claim-web/src/main/java"
         )
     )
 
@@ -215,6 +215,172 @@ function Resolve-ExecutorCommand {
     return $cmd.Source
 }
 
+function ConvertTo-NormalizedPathText {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+    return (($Value -replace '\\', '/') -replace '"', '').ToLowerInvariant()
+}
+
+function Test-CommandLineContainsPath {
+    param([string]$CommandLine, [string]$Path)
+    $commandText = ConvertTo-NormalizedPathText $CommandLine
+    $pathText = ConvertTo-NormalizedPathText $Path
+    return (-not [string]::IsNullOrWhiteSpace($pathText) -and $commandText.Contains($pathText))
+}
+
+function Get-ReplayCommandGuardViolations {
+    param(
+        [string]$WorkDir,
+        [string]$ProtectedRoot
+    )
+
+    $violations = New-Object System.Collections.Generic.List[object]
+    $protectedPom = ''
+    if (-not [string]::IsNullOrWhiteSpace($ProtectedRoot)) {
+        try {
+            $protectedPom = [System.IO.Path]::GetFullPath((Join-Path $ProtectedRoot 'pom.xml'))
+        } catch {
+            $protectedPom = ''
+        }
+    }
+
+    $processes = @()
+    try {
+        $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    } catch {
+        return @()
+    }
+
+    foreach ($process in $processes) {
+        $commandLine = [string]$process.CommandLine
+        if ([string]::IsNullOrWhiteSpace($commandLine)) { continue }
+
+        $name = [string]$process.Name
+        $mavenLikeProcess = $name -match '(?i)^(mvn|mvn\.cmd|mvn\.bat|java|cmd|powershell|pwsh)(\.exe)?$'
+        $mavenLikeCommand = $commandLine -match '(?i)(^|[\s"''\\/])(mvn|mvn\.cmd|mvn\.bat)([\s"'']|$)' -or
+            $commandLine -match '(?i)org\.codehaus\.plexus\.classworlds|maven\.home|maven\.multiModuleProjectDirectory'
+        if (-not ($mavenLikeProcess -and $mavenLikeCommand)) { continue }
+
+        $reason = ''
+        $isReplayWorktreeCommand = -not [string]::IsNullOrWhiteSpace($WorkDir) -and (Test-CommandLineContainsPath -CommandLine $commandLine -Path $WorkDir)
+        $hasProjectList = $commandLine -match '(?i)(^|[\s"''])-pl($|[\s"''=])'
+        $hasAlsoMake = $commandLine -match '(?i)(^|[\s"''])-am($|[\s"''])'
+        $hasBuildOrTestGoal = $commandLine -match '(?i)(^|[\s"''])(compile|test-compile|test)([\s"'']|$)'
+
+        if ($commandLine -match '(?i)(^|[\s"''])(deploy)([\s"'']|$)') {
+            $reason = 'maven_deploy_forbidden'
+        } elseif (-not [string]::IsNullOrWhiteSpace($protectedPom) -and (Test-CommandLineContainsPath -CommandLine $commandLine -Path $protectedPom)) {
+            $reason = 'protected_root_pom_forbidden'
+        } elseif ($isReplayWorktreeCommand -and $hasProjectList -and $hasBuildOrTestGoal -and -not $hasAlsoMake) {
+            $reason = 'maven_pl_without_am_forbidden'
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($reason)) {
+            $violations.Add([pscustomobject][ordered]@{
+                process_id = [int]$process.ProcessId
+                parent_process_id = [int]$process.ParentProcessId
+                name = $name
+                reason = $reason
+                work_dir = $WorkDir
+                protected_root = $ProtectedRoot
+                command_line = $commandLine
+                detected_at = (Get-Date).ToString('s')
+            }) | Out-Null
+        }
+    }
+
+    return @($violations.ToArray())
+}
+
+function Stop-ReplayCommandGuardViolations {
+    param(
+        [object[]]$Violations,
+        [string]$GuardLogPath = ''
+    )
+
+    if ($null -eq $Violations -or $Violations.Count -eq 0) { return }
+
+    if (-not [string]::IsNullOrWhiteSpace($GuardLogPath)) {
+        $guardDir = Split-Path -Parent $GuardLogPath
+        if (-not [string]::IsNullOrWhiteSpace($guardDir)) {
+            New-Item -ItemType Directory -Force -Path $guardDir | Out-Null
+        }
+        foreach ($violation in $Violations) {
+            ($violation | ConvertTo-Json -Depth 6 -Compress) | Add-Content -LiteralPath $GuardLogPath -Encoding UTF8
+        }
+    }
+
+    $allProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    $byParent = @{}
+    foreach ($process in $allProcesses) {
+        $parentId = [int]$process.ParentProcessId
+        if (-not $byParent.ContainsKey($parentId)) {
+            $byParent[$parentId] = New-Object System.Collections.ArrayList
+        }
+        [void]$byParent[$parentId].Add($process)
+    }
+
+    $targetIds = @{}
+    foreach ($violation in $Violations) {
+        $queue = New-Object System.Collections.Queue
+        $queue.Enqueue([int]$violation.process_id)
+        while ($queue.Count -gt 0) {
+            $currentId = [int]$queue.Dequeue()
+            if ($targetIds.ContainsKey($currentId)) { continue }
+            $targetIds[$currentId] = $true
+            if ($byParent.ContainsKey($currentId)) {
+                foreach ($child in $byParent[$currentId]) {
+                    $queue.Enqueue([int]$child.ProcessId)
+                }
+            }
+        }
+    }
+
+    foreach ($targetId in @($targetIds.Keys | Sort-Object -Descending)) {
+        try {
+            Stop-Process -Id ([int]$targetId) -Force -ErrorAction Stop
+        } catch {
+            # Best effort cleanup. The process may have exited between WMI enumeration and Stop-Process.
+        }
+    }
+}
+
+function Invoke-ReplayCommandGuard {
+    param(
+        [string]$WorkDir,
+        [string]$ProtectedRoot,
+        [string]$GuardLogPath = ''
+    )
+
+    $violations = @(Get-ReplayCommandGuardViolations -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot)
+    if ($violations.Count -gt 0) {
+        Stop-ReplayCommandGuardViolations -Violations $violations -GuardLogPath $GuardLogPath
+    }
+    return $violations
+}
+
+function Invoke-ReplayCommandGuardCleanup {
+    param(
+        [string]$WorkDir,
+        [string]$ProtectedRoot,
+        [string]$GuardLogPath = '',
+        [int]$Attempts = 6
+    )
+
+    $allViolations = New-Object System.Collections.Generic.List[object]
+    for ($attempt = 0; $attempt -lt [Math]::Max(1, $Attempts); $attempt++) {
+        $violations = @(Invoke-ReplayCommandGuard -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+        if ($violations.Count -eq 0) {
+            break
+        }
+        foreach ($violation in $violations) {
+            $allViolations.Add($violation) | Out-Null
+        }
+        Start-Sleep -Milliseconds 750
+    }
+    return @($allViolations.ToArray())
+}
+
 function Test-AgentCompletionFileReady {
     param([string]$Path)
     if ([string]::IsNullOrWhiteSpace($Path)) {
@@ -247,7 +413,11 @@ function Receive-JobWithTimeout {
         [string]$TimeoutMessage,
         [string]$CompletionPath = '',
         [int]$CompletionQuietSeconds = 90,
-        [string]$ProcessMatchText = ''
+        [string]$ProcessMatchText = '',
+        [string]$WorkDir = '',
+        [string]$ProtectedRoot = '',
+        [string]$ProtectedRootStatusBefore = '',
+        [string]$GuardLogPath = ''
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -349,6 +519,37 @@ function Receive-JobWithTimeout {
     }
 
     while ($true) {
+        $guardViolations = @(Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+        if ($guardViolations.Count -gt 0) {
+            Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
+            Stop-Job -Job $Job | Out-Null
+            Remove-Job -Job $Job -Force | Out-Null
+            [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+            $reasons = @($guardViolations | ForEach-Object { "$($_.reason):pid=$($_.process_id)" }) -join '; '
+            return [pscustomobject]@{
+                ExitCode = 93
+                CompletionMode = 'command_guard_violation'
+                GuardReasons = $reasons
+                GuardLogPath = $GuardLogPath
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($ProtectedRoot) -and $ProtectedRoot -ine $WorkDir) {
+            $protectedRootStatusCurrent = Get-GitStatusText -Repo $ProtectedRoot
+            if ($protectedRootStatusCurrent -ne $ProtectedRootStatusBefore) {
+                Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
+                Stop-Job -Job $Job | Out-Null
+                Remove-Job -Job $Job -Force | Out-Null
+                [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+                return [pscustomobject]@{
+                    ExitCode = 92
+                    CompletionMode = 'protected_root_modified_during_execution'
+                    GuardReasons = 'protected_root_status_changed'
+                    GuardLogPath = $GuardLogPath
+                }
+            }
+        }
+
         $remaining = [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
         if ($remaining -le 0) {
             Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
@@ -372,6 +573,16 @@ function Receive-JobWithTimeout {
                 Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
                 Stop-Job -Job $Job | Out-Null
                 Remove-Job -Job $Job -Force | Out-Null
+                $completionGuardViolations = @(Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+                if ($completionGuardViolations.Count -gt 0) {
+                    $reasons = @($completionGuardViolations | ForEach-Object { "$($_.reason):pid=$($_.process_id)" }) -join '; '
+                    return [pscustomobject]@{
+                        ExitCode = 93
+                        CompletionMode = 'command_guard_violation'
+                        GuardReasons = $reasons
+                        GuardLogPath = $GuardLogPath
+                    }
+                }
                 return [pscustomobject]@{
                     ExitCode = 0
                     CompletionMode = 'completion_file'
@@ -385,6 +596,17 @@ function Receive-JobWithTimeout {
     $result = Receive-Job -Job $Job
     $state = $Job.State
     Remove-Job -Job $Job -Force | Out-Null
+    $guardViolationsAfterExit = @(Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+    if ($guardViolationsAfterExit.Count -gt 0) {
+        $reasons = @($guardViolationsAfterExit | ForEach-Object { "$($_.reason):pid=$($_.process_id)" }) -join '; '
+        return [pscustomobject]@{
+            ExitCode = 93
+            CompletionMode = 'command_guard_violation_after_exit'
+            GuardReasons = $reasons
+            GuardLogPath = $GuardLogPath
+            ExecutorExitCode = (Get-ResultExitCode $result)
+        }
+    }
     if ($state -ne 'Completed') {
         throw "Agent command job ended with state: $state"
     }
@@ -416,6 +638,7 @@ $stdoutLog = Join-Path $logDirFull "$Name.stdout.log"
 $stderrLog = Join-Path $logDirFull "$Name.stderr.log"
 $lastMessage = Join-Path $logDirFull "$Name.last-message.md"
 $metaPath = Join-Path $logDirFull "$Name.exec.json"
+$commandGuardLog = Join-Path $logDirFull "$Name.command-guard.jsonl"
 $rgConfigPath = Join-Path $PSScriptRoot 'ripgrep-autopilot.config'
 $toolPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools'))
 $commandSource = ''
@@ -444,12 +667,22 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
 $timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
 $started = Get-Date
 $reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
+$allowedPom = Join-Path $workDirFull 'pom.xml'
+$protectedPomForPrompt = if (-not [string]::IsNullOrWhiteSpace($protectedRoot)) { Join-Path $protectedRoot 'pom.xml' } else { '<protected project root pom>' }
 $automationGuard = @(
     'AUTOMATION HARD RULES:',
     '- Do not launch GUI editors or desktop applications such as Cursor, VS Code, Notepad, Explorer, browser windows, or IDE helpers.',
     '- Use shell, ripgrep, git, Maven, and direct file edits only; every result must be written to the required files.',
     '- This is unattended execution. Do not ask clarification questions. If a required completion file is requested, write that exact file before your final response.',
     '- If you genuinely cannot proceed, write the requested completion file with BLOCKED status and concrete evidence instead of replying conversationally.',
+    "- Maven project boundary: the only allowed project POM is $allowedPom; never run Maven with -f $protectedPomForPrompt or any POM under the protected project root.",
+    '- Forbidden Maven goals in replay agent execution: never run `mvn deploy`; do not run `mvn install` unless the prompt explicitly authorizes install for an isolated replay worktree.',
+    '- Maven commands that run tests must include `-s D:\maven\settings\settings.xml` and `-f <isolated replay worktree>\pom.xml`.',
+    '- Maven commands with `-pl <module>` must also include `-am` so reactor source modules are used instead of drifted local/remote SNAPSHOT artifacts.',
+    '- In PowerShell, Maven commands containing `-Dtest`, `#`, or `-Dsurefire.failIfNoSpecifiedTests=false` should use `mvn --% ...` to avoid argument parsing false blockers.',
+    '- If the target production carrier is in a module without test dependencies, place tests in an existing test-harness module; do not edit any `pom.xml` to add JUnit/Mockito/Spring Test.',
+    '- For TaskProcessor/rebuildTaskData/source-chain tests, do not start a full Spring context: do not extend AbstractTestClass and do not add @SpringBootTest, @RunWith(SpringJUnit4ClassRunner.class), @ContextConfiguration, or @Resource injection. Use no-Spring JUnit with Mockito/reflection and deterministic inputs.',
+    '- For policyNum/insureNum rebuild slices, mock AiClaimDataAssemblyHelper.buildRequestCommon and invoke the real RequestBuildFunction with a RequestBuildContext containing policyNum and insureNum. Do not directly return a hand-built request from thenAnswer. Do not rely on fixed database caseIds or allow taskData == null to pass.',
     ''
 ) -join "`n"
 
@@ -514,7 +747,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } elseif ($Executor -eq 'claude') {
     $args = @('--print', '--permission-mode', 'bypassPermissions', '--output-format', 'text', '--max-turns', '200')
@@ -563,7 +796,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } else {
     throw "Unsupported executor: $Executor"
@@ -575,6 +808,9 @@ if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and
     $exitCode = 88
     $failureCategory = 'missing_completion'
 }
+if ($exitCode -eq 93 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
+    $failureCategory = 'command_guard_violation'
+}
 if ($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
     $failureText = ''
     if (Test-Path -LiteralPath $stdoutLog) {
@@ -584,7 +820,9 @@ if ($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
         $failureText += "`n"
         $failureText += Get-Content -LiteralPath $stderrLog -Raw -Encoding UTF8
     }
-    if ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at') {
+    if ($failureText -match '(?i)\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits') {
+        $failureCategory = 'executor_credit_required'
+    } elseif ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at') {
         $failureCategory = 'usage_limit'
     } elseif ($failureText -match '(?i)not logged in|login required|authentication|unauthorized') {
         $failureCategory = 'auth'
@@ -628,6 +866,7 @@ $meta = [ordered]@{
     stdout_log = $stdoutLog
     stderr_log = $stderrLog
     last_message = $lastMessage
+    command_guard_log = $commandGuardLog
     model = $Model
     reasoning_effort = $reasoningEffortActual
     started_at = $started.ToString('s')
@@ -636,6 +875,7 @@ $meta = [ordered]@{
     completion_path = $CompletionPath
     completion_quiet_seconds = $CompletionQuietSeconds
     completion_mode = $result.CompletionMode
+    command_guard_reasons = if ($null -ne $result.PSObject.Properties['GuardReasons']) { $result.GuardReasons } else { '' }
     exit_code = $exitCode
     executor_exit_code = if ($null -ne $result.PSObject.Properties['ExecutorExitCode']) { $result.ExecutorExitCode } else { $exitCode }
     failure_category = $failureCategory
@@ -651,6 +891,10 @@ if ($exitCode -ne 0) {
         Write-Host "$Executor usage limit reached. See $stdoutLog"
         exit 86
     }
+    if ($failureCategory -eq 'executor_credit_required') {
+        Write-Host "$Executor credit or positive balance is required. See $stdoutLog"
+        exit 86
+    }
     if ($failureCategory -eq 'auth') {
         Write-Host "$Executor authentication failed. See $stdoutLog"
         exit 87
@@ -658,6 +902,10 @@ if ($exitCode -ne 0) {
     if ($failureCategory -eq 'missing_completion') {
         Write-Host "$Executor exited successfully but did not write required completion file: $CompletionPath. See $stdoutLog"
         exit 88
+    }
+    if ($failureCategory -eq 'command_guard_violation') {
+        Write-Host "$Executor attempted a forbidden replay command. See $commandGuardLog"
+        exit 93
     }
     throw "$Executor exited with code $exitCode. See $stdoutLog"
 }

@@ -12,7 +12,8 @@ For each DB operation in `stateful_side_effect` family:
 // 1. Setup capture
 AtomicReference<CompensateDetail> capturedDetail = new AtomicReference<>();
 doAnswer(invocation -> {
-    capturedDetail.set(invocation.getArgument(0));
+    Object[] args = invocation.getArguments();
+    capturedDetail.set((CompensateDetail) args[0]);
     return 1;
 }).when(compensateDetailMapper).insertList(any());
 
@@ -32,7 +33,7 @@ assertThat(capturedDetail.get()).hasSize(1);
 - ❌ Test passes without DB state assertions
 - ❌ Mock-only tests that don't verify actual DB operations
 
-## Required Effects for example-feature
+## Required Effects for aiClaimV2
 
 From `REQUIREMENT_FAMILY_LEDGER.json`, the following side effects MUST be verified:
 
@@ -79,20 +80,24 @@ A slice with side effects is COMPLETE only when:
 @Transactional
 public void testHandle_Success_AllSideEffectsVerified() {
     // GIVEN
-    Long caseId = 12345L;
-    ExampleApplyApiTask task = setupFlashCase();
+    Long fixtureCaseId = Long.valueOf(Math.abs("CarrierUnderTest".hashCode()));
+    AiApplyClaimApiTask task = setupFlashCase();
 
     // Capture CompensateInfo
     AtomicReference<CompensateInfo> capturedInfo = new AtomicReference<>();
     doAnswer(invocation -> {
-        capturedInfo.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        capturedInfo.set((CompensateInfo) args[0]);
         return 1;
     }).when(compensateInfoMapper).insert(any());
 
     // Capture CompensateDetail
     AtomicReference<List<CompensateDetail>> capturedDetails = new AtomicReference<>();
     doAnswer(invocation -> {
-        capturedDetails.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        @SuppressWarnings("unchecked")
+        List<CompensateDetail> details = (List<CompensateDetail>) args[0];
+        capturedDetails.set(details);
         return 1;
     }).when(compensateDetailMapper).insertList(any());
 
@@ -132,8 +137,8 @@ public void testHandle_Success() {
 ```java
 // WRONG - No actual verification
 @Service
-public class ExampleFlowService {
-    public boolean handle(Long caseId, ExampleApplyApiTask task) {
+public class AiAutoClaimFlowService {
+    public boolean handle(Long caseId, AiApplyClaimApiTask task) {
         // TODO: Insert compensate info
         // TODO: Insert compensate details
         // TODO: Update case status

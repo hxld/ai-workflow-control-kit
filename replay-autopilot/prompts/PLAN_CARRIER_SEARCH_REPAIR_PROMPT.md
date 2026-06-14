@@ -21,7 +21,7 @@ If none exist, skip oracle verification but document `oracle_verification_skippe
 
 1. **Search oracle files for matching service/interface name**
    - Use `rg` to search for class name pattern
-   - Example: `rg "class ExampleFlowService" --type java`
+   - Example: `rg "class AiAutoClaimFlowService" --type java`
    - Record: `carrier_source: "oracle"` if found
 
 2. **If found: Extract EXACT signature**
@@ -39,7 +39,7 @@ If none exist, skip oracle verification but document `oracle_verification_skippe
 
 1. **Search oracle domain/DTO files for matching fields**
    - Use `rg` to search for field names in DTOs
-   - Example: `rg "freeReviewAmount|caseId" --type java example-domain/`
+   - Example: `rg "freeReviewAmount|caseId" --type java claim-domain/`
 
 2. **If found: Use EXISTING DTO**
    - Do NOT create new DTO with similar fields
@@ -61,9 +61,9 @@ For each carrier, record:
   "fail_if_signature_drift": true,
   "carriers": [
     {
-      "class_name": "ExampleFlowService",
+      "class_name": "AiAutoClaimFlowService",
       "method_name": "handle",
-      "parameter_types": ["Long", "ExampleApplyApiTask"],
+      "parameter_types": ["Long", "AiApplyClaimApiTask"],
       "return_type": "void",
       "carrier_source": "oracle|new",
       "oracle_match": "exact|partial|none",
@@ -79,15 +79,15 @@ For each carrier, record:
 These patterns are **FORBIDDEN** when oracle has matching carrier:
 
 1. ❌ Creating new DTO when oracle has similar DTO
-   - Example: Oracle has `ExampleApplyApiTask` with `caseId`, `aiResult`
-   - Forbidden: Creating `ExampleResultDto` with same fields
+   - Example: Oracle has `AiApplyClaimApiTask` with `caseId`, `aiResult`
+   - Forbidden: Creating `AiClaimResultDto` with same fields
 
 2. ❌ Creating new Service method when oracle has exact method
-   - Example: Oracle has `handle(Long caseId, ExampleApplyApiTask task)`
+   - Example: Oracle has `handle(Long caseId, AiApplyClaimApiTask task)`
    - Forbidden: Creating `executeAutoFlow(Long caseId)` or `processAiResult(Long caseId, AiResult result)`
 
 3. ❌ Changing parameter types without justification
-   - Example: Oracle uses `ExampleApplyApiTask`
+   - Example: Oracle uses `AiApplyClaimApiTask`
    - Forbidden: Changing to `AiResult` or `Long` only without documented reason
 
 ## Validation
@@ -110,7 +110,7 @@ The verifier will check:
 ## Example: CORRECT Oracle-First Search
 
 ```markdown
-## Carrier Selection for ExampleFlowService
+## Carrier Selection for AiAutoClaimFlowService
 
 ### Step 1: Search Oracle Files
 
@@ -119,22 +119,22 @@ rg "class.*FlowService" --type java claim-*/src/main/java/
 ```
 
 **Result Found:**
-- `example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java`
+- `claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java`
 
 ### Step 2: Extract Exact Signature
 
 ```java
-public void handle(Long caseId, ExampleApplyApiTask task)
+public void handle(Long caseId, AiApplyClaimApiTask task)
 ```
 
 ### Step 3: Verify DTO
 
 ```bash
-rg "ExampleApplyApiTask" --type java example-domain/
+rg "AiApplyClaimApiTask" --type java claim-domain/
 ```
 
 **Result Found:**
-- `example-domain/src/main/java/com/example/project/domain/ai/ExampleApplyApiTask.java`
+- `claim-domain/src/main/java/com/huize/claim/domain/ai/AiApplyClaimApiTask.java`
 
 ### Step 4: Record Decision
 
@@ -148,12 +148,12 @@ rg "ExampleApplyApiTask" --type java example-domain/
 ```markdown
 ## WRONG: Creating New Carrier Without Search
 
-### Selected Carrier: ExampleResultService (NEW)
+### Selected Carrier: AiClaimResultService (NEW)
 
-**Method:** `ResultModel<ExampleResult> processResult(Long caseId)`
+**Method:** `ResultModel<AiClaimResult> processResult(Long caseId)`
 
 **Problem:** This was created WITHOUT searching oracle first.
-**Correct Action:** Search oracle, use `ExampleFlowService.handle()` instead.
+**Correct Action:** Search oracle, use `AiAutoClaimFlowService.handle()` instead.
 ```
 
 ## Integration with Plan Phase

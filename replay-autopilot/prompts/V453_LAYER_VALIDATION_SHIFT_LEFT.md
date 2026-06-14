@@ -18,7 +18,7 @@ Each selected carrier MUST include:
 
 ```json
 {
-  "classpath": "com.example.project.api.facade.ExampleFacade",
+  "classpath": "com.huize.claim.api.facade.AiClaimFacade",
   "target_family": "core_entry",
   "target_layer": "Facade",
   "layer_justification": "Facade layer is required for core_entry family per architectural rules",
@@ -53,7 +53,7 @@ issues:
 
 ### Target Family: core_entry
 
-### Selected Carrier: ExampleFacade
+### Selected Carrier: AiClaimFacade
 
 **Layer Validation:**
 - target_family: core_entry
@@ -67,7 +67,7 @@ issues:
 ```markdown
 ## WRONG: Service Layer for core_entry Family
 
-### Selected Carrier: ExampleFlowService
+### Selected Carrier: AiAutoClaimFlowService
 
 **Problems:**
 1. target_family: core_entry

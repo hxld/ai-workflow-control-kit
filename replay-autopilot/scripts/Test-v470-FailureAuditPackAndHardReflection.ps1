@@ -30,6 +30,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Failure audit ValidateOnly failed: $LASTEXITCODE" }
     $validate = $validateJson | ConvertFrom-Json
     Assert-True 'failure_audit_validate_valid' ($validate.status -eq 'VALID')
+    $writeAuditText = Get-Content -LiteralPath $writeAudit -Raw -Encoding UTF8
+    $writeControlText = Get-Content -LiteralPath $writeControl -Raw -Encoding UTF8
+    Assert-True 'failure_audit_classifies_protected_root_isolation' ($writeAuditText -match 'protected_root_isolation_violation' -and $writeAuditText -match 'runner_isolation')
+    Assert-True 'control_summary_fingerprints_protected_root_isolation' ($writeControlText -match 'protected_root_isolation_violation' -and $writeControlText -match 'command_guard_violation')
 
     $replayRoot = Join-Path $tempRoot 'feature-under-test\claim-codex-replay-v470-test-r01'
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null

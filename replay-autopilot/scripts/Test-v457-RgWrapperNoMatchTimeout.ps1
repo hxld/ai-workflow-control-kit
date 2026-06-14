@@ -1,5 +1,5 @@
 param(
-    [string]$RepoRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
+    [string]$RepoRoot = "D:\opt\claim",
     [int]$TimeoutSeconds = 8
 )
 

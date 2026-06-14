@@ -18,6 +18,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$pythonResolver = Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'
+if (Test-Path -LiteralPath $pythonResolver) {
+    . $pythonResolver
+} else {
+    throw "Python launcher resolver missing: $pythonResolver"
+}
+
 # Ensure we're in the work directory
 Push-Location $WorkDir
 
@@ -37,7 +44,8 @@ try {
         $pythonArgs += $RequiredMethods
     }
 
-    $result = & python3 @pythonArgs 2>&1
+    $python = Resolve-PythonLauncher
+    $result = & $python.Command @($python.Arguments + $pythonArgs) 2>&1
     $exitCode = $LASTEXITCODE
 
     # Exit code 0 = OK to create new carrier (NO_EXISTING_CARRIER or CARRIER_INADEQUATE)

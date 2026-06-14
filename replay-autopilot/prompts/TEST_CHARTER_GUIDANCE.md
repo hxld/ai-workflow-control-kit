@@ -41,11 +41,11 @@ RED test MUST fail with **business assertion**:
 @Test
 public void testFreeReviewAmountFieldMissing() {
     // Given: config without freeReviewAmount field
-    TExampleModuleConfig config = new TExampleModuleConfig();
+    TAiClaimModuleConfig config = new TAiClaimModuleConfig();
     config.setModuleName("test");
 
     // When: reading config
-    ExampleModuleConfigDto dto = service.getConfig("test");
+    AiClaimModuleConfigDto dto = service.getConfig("test");
 
     // Then: field should be null (RED fails before implementation)
     assertThat(dto.getFreeReviewAmount()).isNull();
@@ -73,7 +73,7 @@ public void testValidateFreeReviewAmount_WhenNegative_ShouldFail() {
 @Test
 public void testSaveConfig_WhenValid_ShouldWriteToDatabase() {
     // Given: valid config
-    ExampleModuleConfigDto config = new ExampleModuleConfigDto();
+    AiClaimModuleConfigDto config = new AiClaimModuleConfigDto();
     config.setFreeReviewAmount(new BigDecimal("1000"));
 
     // When: saving
@@ -102,7 +102,7 @@ public void testConfig() {
 @Test
 public void testConfig() {
     // WRONG: Tautology, always passes
-    ExampleModuleConfigDto dto = service.getConfig("test");
+    AiClaimModuleConfigDto dto = service.getConfig("test");
     assertTrue(true);
 }
 ```
@@ -141,7 +141,7 @@ assertThat(result.getFreeReviewAmount()).isGreaterThan(BigDecimal.ZERO);
 ❌ **BAD**: Class existence check only
 ```java
 assertThat(dto).isNotNull();
-assertThat(config.getClass().getSimpleName()).isEqualTo("TExampleModuleConfig");
+assertThat(config.getClass().getSimpleName()).isEqualTo("TAiClaimModuleConfig");
 ```
 
 ## Verification

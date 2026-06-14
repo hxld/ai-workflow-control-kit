@@ -60,7 +60,7 @@ function Get-RemediationMap {
             'wrong_test_surface' {
                 $remediationMap['wrong_test_surface'] = @{
                     fix_command = 'Search-BaselineCarrier -Layer Facade,Controller -Family core_entry -Exclude Helpers'
-                    expected_output_pattern = 'ExampleApplyClaimApiTaskProcessor.*handleTaskResponse|ExamineFlowFacade.*autoClose'
+                    expected_output_pattern = 'AiApplyClaimApiTaskProcessor.*handleTaskResponse|ExamineFlowFacade.*autoClose'
                     verification = 'Layer validation output contains layer_class=valid'
                     priority = 'HIGH'
                 }
@@ -75,8 +75,8 @@ function Get-RemediationMap {
             }
             'core_entry_unclosed' {
                 $remediationMap['core_entry_unclosed'] = @{
-                    fix_command = 'Search-CoreEntryCarrier -TriggerSource ExampleApplyClaimApiTaskProcessor -Exclude Parsers,Helpers'
-                    expected_output_pattern = 'ExampleFlowService.*executeAutoFlow|ExampleApplyClaimApiTaskProcessor.*handleTaskResponse'
+                    fix_command = 'Search-CoreEntryCarrier -TriggerSource AiApplyClaimApiTaskProcessor -Exclude Parsers,Helpers'
+                    expected_output_pattern = 'AiAutoClaimFlowService.*executeAutoFlow|AiApplyClaimApiTaskProcessor.*handleTaskResponse'
                     verification = 'Family closure ledger shows core_entry.touched_count > 0'
                     priority = 'CRITICAL'
                 }
@@ -216,6 +216,14 @@ if ($null -ne $slice.tests) {
 $redTests = @($tests | Where-Object { $null -ne $_.phase -and ([string]$_.phase).ToUpperInvariant() -eq 'RED' })
 $redFailed = @($redTests | Where-Object { $null -ne $_.result -and ([string]$_.result).ToLowerInvariant() -eq 'fail' }).Count -gt 0
 $gapFlags = @(((Get-StringArray $slice.gap_flags) + (Get-StringArray $verify.gap_flags)) | Select-Object -Unique)
+$featureExemptedGapFlags = @()
+if ($null -ne $verify.verifier_adjustments_applied -and
+    $verify.verifier_adjustments_applied.PSObject.Properties.Name -contains 'exempted_gap_flags') {
+    $featureExemptedGapFlags = @(Get-StringArray $verify.verifier_adjustments_applied.exempted_gap_flags)
+}
+if ($featureExemptedGapFlags.Count -gt 0) {
+    $gapFlags = @($gapFlags | Where-Object { $featureExemptedGapFlags -notcontains [string]$_ } | Select-Object -Unique)
+}
 $blockers = @(Get-StringArray $verify.authorization_blockers)
 $warnings = @(Get-StringArray $verify.warnings)
 
@@ -315,6 +323,7 @@ $result = [ordered]@{
     must_fail_closed = $mustFailClosed
     requires_cap_ten = $requiresCapTen
     must_fail_reasons = @($mustFailReasons | Select-Object -Unique)
+    feature_exempted_gap_flags = @($featureExemptedGapFlags)
     authorization_blockers = @($blockers)
     warnings = @($warnings)
     validation_issues = @($issues)

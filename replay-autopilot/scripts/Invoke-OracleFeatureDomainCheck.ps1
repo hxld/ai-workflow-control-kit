@@ -24,12 +24,12 @@ $ErrorActionPreference = 'Stop'
 # Domain keyword mappings (using English class names for reliability)
 $DomainKeywords = @{
     'examine'        = @('examine', 'ExamineFlow', 'ExamineFacade', 'ExamineController')
-    'push'           = @('push', 'ExamplePush', 'PushService', 'PushFacade')
-    'ai'             = @('ai', 'Example', 'ExampleAuto', 'AiReview', 'AiConclusion')
+    'push'           = @('push', 'InsureCompanyPush', 'PushService', 'PushFacade')
+    'ai'             = @('ai', 'AiClaim', 'AiAuto', 'AiReview', 'AiConclusion')
     'compensate'     = @('compensate', 'Compensate', 'Compensation', 'CompensateTable')
     'route'          = @('route', 'CaseRoute', 'Routing', 'RouteService')
     'refund'         = @('refund', 'RefundTicket', 'RefundService', 'RefundFacade')
-    'return_ticket'  = @('ExampleTicket', 'ExampleTicketContext', 'RenbaoCaishenfenExampleTicket')
+    'return_ticket'  = @('ReturnTicket', 'ReturnTicketContext', 'RenbaoCaishenfenReturnTicket')
     'dock'           = @('dock', 'Dock', 'DockService')
 }
 

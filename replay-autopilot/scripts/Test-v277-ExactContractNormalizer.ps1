@@ -22,11 +22,11 @@ $cases = New-Object System.Collections.Generic.List[string]
 
 try {
     Write-JsonFile -Path (Join-Path $tempRoot 'CARRIER_AUTHORIZATION_01.json') -Value ([ordered]@{
-        selected_carrier = 'example-core/src/main/java/Foo.java#handle'
+        selected_carrier = 'claim-core/src/main/java/Foo.java#handle'
         requires_exact_contract_assertions = $false
     })
     Write-JsonFile -Path (Join-Path $tempRoot 'SIDE_EFFECT_EVIDENCE_01.json') -Value ([ordered]@{
-        test_name = 'example-server/src/test/java/FooTest.java#red'
+        test_name = 'claim-server/src/test/java/FooTest.java#red'
     })
     Write-JsonFile -Path (Join-Path $tempRoot 'EXACT_CONTRACT_ASSERTION_MATRIX_01.json') -Value ([ordered]@{
         required_for_this_slice = $false
@@ -35,21 +35,21 @@ try {
                 literal = 'git diff'
                 symbol_or_field = 'git diff'
                 db_or_wire_or_display = 'meta'
-                production_boundary = 'example-core/src/main/java/Foo.java#handle'
+                production_boundary = 'claim-core/src/main/java/Foo.java#handle'
                 test_assertion = 'not a business assertion'
             },
             [ordered]@{
                 literal = 'Foo.handle(...)'
                 symbol_or_field = 'Foo.handle(...)'
                 db_or_wire_or_display = 'behavior'
-                production_boundary = 'example-core/src/main/java/Foo.java#handle'
+                production_boundary = 'claim-core/src/main/java/Foo.java#handle'
                 test_assertion = 'method label only'
             },
             [ordered]@{
                 literal = 'business payload field'
                 symbol_or_field = 'payload.field'
                 db_or_wire_or_display = 'wire'
-                production_boundary = 'example-core/src/main/java/Foo.java#handle'
+                production_boundary = 'claim-core/src/main/java/Foo.java#handle'
                 test_assertion = 'assert payload.field is present'
             }
         )
@@ -64,7 +64,7 @@ try {
     $requiredRoot = Join-Path $root ('.tmp\exact-normalizer-required-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $requiredRoot | Out-Null
     Write-JsonFile -Path (Join-Path $requiredRoot 'CARRIER_AUTHORIZATION_01.json') -Value ([ordered]@{
-        selected_carrier = 'example-core/src/main/java/Foo.java#handle'
+        selected_carrier = 'claim-core/src/main/java/Foo.java#handle'
         requires_exact_contract_assertions = $true
     })
     Write-JsonFile -Path (Join-Path $requiredRoot 'EXACT_CONTRACT_ASSERTION_MATRIX_01.json') -Value ([ordered]@{
@@ -74,7 +74,7 @@ try {
                 literal = 'git log'
                 symbol_or_field = 'git log'
                 db_or_wire_or_display = 'meta'
-                production_boundary = 'example-core/src/main/java/Foo.java#handle'
+                production_boundary = 'claim-core/src/main/java/Foo.java#handle'
                 test_assertion = 'not a business assertion'
             }
         )

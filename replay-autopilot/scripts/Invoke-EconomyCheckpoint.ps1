@@ -92,28 +92,37 @@ function Test-LayerValidationResult {
     }
 
     $layerResult = Get-Content -LiteralPath $layerFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $status = ''
+    if ($layerResult.PSObject.Properties.Name -contains 'validation_status') {
+        $status = [string]$layerResult.validation_status
+    }
+    if ([string]::IsNullOrWhiteSpace($status) -and $layerResult.PSObject.Properties.Name -contains 'verification_status') {
+        $status = [string]$layerResult.verification_status
+    }
+    $normalizedStatus = $status.Trim().ToUpperInvariant()
+    $canProceed = $layerResult.PSObject.Properties.Name -contains 'can_proceed' -and [bool]$layerResult.can_proceed
 
     # For discovery mode, WARN is acceptable
-    if ($layerResult.validation_status -eq "PASS") {
+    if ($normalizedStatus -in @("PASS", "PASSED") -or ($canProceed -and [string]::IsNullOrWhiteSpace($normalizedStatus))) {
         return @{
             passed = $true
-            status = "PASS"
+            status = if ([string]::IsNullOrWhiteSpace($normalizedStatus)) { "PASS" } else { $normalizedStatus }
             reason = "Layer validation passed"
         }
     }
 
-    if ($layerResult.validation_status -eq "WARN" -or $layerResult.validation_status -eq "REVIEW") {
+    if ($normalizedStatus -eq "WARN" -or $normalizedStatus -eq "REVIEW") {
         return @{
             passed = $true
-            status = "WARN"
+            status = $normalizedStatus
             reason = "Layer validation returned WARN - acceptable in discovery mode"
         }
     }
 
     return @{
         passed = $false
-        status = $layerResult.validation_status
-        reason = "Layer validation failed with status: $($layerResult.validation_status)"
+        status = $status
+        reason = "Layer validation failed with status: $status"
     }
 }
 
@@ -144,30 +153,97 @@ function Test-PlanGenerationResult {
     }
 }
 
+function Get-LatestFileByPattern {
+    param(
+        [string]$Root,
+        [string]$Pattern
+    )
+
+    $matches = @(Get-ChildItem -LiteralPath $Root -Filter $Pattern -ErrorAction SilentlyContinue | Sort-Object LastWriteTime, Name -Descending)
+    if ($matches.Count -eq 0) {
+        return $null
+    }
+    return $matches[0]
+}
+
 function Test-TestCharterResult {
     param([string]$ReplayRoot)
 
-    $charterFile = Join-Path $ReplayRoot "TEST_CHARTER.json"
-    if (-not (Test-Path -LiteralPath $charterFile)) {
+    $validationFile = Get-LatestFileByPattern -Root $ReplayRoot -Pattern "TEST_CHARTER_VALIDATION_*.json"
+    if ($null -ne $validationFile) {
+        $validation = Get-Content -LiteralPath $validationFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        $status = [string]$validation.verification_status
+        $canProceed = $validation.can_proceed -eq $true
+        $statusPass = $status -in @('PASSED', 'PASS')
+
+        if ($canProceed -and $statusPass) {
+            return @{
+                passed = $true
+                validation_artifact = $validationFile.Name
+                verification_status = $status
+                warning_count = $validation.warning_count
+                reason = "Test charter prevalidation passed via $($validationFile.Name)"
+            }
+        }
+
+        $failureSummary = ''
+        if ($null -ne $validation.failures) {
+            $failureSummary = (@($validation.failures) | ForEach-Object {
+                if ($null -ne $_.code) { [string]$_.code } else { ($_ | ConvertTo-Json -Depth 6 -Compress) }
+            }) -join ', '
+        }
+        if ([string]::IsNullOrWhiteSpace($failureSummary)) {
+            $failureSummary = "status=$status can_proceed=$canProceed"
+        }
         return @{
             passed = $false
-            reason = "TEST_CHARTER.json not found"
+            validation_artifact = $validationFile.Name
+            verification_status = $status
+            reason = "Test charter prevalidation failed via $($validationFile.Name): $failureSummary"
         }
     }
 
-    $charter = Get-Content -LiteralPath $charterFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $charterFile = Join-Path $ReplayRoot "TEST_CHARTER.json"
+    if (Test-Path -LiteralPath $charterFile) {
+        $charter = Get-Content -LiteralPath $charterFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    if ($null -eq $charter.test_surface -or [string]::IsNullOrWhiteSpace($charter.test_surface)) {
+        if ($null -eq $charter.test_surface -or [string]::IsNullOrWhiteSpace($charter.test_surface)) {
+            return @{
+                passed = $false
+                reason = "Test charter missing test_surface"
+            }
+        }
+
+        return @{
+            passed = $true
+            test_surface = $charter.test_surface
+            reason = "Test charter has valid test_surface: $($charter.test_surface)"
+        }
+    }
+
+    $charterMarkdown = Join-Path $ReplayRoot "TEST_CHARTER.md"
+    if (Test-Path -LiteralPath $charterMarkdown) {
+        $content = Get-Content -LiteralPath $charterMarkdown -Raw -Encoding UTF8
+        $hasTestClass = $content -match '(?im)^\s*##\s+Test Class\b'
+        $hasEntryPoint = $content -match '(?im)^\s*##\s+Entry Point\b'
+        if ($hasTestClass -and $hasEntryPoint) {
+            return @{
+                passed = $true
+                charter_artifact = "TEST_CHARTER.md"
+                reason = "TEST_CHARTER.md has test class and entry point"
+            }
+        }
+
         return @{
             passed = $false
-            reason = "Test charter missing test_surface"
+            charter_artifact = "TEST_CHARTER.md"
+            reason = "TEST_CHARTER.md missing test class or entry point"
         }
     }
 
     return @{
-        passed = $true
-        test_surface = $charter.test_surface
-        reason = "Test charter has valid test_surface: $($charter.test_surface)"
+        passed = $false
+        reason = "No TEST_CHARTER_VALIDATION_*.json, TEST_CHARTER.json, or TEST_CHARTER.md found"
     }
 }
 
@@ -254,7 +330,7 @@ if ($ValidateOnly) {
             'Test-CarrierSearchResult: Validates carrier search found valid carriers',
             'Test-LayerValidationResult: Validates layer status (PASS or WARN in discovery mode)',
             'Test-PlanGenerationResult: Validates plan has executable slices',
-            'Test-TestCharterResult: Validates test charter has test_surface',
+            'Test-TestCharterResult: Validates modern TEST_CHARTER_VALIDATION_*.json or legacy charter artifacts',
             'Test-ImplementationResult: Validates RED phase executed without compilation errors'
         )
         ExpectedMetrics = @{

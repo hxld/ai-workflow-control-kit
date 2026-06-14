@@ -65,6 +65,87 @@ function Read-JsonIfExists {
     return $null
 }
 
+function Write-JsonObject {
+    param([string]$Path, $Value)
+    $tmp = "$Path.tmp.$PID"
+    $Value | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $tmp -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+function Set-ObjectProperty {
+    param($Object, [string]$Name, $Value)
+    if ($Object.PSObject.Properties[$Name]) {
+        $Object.$Name = $Value
+    } else {
+        $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value
+    }
+}
+
+function Test-NarrowBackendReadOnlyFeature {
+    param($FeatureClassification)
+    if ($null -eq $FeatureClassification) { return $false }
+    $classification = [string]$FeatureClassification.classification
+    $baseClassification = [string]$FeatureClassification.base_classification
+    $readOnly = $false
+    if ($FeatureClassification.PSObject.Properties.Name -contains 'read_only') {
+        $readOnly = [bool]$FeatureClassification.read_only
+    }
+    return $readOnly -and (
+        $classification -eq 'narrow_backend_read_only_fix' -or
+        $baseClassification -eq 'narrow_backend_fix'
+    )
+}
+
+function Get-FeatureNonApplicableFamilies {
+    param($FeatureClassification)
+    $families = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $FeatureClassification) { return @() }
+    if ($null -ne $FeatureClassification.verifier_adjustments -and
+        $FeatureClassification.verifier_adjustments.PSObject.Properties.Name -contains 'non_applicable_families') {
+        foreach ($family in @(Get-StringArray $FeatureClassification.verifier_adjustments.non_applicable_families)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$family) -and -not $families.Contains([string]$family)) {
+                $families.Add([string]$family) | Out-Null
+            }
+        }
+    }
+    if (Test-NarrowBackendReadOnlyFeature -FeatureClassification $FeatureClassification) {
+        foreach ($family in @('stateful_side_effect', 'deploy_export_page', 'config_policy_threshold', 'generated_artifact_template_upload', 'external_integration', 'lifecycle_cleanup_retention')) {
+            if (-not $families.Contains($family)) { $families.Add($family) | Out-Null }
+        }
+    }
+    return @($families)
+}
+
+function Apply-FeatureClassificationToLedger {
+    param($LedgerObject, [string]$ReplayRoot)
+    if ($null -eq $LedgerObject -or $null -eq $LedgerObject.families) { return @() }
+    $featureClassification = Read-JsonIfExists (Join-Path $ReplayRoot 'FEATURE_CLASSIFICATION.json')
+    if ($null -eq $featureClassification) { return @() }
+    $nonApplicableFamilies = @(Get-FeatureNonApplicableFamilies -FeatureClassification $featureClassification)
+    if ($nonApplicableFamilies.Count -eq 0) { return @() }
+    Set-ObjectProperty -Object $LedgerObject -Name 'feature_classification' -Value ([ordered]@{
+        classification = [string]$featureClassification.classification
+        base_classification = [string]$featureClassification.base_classification
+        read_only = [bool]$featureClassification.read_only
+        non_applicable_families = @($nonApplicableFamilies)
+    })
+    $filtered = New-Object System.Collections.Generic.List[string]
+    foreach ($family in @($LedgerObject.families)) {
+        $id = [string]$family.id
+        if ($nonApplicableFamilies -notcontains $id) { continue }
+        if ([bool]$family.required -or [string]$family.status -ne 'NOT_APPLICABLE_BY_FEATURE_CLASSIFIER') {
+            Set-ObjectProperty -Object $family -Name 'required' -Value $false
+            Set-ObjectProperty -Object $family -Name 'status' -Value 'NOT_APPLICABLE_BY_FEATURE_CLASSIFIER'
+            Set-ObjectProperty -Object $family -Name 'coverage_cap_if_open' -Value 100
+            Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+            Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+            Set-ObjectProperty -Object $family -Name 'last_reason' -Value 'Excluded by feature classifier; this feature class is narrow backend read-only and does not require this family unless requirement_source explicitly says otherwise.'
+            $filtered.Add($id) | Out-Null
+        }
+    }
+    return @($filtered)
+}
+
 function Test-ExplicitRequirementFamilyScope {
     param(
         [string]$FamilyId,
@@ -101,7 +182,7 @@ function Test-ExplicitRequirementFamilyScope {
             return $combined -match '(?i)(模板|图片|png|pdf|附件|上传|生成文件|影像|template|image|upload|artifact|attachment)'
         }
         'external_integration' {
-            return $combined -match '(?i)(外部|对接|外部接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
+            return $combined -match '(?i)(外部|对接|保司接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
         }
         'lifecycle_cleanup_retention' {
             if ($combined -match '(?i)(清理|删除|移除|过期|保留|留存|expire|cleanup|delete|remove|retention|duplicate|idempotent|same-status|same status|re-entry)') { return $true }
@@ -119,6 +200,7 @@ function Apply-FamilyScopeFilter {
         [string]$ReplayRoot
     )
 
+    $featureFilteredFamilies = @(Apply-FeatureClassificationToLedger -LedgerObject $LedgerObject -ReplayRoot $ReplayRoot)
     $run = Read-JsonIfExists (Join-Path $ReplayRoot 'AUTOPILOT_RUN.json')
     $requirementSource = if ($null -ne $run -and $run.PSObject.Properties.Name -contains 'requirement_source') { [string]$run.requirement_source } else { '' }
     $requirementText = Read-TextIfExists -Path $requirementSource
@@ -156,16 +238,16 @@ function Apply-FamilyScopeFilter {
         if ($strictScopeFamilies -notcontains $id) { continue }
         $contractFamily = if ($contractFamiliesById.ContainsKey($id)) { $contractFamiliesById[$id] } else { $null }
         if (-not (Test-ExplicitRequirementFamilyScope -FamilyId $id -RequirementText $requirementText -ContractFamily $contractFamily -EvidenceText $evidenceText)) {
-            $family.required = $false
-            $family.status = 'NOT_REQUIRED_BY_SCOPE_FILTER'
-            $family.coverage_cap_if_open = 100
-            $family.open_sibling_surfaces = @()
-            $family.open_sibling_count = 0
-            $family.last_reason = 'Excluded by requirement-scope filter; no explicit requirement or concrete production carrier supports this family.'
+            Set-ObjectProperty -Object $family -Name 'required' -Value $false
+            Set-ObjectProperty -Object $family -Name 'status' -Value 'NOT_REQUIRED_BY_SCOPE_FILTER'
+            Set-ObjectProperty -Object $family -Name 'coverage_cap_if_open' -Value 100
+            Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+            Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+            Set-ObjectProperty -Object $family -Name 'last_reason' -Value 'Excluded by requirement-scope filter; no explicit requirement or concrete production carrier supports this family.'
             $filtered.Add($id) | Out-Null
         }
     }
-    return @($filtered)
+    return @((@($featureFilteredFamilies) + @($filtered)) | Select-Object -Unique)
 }
 
 function Get-SliceTypeForFamily {
@@ -213,6 +295,69 @@ function Get-FamilyCoverageCap {
     return $cap
 }
 
+function Test-LedgerConsistencyWithVerifiedSlices {
+    param($LedgerObject, [string]$ReplayRoot)
+
+    $issues = New-Object System.Collections.ArrayList
+    $verifiedClosed = New-Object System.Collections.ArrayList
+    $verifiedTouched = New-Object System.Collections.ArrayList
+    $verifyFiles = @(Get-ChildItem -LiteralPath $ReplayRoot -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue | Sort-Object Name)
+    if ($verifyFiles.Count -eq 0) {
+        return [pscustomobject]@{ valid = $true; issues = @(); verified_closed_families = @(); verified_touched_families = @() }
+    }
+
+    $familiesById = @{}
+    if ($null -ne $LedgerObject -and $null -ne $LedgerObject.families) {
+        foreach ($family in @($LedgerObject.families)) {
+            $id = [string]$family.id
+            if (-not [string]::IsNullOrWhiteSpace($id)) { $familiesById[$id] = $family }
+        }
+    }
+
+    foreach ($file in $verifyFiles) {
+        $verify = Read-JsonIfExists $file.FullName
+        if ($null -eq $verify) { continue }
+        $authorized = $null -ne $verify.authorized_for_next_slice -and [bool]$verify.authorized_for_next_slice
+        $status = [string]$verify.verification_status
+        if (-not $authorized -or @('PASS', 'PARTIAL') -notcontains $status) { continue }
+
+        foreach ($familyId in @(Get-StringArray $verify.touched_requirement_families)) {
+            if (-not [string]::IsNullOrWhiteSpace($familyId)) { $verifiedTouched.Add($familyId) | Out-Null }
+        }
+        foreach ($familyId in @(Get-StringArray $verify.closed_requirement_families)) {
+            if ([string]::IsNullOrWhiteSpace($familyId)) { continue }
+            $verifiedClosed.Add($familyId) | Out-Null
+            if (-not $familiesById.ContainsKey($familyId)) {
+                $issues.Add([ordered]@{
+                    family = $familyId
+                    expected = 'CLOSED'
+                    actual = 'MISSING_FROM_LEDGER'
+                    source = $file.Name
+                }) | Out-Null
+                continue
+            }
+            $ledgerFamily = $familiesById[$familyId]
+            $ledgerStatus = [string]$ledgerFamily.status
+            if (@('EXECUTABLE_CLOSED', 'CLOSED') -notcontains $ledgerStatus) {
+                $issues.Add([ordered]@{
+                    family = $familyId
+                    expected = 'EXECUTABLE_CLOSED'
+                    actual = $ledgerStatus
+                    touched_count = $(if ($null -ne $ledgerFamily.touched_count -and "$($ledgerFamily.touched_count)" -match '^\d+$') { [int]$ledgerFamily.touched_count } else { 0 })
+                    source = $file.Name
+                }) | Out-Null
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        valid = $issues.Count -eq 0
+        issues = @($issues.ToArray())
+        verified_closed_families = @($verifiedClosed | Select-Object -Unique)
+        verified_touched_families = @($verifiedTouched | Select-Object -Unique)
+    }
+}
+
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 if ([string]::IsNullOrWhiteSpace($Ledger)) {
     $Ledger = Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json'
@@ -225,7 +370,7 @@ if (-not (Test-Path -LiteralPath $ledgerFull)) {
 $ledgerObject = Read-JsonObject -Path $ledgerFull
 $scopeFilteredFamilies = @(Apply-FamilyScopeFilter -LedgerObject $ledgerObject -ReplayRoot $replayRootFull)
 if ($scopeFilteredFamilies.Count -gt 0) {
-    $ledgerObject | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ledgerFull -Encoding UTF8
+    Write-JsonObject -Path $ledgerFull -Value $ledgerObject
 }
 if ($SliceIndex -le 0) {
     $progressPath = Join-Path $replayRootFull 'SLICE_PROGRESS.json'
@@ -239,6 +384,47 @@ if ($SliceIndex -le 0) {
         }
     }
     $SliceIndex = $completedCount + 1
+}
+
+$consistency = Test-LedgerConsistencyWithVerifiedSlices -LedgerObject $ledgerObject -ReplayRoot $replayRootFull
+if (-not [bool]$consistency.valid) {
+    $errorPath = Join-Path $replayRootFull 'LEDGER_CONSISTENCY_ERROR.json'
+    $errorResult = [ordered]@{
+        status = 'METADATA_INCONSISTENCY'
+        validation_status = 'FAIL'
+        replay_root = $replayRootFull
+        ledger = $ledgerFull
+        slice_index = $SliceIndex
+        verified_closed_families = @($consistency.verified_closed_families)
+        verified_touched_families = @($consistency.verified_touched_families)
+        inconsistencies = @($consistency.issues)
+        diagnosis = 'SLICE_VERIFY marked families as closed but REQUIREMENT_FAMILY_LEDGER still shows them open or partial.'
+        gate = 'family_ledger_consistency'
+    }
+    Write-JsonObject -Path $errorPath -Value $errorResult
+    $routerError = [ordered]@{
+        status = 'METADATA_INCONSISTENCY'
+        validation_status = 'FAIL'
+        replay_root = $replayRootFull
+        ledger = $ledgerFull
+        slice_index = $SliceIndex
+        selected_family = ''
+        selected_slice_type = ''
+        target_sibling_surface = ''
+        reason = 'family ledger is stale relative to authorized SLICE_VERIFY output'
+        coverage_cap_from_ledger = 0
+        final_pass_allowed = $false
+        open_required_family_count = 0
+        open_families = @()
+        closed_families = @()
+        scope_filtered_families = @($scopeFilteredFamilies)
+        validation_issues = @('ledger_stale_after_slice_verify')
+        consistency_error = $errorPath
+        gate = 'highest_weight_family_router_and_ledger_cap'
+    }
+    Write-JsonObject -Path (Join-Path $replayRootFull 'FAMILY_ROUTER_AND_CAP.json') -Value $routerError
+    $routerError | ConvertTo-Json -Depth 12
+    exit 1
 }
 
 $openFamilies = @($ledgerObject.families | Where-Object {
@@ -308,7 +494,7 @@ $result = [ordered]@{
     gate = 'highest_weight_family_router_and_ledger_cap'
 }
 
-$result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRootFull 'FAMILY_ROUTER_AND_CAP.json') -Encoding UTF8
+Write-JsonObject -Path (Join-Path $replayRootFull 'FAMILY_ROUTER_AND_CAP.json') -Value $result
 $result | ConvertTo-Json -Depth 12
 
 if ($status -ne 'PASS') { exit 1 }

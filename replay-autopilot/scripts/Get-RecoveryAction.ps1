@@ -27,7 +27,16 @@ $concreteAction = @()
 
 # Classify blocker type and determine recovery strategy
 # Order matters: more specific patterns must come before generic ones
-if ($blockerLower -match 'usage_limit|rate.?limit|too.?many.?requests|throttl|429') {
+if ($blockerLower -match 'executor_credit_required|402\s+credit|required account credit|credit required|positive balance|required for this model|insufficient credits|not enough credits') {
+    $recoveryAction = 'RESTORE_EXECUTOR_CREDIT'
+    $shouldRetry = $false
+    $shouldStop = $true
+    $concreteAction = @(
+        'Blocker: primary executor requires account credit or a positive balance.',
+        'Recovery: Restore Claude/executor credit, or intentionally change executor policy with audit disclosure.',
+        'Action: Do NOT score this run, do NOT evolve replay skills from it, and do NOT start another unattended replay until the resource blocker is cleared.'
+    )
+} elseif ($blockerLower -match 'usage_limit|rate.?limit|too.?many.?requests|throttl|429') {
     $recoveryAction = 'RETRY_AFTER_QUOTA_RESET'
     $shouldRetry = $true
     $concreteAction = @(

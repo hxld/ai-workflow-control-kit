@@ -24,13 +24,13 @@ function Test-ContractFormatRepair {
 - generated_at: 2026-06-02T09:51:44
 - run_label: v381-autopilot
 - round: r03
-- feature_name: example-feature
+- feature_name: aiClaimV2
 - phase: 0
 
 ## Carrier
 
 ### Primary Carrier
-- **carrier_class**: `ExampleCalculatorApiTaskProcessor`
+- **carrier_class**: `AiCalculateLossApiTaskProcessor`
 - **carrier_status**: EXISTING
 '@
         Set-Content -LiteralPath (Join-Path $testDir 'IMPLEMENTATION_CONTRACT.md') -Value $brokenContract -Encoding UTF8
@@ -40,8 +40,8 @@ function Test-ContractFormatRepair {
 # First Slice Proof Plan
 
 first_slice: S1
-selected_real_entry: ExampleCalculatorApiTaskProcessor.handleTaskResponse()
-first_red_test: ExampleFlowServiceTest.testTriggerAutoFlowWhenAllConditionsMet
+selected_real_entry: AiCalculateLossApiTaskProcessor.handleTaskResponse()
+first_red_test: AiAutoClaimFlowServiceTest.testTriggerAutoFlowWhenAllConditionsMet
 '@
         Set-Content -LiteralPath (Join-Path $testDir 'FIRST_SLICE_PROOF_PLAN.md') -Value $proofPlan -Encoding UTF8
 
@@ -55,7 +55,7 @@ first_red_test: ExampleFlowServiceTest.testTriggerAutoFlowWhenAllConditionsMet
 
 ## Key Fields
 - **first_slice**: S1
-- **first_red_test**: ExampleFlowServiceTest.testTriggerAutoFlowWhenAllConditionsMet
+- **first_red_test**: AiAutoClaimFlowServiceTest.testTriggerAutoFlowWhenAllConditionsMet
 '@
         Set-Content -LiteralPath (Join-Path $testDir 'PLAN_RESULT.md') -Value $planResult -Encoding UTF8
 

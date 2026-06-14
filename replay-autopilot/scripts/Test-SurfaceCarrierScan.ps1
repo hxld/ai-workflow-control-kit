@@ -57,11 +57,11 @@ New-Item -ItemType Directory -Force -Path $repo | Out-Null
 try {
     Import-StartReplayRoundFunctions
 
-    Write-Text (Join-Path $repo 'example-core/src/main/java/com/acme/ai/facade/ExampleApplyFacadeImpl.java') 'class ExampleApplyFacadeImpl {}'
-    Write-Text (Join-Path $repo 'example-core/src/main/java/com/acme/dock/service/PartnerCallbackPushService.java') 'class PartnerCallbackPushService {}'
-    Write-Text (Join-Path $repo 'example-core/src/main/java/com/acme/caseinfo/service/ClaimNotifyEvent.java') 'class ClaimNotifyEvent {}'
+    Write-Text (Join-Path $repo 'claim-core/src/main/java/com/acme/ai/facade/AiApplyFacadeImpl.java') 'class AiApplyFacadeImpl {}'
+    Write-Text (Join-Path $repo 'claim-core/src/main/java/com/acme/dock/service/PartnerCallbackPushService.java') 'class PartnerCallbackPushService {}'
+    Write-Text (Join-Path $repo 'claim-core/src/main/java/com/acme/caseinfo/service/ClaimNotifyEvent.java') 'class ClaimNotifyEvent {}'
     1..50 | ForEach-Object {
-        Write-Text (Join-Path $repo ("example-core/src/main/java/com/acme/ai/service/AiNoiseService{0}.java" -f $_)) "class AiNoiseService$_ {}"
+        Write-Text (Join-Path $repo ("claim-core/src/main/java/com/acme/ai/service/AiNoiseService{0}.java" -f $_)) "class AiNoiseService$_ {}"
     }
     & git -C $repo init | Out-Null
     & git -C $repo add . | Out-Null

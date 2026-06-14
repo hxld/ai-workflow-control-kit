@@ -27,6 +27,10 @@ Assert-True ($invokeText -match 'function\s+Get-ConfigProjectRoot') 'Invoke-Agen
 Assert-True ($invokeText -match '\$protectedRootStatusBefore\s*=\s*Get-GitStatusText\s+-Repo\s+\$protectedRoot') 'Invoke-AgentPrompt should record protected root status before agent execution'
 Assert-True ($invokeText -match '\$protectedRootStatusAfter\s*=\s*Get-GitStatusText\s+-Repo\s+\$protectedRoot') 'Invoke-AgentPrompt should record protected root status after agent execution'
 Assert-True ($invokeText -match 'protected_root_modified') 'Invoke-AgentPrompt should classify protected-root mutations explicitly'
+Assert-True ($invokeText -match 'function\s+Invoke-ReplayCommandGuardCleanup') 'Invoke-AgentPrompt should repeatedly clean up forbidden replay command processes'
+Assert-True ($invokeText -match 'command_guard_violation' -and $invokeText -match 'exit 93') 'Invoke-AgentPrompt should return a structured command guard violation exit code'
+Assert-True ($invokeText -match 'GuardReasons') 'Invoke-AgentPrompt should preserve command guard reasons in executor metadata'
+Assert-True ($invokeText -match 'protected_root_modified_during_execution' -and $invokeText -match 'ProtectedRootStatusBefore') 'Invoke-AgentPrompt should stop live execution when protected root status changes'
 
 Write-Host 'PASS: v422 protected root prompt isolation tests passed'
-[ordered]@{ status = 'PASS'; assertions = 8 } | ConvertTo-Json -Depth 4
+[ordered]@{ status = 'PASS'; assertions = 12 } | ConvertTo-Json -Depth 4

@@ -129,7 +129,7 @@ Write-Text (Join-Path $plainPlanRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
 
 first_slice: S1 - prove the production entry.
 
-first_red_test: example-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect.
+first_red_test: claim-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect.
 
 selected_real_entry: RealEntry.execute.
 
@@ -148,10 +148,10 @@ $plainCarrier = & powershell -NoProfile -ExecutionPolicy Bypass -File $prepareSc
 if ([string]$plainCarrier.selected_carrier -ne 'RealEntry.execute -> DownstreamEvent.publish') { throw "Expected selected carrier from plain plan, got $($plainCarrier.selected_carrier)" }
 if ([string]$plainCarrier.real_entry -ne 'RealEntry.execute') { throw "Expected selected_real_entry to remain RealEntry.execute, got $($plainCarrier.real_entry)" }
 $plainSideEffect = Read-Json (Join-Path $plainPlanRoot 'SIDE_EFFECT_EVIDENCE_01.json')
-if ([string]$plainSideEffect.test_name -ne 'example-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect') { throw "Expected planned test from plain plan, got $($plainSideEffect.test_name)" }
+if ([string]$plainSideEffect.test_name -ne 'claim-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect') { throw "Expected planned test from plain plan, got $($plainSideEffect.test_name)" }
 $plainPreAuth = & powershell -NoProfile -ExecutionPolicy Bypass -File $preAuthScript -ReplayRoot $plainPlanRoot -SliceIndex 1 -ForcedRequirementFamily core_entry -ForcedSliceType tracer_bullet | ConvertFrom-Json
 if ([string]$plainPreAuth.decision -ne 'ALLOW') { throw "Expected plain plan pre-slice ALLOW, got $($plainPreAuth.decision): $($plainPreAuth.issues -join ',')" }
-if ([string]$plainPreAuth.planned_first_red_test -ne 'example-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect') { throw "Expected parsed first red test, got $($plainPreAuth.planned_first_red_test)" }
+if ([string]$plainPreAuth.planned_first_red_test -ne 'claim-server/src/test/java/com/acme/RealEntryContractTest.java#entryShouldCallSideEffect') { throw "Expected parsed first red test, got $($plainPreAuth.planned_first_red_test)" }
 if ([string]$plainPreAuth.planned_selected_entry -ne 'RealEntry.execute') { throw "Expected parsed selected entry, got $($plainPreAuth.planned_selected_entry)" }
 
 $missingPlanBindingsRoot = Join-Path $tempRoot 'preauth-missing-plan-bindings'
@@ -223,7 +223,7 @@ Write-Text (Join-Path $expectedDiffScopeRoot 'EXPECTED_DIFF_MATRIX.md') @"
 | requirement | expected file families | validation |
 | --- | --- | --- |
 | H5 request carries wxId | CaseInfoParam.java; ClaimNofityParam.java | request field reaches payload |
-| insurer callback fallback | ExamplePushService.java | callback emits MQ |
+| insurer callback fallback | InsureCompanyPushService.java | callback emits MQ |
 "@
 Write-Json (Join-Path $expectedDiffScopeRoot 'FAMILY_CONTRACT.json') ([ordered]@{
     schema_version = 1
@@ -241,7 +241,7 @@ Write-Json (Join-Path $expectedDiffScopeRoot 'FAMILY_CONTRACT.json') ([ordered]@
             id = 'external_integration'
             required = $true
             weight = 90
-            first_executable_carrier = 'ExamplePushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ'
+            first_executable_carrier = 'InsureCompanyPushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ'
             planned_slice = 'S3'
             proof_required = @('callback emits MQ')
             coverage_cap_if_open = 80
@@ -260,7 +260,7 @@ Write-Json (Join-Path $expectedDiffScopeRoot 'FAMILY_CONTRACT.json') ([ordered]@
 Write-Json (Join-Path $expectedDiffScopeRoot 'REQUIREMENT_FAMILY_LEDGER.json') ([ordered]@{
     families = @(
         (New-Family -Id 'wire_payload_api_contract' -Status 'OPEN' -Weight 95 -Touched 0 -Type 'exact_contract_slice' -Carrier 'ClaimNofityParam.wxId -> ClaimNotifyEvent.pushMsgToMQ' -Proof @('payload includes wxId')),
-        (New-Family -Id 'external_integration' -Status 'OPEN' -Weight 90 -Touched 0 -Type 'deploy_surface_first_slice' -Carrier 'ExamplePushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ' -Proof @('callback emits MQ'))
+        (New-Family -Id 'external_integration' -Status 'OPEN' -Weight 90 -Touched 0 -Type 'deploy_surface_first_slice' -Carrier 'InsureCompanyPushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ' -Proof @('callback emits MQ'))
     )
 })
 $expectedDiffRoute = & powershell -NoProfile -ExecutionPolicy Bypass -File $familyRouterScript -ReplayRoot $expectedDiffScopeRoot -AssertExpectedFamily wire_payload_api_contract | ConvertFrom-Json
@@ -271,9 +271,9 @@ if (@($expectedDiffRoute.scope_filtered_families) -contains 'external_integratio
 
 $siblingRouteRoot = Join-Path $tempRoot 'router-preserves-sibling-surface'
 New-Item -ItemType Directory -Force -Path $siblingRouteRoot | Out-Null
-$statefulSibling = New-Family -Id 'stateful_side_effect' -Status 'PARTIAL' -Weight 95 -Touched 1 -Type 'stateful_success_slice' -Carrier 'example-core/src/main/java/com/acme/StatefulService.java:save'
+$statefulSibling = New-Family -Id 'stateful_side_effect' -Status 'PARTIAL' -Weight 95 -Touched 1 -Type 'stateful_success_slice' -Carrier 'claim-core/src/main/java/com/acme/StatefulService.java:save'
 $statefulSibling.open_sibling_count = 1
-$statefulSibling.open_sibling_surfaces = @('c:example-core/src/main/java/com/acme/StatefulService.java:dispose status/detail side effects')
+$statefulSibling.open_sibling_surfaces = @('c:claim-core/src/main/java/com/acme/StatefulService.java:dispose status/detail side effects')
 Write-Json (Join-Path $siblingRouteRoot 'REQUIREMENT_FAMILY_LEDGER.json') ([ordered]@{
     families = @(
         (New-Family -Id 'core_entry' -Status 'EXECUTABLE_CLOSED' -Weight 100 -Touched 1 -Type 'tracer_bullet'),
@@ -282,7 +282,7 @@ Write-Json (Join-Path $siblingRouteRoot 'REQUIREMENT_FAMILY_LEDGER.json') ([orde
 })
 Write-Json (Join-Path $siblingRouteRoot 'SLICE_PROGRESS.json') ([ordered]@{ completed = @(1) })
 $siblingRoute = & powershell -NoProfile -ExecutionPolicy Bypass -File $routerScript -ReplayRoot $siblingRouteRoot -AssertExpectedFamily stateful_side_effect | ConvertFrom-Json
-if ([string]$siblingRoute.target_sibling_surface -ne 'example-core/src/main/java/com/acme/StatefulService.java:dispose status/detail side effects') { throw "Expected full normalized sibling surface, got $($siblingRoute.target_sibling_surface)" }
+if ([string]$siblingRoute.target_sibling_surface -ne 'claim-core/src/main/java/com/acme/StatefulService.java:dispose status/detail side effects') { throw "Expected full normalized sibling surface, got $($siblingRoute.target_sibling_surface)" }
 
 $stopRoot = Join-Path $tempRoot 'stop-loss'
 New-ValidDryRunRoot -Root $stopRoot

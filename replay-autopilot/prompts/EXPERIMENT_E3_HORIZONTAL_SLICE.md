@@ -36,14 +36,14 @@ Before slice implementation starts, you must have:
 Categories: Backend + Database + Test (3/3) ✓
 
 Backend:
-  - ExampleFlowService.java (executeAutoFlow method)
+  - AiAutoClaimFlowService.java (executeAutoFlow method)
 
 Database:
-  - TExampleModuleConfig.java (ADD COLUMN free_review_amount)
-  - TExampleModuleConfigMapper.xml (ADD COLUMN MAPPING)
+  - TAiClaimModuleConfig.java (ADD COLUMN free_review_amount)
+  - TAiClaimModuleConfigMapper.xml (ADD COLUMN MAPPING)
 
 Test:
-  - ExampleFlowServiceTest.java (SELECT query verifies column value)
+  - AiAutoClaimFlowServiceTest.java (SELECT query verifies column value)
 ```
 
 **Result**: AUTHORIZED
@@ -54,7 +54,7 @@ Test:
 Categories: Backend only (1/3) ✗
 
 Backend:
-  - ExampleFlowService.java (TODO placeholder)
+  - AiAutoClaimFlowService.java (TODO placeholder)
 
 Database: (NONE) ✗
 Test: (NONE) ✗

@@ -30,7 +30,7 @@ function Get-ExecutableContractTemplate {
     #>
     param()
 
-    $templatePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'templates\EXECUTABLE_CONTRACT_TEMPLATE.md'
+    $templatePath = "D:\opt\replay-autopilot\templates\EXECUTABLE_CONTRACT_TEMPLATE.md"
 
     if (-not (Test-Path -LiteralPath $templatePath)) {
         Write-Host "ERROR: EXECUTABLE_CONTRACT_TEMPLATE.md not found at $templatePath" -ForegroundColor Red
@@ -90,7 +90,7 @@ function Invoke-GenerateExecutablePlan {
     $result = [ordered]@{
         stage = 'Plan_Contract_Generation'
         template_available = ($null -ne $template)
-        template_path = if ($null -ne $template) { Join-Path (Split-Path $PSScriptRoot -Parent) 'templates\EXECUTABLE_CONTRACT_TEMPLATE.md' } else { '' }
+        template_path = if ($null -ne $template) { "D:\opt\replay-autopilot\templates\EXECUTABLE_CONTRACT_TEMPLATE.md" } else { '' }
         processed_at = (Get-Date).ToString('s')
     }
 

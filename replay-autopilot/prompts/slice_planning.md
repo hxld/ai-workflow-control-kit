@@ -12,18 +12,18 @@
 
 2. **Find Your Target Carrier**
    - Search in `ORACLE_SIGNATURES.json` for your target service
-   - Example: `ExampleFlowService.handle` or `ExampleApiTaskProcessor.process`
+   - Example: `AiAutoClaimFlowService.handle` or `AiApplyClaimApiTaskProcessor.process`
 
 3. **Copy EXACT Signature**
    ```json
    {
-     "ExampleFlowService": [
+     "AiAutoClaimFlowService": [
        {
-         "class_name": "ExampleFlowService",
+         "class_name": "AiAutoClaimFlowService",
          "method_name": "handle",
-         "parameter_types": ["Long", "ExampleApplyApiTask"],
+         "parameter_types": ["Long", "AiApplyClaimApiTask"],
          "return_type": "boolean",
-         "file_path": "example-core/src/main/java/.../ExampleFlowService.java"
+         "file_path": "claim-core/src/main/java/.../AiAutoClaimFlowService.java"
        }
      ]
    }
@@ -48,7 +48,7 @@ public AutoFlowResult triggerAutoFlow(Long caseId) { ... }
 
 ✅ **CORRECT** - Oracle signature:
 ```java
-public boolean handle(Long caseId, ExampleApplyApiTask task) { ... }
+public boolean handle(Long caseId, AiApplyClaimApiTask task) { ... }
 ```
 
 ### P0 Violation Consequences
@@ -118,9 +118,9 @@ Before moving to the next family, verify:
 ```java
 // Implementation
 @Service
-public class ExampleFlowService {
+public class AiAutoClaimFlowService {
 
-    public boolean handle(Long caseId, ExampleApplyApiTask task) {
+    public boolean handle(Long caseId, AiApplyClaimApiTask task) {
         // Validation gates implemented
         if (!isSupportedAutoFlowScope(caseId)) {
             return false;
@@ -148,12 +148,13 @@ public class ExampleFlowService {
 @Transactional
 public void testHandle_Success_CompensateDataInserted() {
     // GIVEN
-    Long caseId = 12345L;
-    ExampleApplyApiTask task = setupFlashCaseWithBeneficiary();
+    Long fixtureCaseId = Long.valueOf(Math.abs("CarrierUnderTest".hashCode()));
+    AiApplyClaimApiTask task = setupFlashCaseWithBeneficiary();
 
     AtomicReference<CompensateInfo> capturedInfo = new AtomicReference<>();
     doAnswer(invocation -> {
-        capturedInfo.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        capturedInfo.set((CompensateInfo) args[0]);
         return 1;
     }).when(compensateInfoMapper).insert(any());
 
@@ -174,9 +175,9 @@ public void testHandle_Success_CompensateDataInserted() {
 ```java
 // WRONG - Not closed, do not move to next family
 @Service
-public class ExampleFlowService {
+public class AiAutoClaimFlowService {
 
-    public boolean handle(Long caseId, ExampleApplyApiTask task) {
+    public boolean handle(Long caseId, AiApplyClaimApiTask task) {
         // TODO: Implement validation
         // TODO: Insert compensate info
         return false;  // Placeholder
@@ -266,7 +267,7 @@ If validation fails:
 ```json
 {
   "planned_files": [
-    "example-core/service/ExampleFlowService.java"
+    "claim-core/service/AiAutoClaimFlowService.java"
   ]
 }
 // Result: FAIL - only 1 category (Backend)
@@ -276,9 +277,9 @@ If validation fails:
 ```json
 {
   "planned_files": [
-    "example-web/controller/ExampleController.java",      // Frontend
-    "example-core/service/ExampleFlowService.java",    // Backend
-    "example-provider/mapper/ExampleMapper.java"           // Database
+    "claim-web/controller/AiClaimController.java",      // Frontend
+    "claim-core/service/AiAutoClaimFlowService.java",    // Backend
+    "claim-provider/mapper/AiClaimMapper.java"           // Database
   ]
 }
 // Result: PASS - 3 categories covered
@@ -304,13 +305,13 @@ Example:
 - If PHASE0_RESULT.md shows:
   ```json
   "test_surface_mapping": {
-    "ExampleFlowService": {
-      "test_surface_carrier": "ExampleFacade",
+    "AiAutoClaimFlowService": {
+      "test_surface_carrier": "AiClaimFacade",
       "test_surface_layer": "Facade"
     }
   }
   ```
-- Then your test MUST target ExampleFacade, not ExampleFlowService
+- Then your test MUST target AiClaimFacade, not AiAutoClaimFlowService
 
 ### Pre-Authorization Layer Check
 
@@ -337,22 +338,22 @@ BEFORE finalizing slice target, validate the test surface layer. The verifier ch
 
 ❌ **WRONG** - Testing Service layer when Facade exists:
 ```markdown
-selected_carrier: ExampleApiTaskProcessor.process
+selected_carrier: AiApplyClaimApiTaskProcessor.process
 # Result: BLOCKED - wrong_test_surface
 ```
 
 ✅ **CORRECT** - Testing Facade layer:
 ```markdown
-selected_carrier: ExampleFacade.handleExample
+selected_carrier: AiClaimFacade.handleAiClaim
 # Result: ALLOW - correct real entry surface
 ```
 
 ✅ **ACCEPTABLE** - Service layer with justification:
 ```markdown
-selected_carrier: ExampleFlowService.handle
+selected_carrier: AiAutoClaimFlowService.handle
 
 ## Why Service Layer Testing
-The ExampleFlowService has no Facade/Controller boundary because:
+The AiAutoClaimFlowService has no Facade/Controller boundary because:
 1. It's triggered by internal task queue (not HTTP)
 2. Testing at Service layer validates the complete flow
 # Result: ALLOW - justified internal entry
@@ -369,9 +370,9 @@ When you receive a `wrong_test_surface` blocker with `correction_suggestion`:
 5. **DO NOT** ignore the suggestion or pick a different carrier
 
 Example:
-- Blocker: "ExampleFlowService is in Service layer"
-- Suggestion: "Use: ExampleFacade, ClaimCalculationFacade"
-- Action: Re-plan using ExampleFacade as test target
+- Blocker: "AiAutoClaimFlowService is in Service layer"
+- Suggestion: "Use: AiClaimFacade, ClaimCalculationFacade"
+- Action: Re-plan using AiClaimFacade as test target
 
 The verifier now provides `suggested_carriers` array with specific Facade names. Use one of these suggestions.
 

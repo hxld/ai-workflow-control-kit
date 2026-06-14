@@ -10,7 +10,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Worktree,
 
-    [string]$MavenSettings = '',
+    [string]$MavenSettings = 'D:\maven\settings\settings.xml',
 
     [string]$RootPom = '',
 
@@ -112,8 +112,8 @@ BLOCKED - Fix the environment issues before proceeding.
 $($result.checks | Where-Object { $_.result -eq 'failed' } | ForEach-Object {
     $action = switch ($_.check) {
         'test_compilation' { 'Fix test compilation errors' }
-        'test_harness_dependency' { 'Use an existing test-enabled module such as example-server; do not add JUnit to example-core/pom.xml' }
-        'existing_test_errors' { 'Fix existing test errors in example-server' }
+        'test_harness_dependency' { 'Use an existing test-enabled module such as claim-server; do not add JUnit to claim-core/pom.xml' }
+        'existing_test_errors' { 'Fix existing test errors in claim-server' }
         'oracle_accessibility' { 'Verify oracle branch exists and is accessible' }
         default { 'Review and fix the issue' }
     }

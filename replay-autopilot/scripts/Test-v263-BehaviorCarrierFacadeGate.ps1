@@ -93,9 +93,9 @@ When case status changes to DSZL, push message to MQ queue via ClaimNotifyEvent.
         slice_index = 1
         forced_requirement_family = 'core_entry'
         authorization = 'ALLOW'
-        real_entry = 'ExamplePushService.updateCaseFlowStatus()'
-        selected_carrier = 'ExamplePushService'
-        production_boundary = 'ExamplePushService.updateCaseFlowStatus()'
+        real_entry = 'InsureCompanyPushService.updateCaseFlowStatus()'
+        selected_carrier = 'InsureCompanyPushService'
+        production_boundary = 'InsureCompanyPushService.updateCaseFlowStatus()'
         downstream_side_effect_or_output = 'MQ push via ClaimNotifyEvent.pushMsgToMQ()'
         proof_required = @('RED test for push behavior', 'GREEN test for MQ push')
         forbidden_synthetic_carrier = $false
@@ -134,9 +134,9 @@ When insurance company sends return ticket notification, receive and process the
         slice_index = 1
         forced_requirement_family = 'core_entry'
         authorization = 'ALLOW'
-        real_entry = 'ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)'
-        selected_carrier = 'ExampleReceiveFacade'
-        production_boundary = 'ExampleReceiveFacade'
+        real_entry = 'InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)'
+        selected_carrier = 'InsureCompanyReceiveFacade'
+        production_boundary = 'InsureCompanyReceiveFacade'
         downstream_side_effect_or_output = 'Process callback and save return ticket'
         proof_required = @('RED test for receive method')
         forbidden_synthetic_carrier = $false
@@ -150,7 +150,7 @@ When insurance company sends return ticket notification, receive and process the
 
 ## Selected Real Entry
 
-ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)
+InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)
 "@ | Set-Content -LiteralPath (Join-Path $t3Root 'EXPLORATION_REPORT.md') -Encoding UTF8
 
     $result3 = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Validate-BehaviorCarrierFacade.ps1') -ReplayRoot $t3Root 2>&1
@@ -184,9 +184,9 @@ When insurance company sends return ticket notification, receive and process the
         slice_index = 1
         forced_requirement_family = 'core_entry'
         authorization = 'ALLOW'
-        real_entry = 'ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)'
-        selected_carrier = 'ExampleReceiveFacade'
-        production_boundary = 'ExampleReceiveFacade'
+        real_entry = 'InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)'
+        selected_carrier = 'InsureCompanyReceiveFacade'
+        production_boundary = 'InsureCompanyReceiveFacade'
         downstream_side_effect_or_output = 'Process callback and save return ticket'
         proof_required = @('RED test for receive method')
         forbidden_synthetic_carrier = $false
@@ -201,10 +201,10 @@ When insurance company sends return ticket notification, receive and process the
 ## Selected Real Entry
 
 Searched both directions:
-- Receive: ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)
-- Push: ExamplePushFacade.returnTicket(ExampleTicketParam)
+- Receive: InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)
+- Push: InsureCompanyPushFacade.returnTicket(ReturnTicketParam)
 
-Selected: ExampleReceiveFacade (receives the return ticket callback)
+Selected: InsureCompanyReceiveFacade (receives the return ticket callback)
 Excluded Push: This is the receiving side, not the initiating side.
 "@ | Set-Content -LiteralPath (Join-Path $t4Root 'EXPLORATION_REPORT.md') -Encoding UTF8
 
@@ -279,9 +279,9 @@ When case status changes, push message to MQ queue.
         slice_index = 1
         forced_requirement_family = 'core_entry'
         authorization = 'ALLOW'
-        real_entry = 'ExamplePushService.updateCaseFlowStatus()'
-        selected_carrier = 'ExamplePushService'
-        production_boundary = 'ExamplePushService'
+        real_entry = 'InsureCompanyPushService.updateCaseFlowStatus()'
+        selected_carrier = 'InsureCompanyPushService'
+        production_boundary = 'InsureCompanyPushService'
         downstream_side_effect_or_output = 'MQ push'
         proof_required = @('test')
         forbidden_synthetic_carrier = $false
@@ -317,7 +317,7 @@ When case status changes, push message to MQ queue.
     $t7Worktree = Join-Path $t7Root 'worktree'
     New-Item -ItemType Directory -Force -Path $t7Worktree | Out-Null
     & git init $t7Worktree 2>$null | Out-Null
-    $dummyFile = Join-Path $t7Worktree 'example-core/src/main/java/com/example/project/SomeService.java'
+    $dummyFile = Join-Path $t7Worktree 'claim-core/src/main/java/com/huize/claim/SomeService.java'
     New-Item -ItemType Directory -Force -Path (Split-Path $dummyFile -Parent) | Out-Null
     Set-Content -LiteralPath $dummyFile -Value 'class SomeService {}' -Encoding UTF8
     & git -C $t7Worktree add -A 2>$null | Out-Null
@@ -330,8 +330,8 @@ When case status changes, push message to MQ queue.
         target_subsurface_or_carrier = 'SomeService.method()'
         production_boundary = 'SomeService'
         proof_kind = 'real_entry_behavior'
-        implemented_files = @('example-core/src/main/java/com/example/project/SomeService.java')
-        current_slice_changed_files = @('example-core/src/main/java/com/example/project/SomeService.java')
+        implemented_files = @('claim-core/src/main/java/com/huize/claim/SomeService.java')
+        current_slice_changed_files = @('claim-core/src/main/java/com/huize/claim/SomeService.java')
         gap_flags = @()
         closed_assertions = @('entry callable')
         closed_requirement_families = @('core_entry')

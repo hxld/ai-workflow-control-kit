@@ -136,19 +136,19 @@ function Get-SurfaceCarrierSpecs {
             id = 'core_entry'
             title = 'Core real entry'
             pattern = '(?i)(processor|task|controller|facade|worker|job|handler|listener).*\.java$'
-            priority = '(?i)(example-core/.*/ai/.*/task|example-core/.*/ai/.*/service|example-web/.*/controller|example-server/.*/processor|/ai/)'
+            priority = '(?i)(claim-core/.*/ai/.*/task|claim-core/.*/ai/.*/service|claim-web/.*/controller|claim-server/.*/processor|/ai/)'
         },
         [pscustomobject]@{
             id = 'stateful_side_effect'
             title = 'Stateful side effects'
             pattern = '(?i)(service|mapper|dao|provider|task|progress|log|compensate|claim|case|status|transaction|xml).*(\.java|\.xml)$'
-            priority = '(?i)(example-core/.*/service|example-core/.*/mapper|example-provider|compensate|progress|task|log|status|/ai/)'
+            priority = '(?i)(claim-core/.*/service|claim-core/.*/mapper|claim-provider|compensate|progress|task|log|status|/ai/)'
         },
         [pscustomobject]@{
             id = 'deploy_export_page'
             title = 'Deploy-facing page/export surface'
             pattern = '(?i)(controller|report|export|excel|timeline|case|route|mapper|page|view|jsp|js|ftl|html|download|notify|event|message|mq|push).*(\.java|\.xml|\.jsp|\.js|\.ftl|\.html)$'
-            priority = '(?i)(example-web|reportTable|caseinfo|GenerateExcel|CaseRoute|CaseTimeline|Notify|Event|Message|Rabbit|push|mq|\.jsp$|\.js$)'
+            priority = '(?i)(claim-web|reportTable|caseinfo|GenerateExcel|CaseRoute|CaseTimeline|Notify|Event|Message|Rabbit|push|mq|\.jsp$|\.js$)'
         },
         [pscustomobject]@{
             id = 'wire_payload_api_contract'
@@ -271,10 +271,10 @@ function Write-SurfaceCarrierScan {
         $matches = @($trackedFiles | Where-Object { $_ -match $spec.pattern } | ForEach-Object {
             $score = 0
             if ($_ -match $spec.priority) { $score += 100 }
-            if ($_ -match '(?i)(example-core|example-web|example-server|example-domain)') { $score += 20 }
+            if ($_ -match '(?i)(claim-core|claim-web|claim-server|claim-domain)') { $score += 20 }
             if ($_ -match '(?i)(/ai/|\\ai\\|ocr|report|export|case|compensate|config)') { $score += 20 }
             $score += Get-RequirementAwareSurfaceScore -Path $_ -RequirementText $requirementText
-            if ($_ -match '(?i)(pom\.xml|example-api/src/main/java/com/example/project/api/system)') { $score -= 50 }
+            if ($_ -match '(?i)(pom\.xml|claim-api/src/main/java/com/huize/claim/api/system)') { $score -= 50 }
             [pscustomobject]@{ Path = $_; Score = $score }
         } | Sort-Object @{Expression='Score'; Descending=$true}, @{Expression='Path'; Ascending=$true} | Select-Object -First 35 | ForEach-Object { $_.Path })
         $lines.Add("## $($spec.id) - $($spec.title)")
@@ -386,6 +386,7 @@ $systemContextSnapshotDir = Join-Path $replayRoot 'SYSTEM_CONTEXT_SNAPSHOT'
 $systemContextDirForPrompt = ''
 $surfaceCarrierScanOut = Join-Path $replayRoot 'SURFACE_CARRIER_SCAN.md'
 $oracleDiffAnalysisOut = Join-Path $replayRoot 'ORACLE_DIFF_ANALYSIS.json'
+$featureClassificationOut = Join-Path $replayRoot 'FEATURE_CLASSIFICATION.json'
 $protectedRootStatusBefore = Get-GitStatusText -Repo $projectRoot
 
 $repoCheck = & git -C $projectRoot rev-parse --show-toplevel 2>$null
@@ -451,6 +452,7 @@ $values = @{
     CONTEXT_MANIFEST = $contextManifestOut
     SURFACE_CARRIER_SCAN = $surfaceCarrierScanOut
     ORACLE_DIFF_ANALYSIS = $oracleDiffAnalysisOut
+    FEATURE_CLASSIFICATION = $featureClassificationOut
     SYSTEM_CONTEXT_DIR = $systemContextDirForPrompt
     PLAN_CANDIDATE_COUNT = $planCandidateCount
     RUN_LABEL = $runLabel
@@ -547,7 +549,7 @@ if (-not $DryRun) {
     # v465: Build facade carrier index for layer validation
     $facadeCarrierIndexPath = Join-Path $replayRoot 'VALID_FACADE_CARRIERS.json'
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Build-FacadeCarrierIndex.ps1') `
-        -BaselineRoot $projectRoot `
+        -BaselineRoot $worktree `
         -OutputPath $facadeCarrierIndexPath `
         -BaselineCommit $baseCommit | Out-Null
     if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $facadeCarrierIndexPath)) {
@@ -571,6 +573,17 @@ if (-not $DryRun) {
     if ($LASTEXITCODE -ne 0) {
         throw "Get-OracleDiffAnalysis failed for $replayRoot"
     }
+    $featureClassifierScript = Join-Path $PSScriptRoot 'Classify-Feature.ps1'
+    if (Test-Path -LiteralPath $featureClassifierScript) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $featureClassifierScript `
+            -ReplayRoot $replayRoot `
+            -Worktree $worktree `
+            -RequirementSource $requirementSnapshotOut `
+            -OutPath $featureClassificationOut | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Classify-Feature failed for $replayRoot"
+        }
+    }
 }
 
 $contextLines = New-Object System.Collections.Generic.List[string]
@@ -579,6 +592,7 @@ $contextLines.Add('')
 $contextLines.Add("- generated_at: $((Get-Date).ToString('s'))")
 $contextLines.Add("- system_context_dir: $systemContextDir")
 $contextLines.Add("- system_context_snapshot_dir: $systemContextDirForPrompt")
+$contextLines.Add("- feature_classification: $featureClassificationOut")
 $contextLines.Add("- usage: read-only project/system context; neutral aid for exploration and planning; not oracle evidence")
 $contextLines.Add('')
 $contextLines.Add('## Allowed Context Files')
@@ -699,6 +713,7 @@ $metadata = [ordered]@{
     context_manifest = $contextManifestOut
     surface_carrier_scan = $surfaceCarrierScanOut
     oracle_diff_analysis = $oracleDiffAnalysisOut
+    feature_classification = $featureClassificationOut
     system_context_dir = $systemContextDir
     system_context_snapshot_dir = $systemContextDirForPrompt
     golden_sample_prompt_source = $goldenSamplePromptSource
@@ -746,6 +761,7 @@ Write-Host "Baseline index: $baselineIndexOut"
 Write-Host "Context manifest: $contextManifestOut"
 Write-Host "Surface carrier scan: $surfaceCarrierScanOut"
 Write-Host "Oracle diff analysis: $oracleDiffAnalysisOut"
+Write-Host "Feature classification: $featureClassificationOut"
 Write-Host "Phase 0 prompt: $phase0Out"
 Write-Host "Plan prompt: $planOut"
 Write-Host "Phase 1 prompt: $phase1Out"

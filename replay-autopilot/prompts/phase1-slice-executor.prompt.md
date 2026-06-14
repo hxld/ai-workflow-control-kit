@@ -1,6 +1,6 @@
-You are now executing Phase 1 strict blind “single slice coding execution”. Only execute one slice, do not perform oracle post-hoc, do not write final ROUND_RESULT.
+你现在执行 Phase 1 strict blind 的“单 slice 编码执行”。只执行一个 slice，不做 oracle 后验，不写最终 ROUND_RESULT。
 
-【Fixed Context】
+【固定上下文】
 - 主仓库: {{PROJECT_ROOT}}
 - feature_name: {{FEATURE_NAME}}
 - requirement_source: {{REQUIREMENT_SOURCE}}
@@ -11,6 +11,7 @@ You are now executing Phase 1 strict blind “single slice coding execution”. 
 - neutral baseline index: {{BASELINE_INDEX}}
 - context manifest: {{CONTEXT_MANIFEST}}
 - surface carrier scan: {{SURFACE_CARRIER_SCAN}}
+- feature classification: {{FEATURE_CLASSIFICATION}}
 - system context dir: {{SYSTEM_CONTEXT_DIR}}
 - run label: {{RUN_LABEL}}
 - round: {{ROUND_ID}}
@@ -32,30 +33,39 @@ You are now executing Phase 1 strict blind “single slice coding execution”. 
 - open-family backpressure: {{OPEN_FAMILY_BACKPRESSURE}}
 - open requirement families: {{OPEN_REQUIREMENT_FAMILIES}}
 
-【Allowed to Read】
-1. requirement_source.
-2. repo rules: AGENTS.md, CLAUDE.md, .memory/build-test-profile.yaml.
-3. isolated worktree current code.
-4. Current round Phase 0/0.5 outputs: ROUND_CONTRACT.md, PHASE0_RESULT.md, EXPLORATION_REPORT.md, PLAN_RESULT.md, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, SIDE_EFFECT_LEDGER.md, TEST_CHARTER.md, FIRST_SLICE_PROOF_PLAN.md.
-5. Current round slice progress files: SLICE_PROGRESS.json, SLICE_RESULT_*.json, SLICE_VERIFY_*.json.
-6. Current round family contract and requirement family ledger: FAMILY_CONTRACT.json, REQUIREMENT_FAMILY_LEDGER.json.
-7. Current round slice evidence contracts: CARRIER_AUTHORIZATION_*.json, CARRIER_RANK_*.json, EXACT_CONTRACT_ASSERTION_MATRIX_*.json, NEXT_SLICE_EXACT_CONTRACT_*.json, SIDE_EFFECT_EVIDENCE_*.json, PRE_SLICE_CAP_DISPLAY_*.json.
-8. BASELINE_INDEX.md can only be used as a neutral structural index.
-9. SURFACE_CARRIER_SCAN.md can only be used as a neutral list of production carrier candidates; must confirm by reading source code before use.
-10. CONTEXT_MANIFEST.md listed system context files, can only be used as general project background.
+【允许读取】
+1. requirement_source。
+2. repo rules: AGENTS.md, CLAUDE.md, .memory/build-test-profile.yaml。
+3. isolated worktree 当前代码。
+4. 本轮 Phase 0/0.5 产物：ROUND_CONTRACT.md、PHASE0_RESULT.md、EXPLORATION_REPORT.md、PLAN_RESULT.md、REPLAY_PLAN.md、IMPLEMENTATION_CONTRACT.md、EXPECTED_DIFF_MATRIX.md、SIDE_EFFECT_LEDGER.md、TEST_CHARTER.md、FIRST_SLICE_PROOF_PLAN.md。
+5. 本轮 slice 进度文件：SLICE_PROGRESS.json、SLICE_RESULT_*.json、SLICE_VERIFY_*.json。
+6. 本轮 family contract 与 requirement family ledger：FAMILY_CONTRACT.json、REQUIREMENT_FAMILY_LEDGER.json。
+7. 本轮 slice 证据合约：CARRIER_AUTHORIZATION_*.json、CARRIER_RANK_*.json、EXACT_CONTRACT_ASSERTION_MATRIX_*.json、NEXT_SLICE_EXACT_CONTRACT_*.json、SIDE_EFFECT_EVIDENCE_*.json、PRE_SLICE_CAP_DISPLAY_*.json。
+8. FEATURE_CLASSIFICATION.json 只能作为 verifier 校准输入；不能替代 requirement_source 和代码事实。
+9. BASELINE_INDEX.md 只能作为中性结构索引。
+10. SURFACE_CARRIER_SCAN.md 只能作为中性生产承载点候选清单；必须读源码确认后才能使用。
+11. CONTEXT_MANIFEST.md 列出的系统上下文文件，只能作为通用项目背景。
 
-Forbidden to read feature documentation directories outside the snapshot where requirement_source is located; do not run `rg` / `Get-ChildItem` / batch reads on `.doc\<feature>` or original requirement parent directories. If requirement facts are needed, only read the `requirement_source` single-file snapshot given in this prompt.
+【Feature Classification 执行规则】
+如果 `{{FEATURE_CLASSIFICATION}}` 显示 `narrow_backend_read_only_fix`：
+- 本 slice 不需要制造 DB/schema/frontend/config/generated-artifact/external-integration 变更来满足水平切片。
+- 如果 RED 不可行，必须在 SLICE_RESULT 中写明 GREEN-only 原因，并提供可执行 GREEN 命令、结构化行为证据、must-not 断言和测试源文件。
+- 只读修复的 side-effect evidence 应描述可观察输出/返回值和 must-not writes；不要虚构 DB 写入或事务证明。
 
-【Forbidden】
-- Forbidden to read oracle branch/commit/diff, historical implementations, old replays, historical session summaries, FINAL_REPLAY_REPORT.
-- Forbidden to read other replay roots.
-- Forbidden to replace Phase 0.5 selected real entry or main route; if the plan is overturned by code facts, write BLOCKED_PLAN_MISMATCH.
-- Forbidden to claim core DONE after only doing helper/DTO/static guard.
-- Forbidden to write `oracle_adjusted_coverage`.
-- Forbidden to use online search; only local `rg`, `Get-Content`, `git`, Maven and other in-repo commands allowed.
-- Forbidden to ask the user questions, wait for manual confirmation, or end early due to isolated worktree dirty state. In auto replay, must either advance this slice or write BLOCKED JSON.
-- For slice 2+, when `git status` shows modifications/untracked files from previous slices, default to “Option 1: these changes are expected, continue executing on top of them”. Forbidden to output multiple-choice questions, wait for user confirmation, or treat expected dirty worktree as a blocker; only write BLOCKED JSON when the main workspace is written to, oracle is contaminated, or previous outputs logically conflict with this round's plan.
-- When searching for test style, prefer searching class names, `@Test`, `SpringBootTest`, `Mockito`, `@Mock`, `@InjectMocks`, or specific file paths; avoid combining common English verb-call syntax into regex queries. If confirmation of call details is needed, locate the file first then read the source code.
+禁止读取 requirement_source 所在快照以外的 feature 文档目录；不要对 `.doc\<feature>` 或原始需求父目录执行 `rg` / `Get-ChildItem` / 批量读取。若需要需求事实，只读本 prompt 给出的 `requirement_source` 单文件快照。
+
+【禁止】
+- 禁止读取 oracle branch/commit/diff、历史实现、旧 replay、历史会话总结、FINAL_REPLAY_REPORT。
+- 禁止读取其他 replay root。
+- 禁止替换 Phase 0.5 选定的真实入口或主路线；如果计划被代码事实推翻，写 BLOCKED_PLAN_MISMATCH。
+- 禁止做 helper/DTO/static guard 后宣称 core DONE。
+- 禁止写 `oracle_adjusted_coverage`。
+- 禁止使用联网搜索；只允许本地 `rg`、`Get-Content`、`git`、Maven 等仓库内命令。
+- 禁止向用户提问、等待人工确认或因为 isolated worktree 脏状态提前结束。自动 replay 中必须要么推进本 slice，要么写 BLOCKED JSON。
+- 对 slice 2+，`git status` 中出现前序 slice 的修改/未跟踪文件时，默认视为“选项 1：这些改动是预期的，继续在其基础上执行”。禁止输出选择题、等待用户确认、或把预期 dirty worktree 当作 blocker；只有主工作区被写入、oracle 污染、或前序产物与本轮计划逻辑冲突时，才写 BLOCKED JSON。
+- 检索测试风格时，优先搜索类名、`@Test`、`SpringBootTest`、`Mockito`、`@Mock`、`@InjectMocks` 或具体文件路径；避免把常见英文动词调用语法组合成正则查询。若需要确认调用细节，先定位文件再读取源码。
+- 如果读取 `.memory/build-test-profile.yaml`，其中 `root_pom`、`targeted_test_template`、`full_verify_template` 只能作为“参数形状”参考；在 replay 中必须把任何 `-f {{PROJECT_ROOT}}\pom.xml` 重写为 `-f {{WORKTREE}}\pom.xml`。禁止原样执行 memory 中指向主工作区的 Maven 命令。
+- `PROJECT_ROOT` 只用于读取 repo rules 和上下文，不是执行目录。所有 `git status`、Maven、测试、编译、源码读写都必须在 `{{WORKTREE}}` 或以 `-f {{WORKTREE}}\pom.xml` 执行。
 
 【P0: Pre-Implementation Carrier Validation (CRITICAL BLOCKER)】
 
@@ -100,50 +110,55 @@ If you proceed WITHOUT carrier validation:
 
 ---
 
-## Test Hard Constraints — Must follow, otherwise slice will be rejected by verifier
-1. Test files must be placed in `example-server/src/test/` directory, cannot be placed in `example-core/src/test/`. `example-core` has no test dependencies (JUnit, Mockito, Spring Test), only `example-server` does.
-2. Package path example: `example-server/src/test/java/com/example/project/core/caseinfo/service/YourTest.java`
-3. Correct import paths (confirm with `rg` or `Get-Content` before writing):
-   - `com.example.project.domain.insurance.ExampleData` / `ExampleQuery` / `ExampleResult`
-   - `com.example.project.domain.open.OpenExampleQuery`
-   - `com.example.project.domain.ResultModel`
-   - `com.example.project.core.exampleData.ExampleDataFacadeImpl`
-   - `com.example.project.common.constant.Constant`
-   - `com.example.project.domain.Pagination`
-4. Mockito version is 1.10.19 (legacy version):
-   - Use `org.mockito.Matchers` (not `ArgumentMatchers`)
-   - Use `org.mockito.Matchers.any(ExampleQuery.class)` (not `any()`)
-   - Use `org.mockito.Matchers.anySet()` (not `any()`)
-   - `thenAnswer` lambda parameter is `invocation -> { ... }`
-5. JUnit uses `org.junit.Assert` (not assertj): `assertEquals`, `assertTrue`, `assertNotNull`, `assertFalse`
-6. Use `ReflectionTestUtils.setField(service, "fieldName", mock)` for dependency injection (not `@InjectMocks`)
-7. After writing the test, must actually run `mvn -s {{MAVEN_SETTINGS}} -f {{WORKTREE}}\pom.xml test -pl example-server -am -Dtest=YourTest -Dsurefire.failIfNoSpecifiedTests=false` and confirm `BUILD SUCCESS`. If compilation fails, must fix to pass before continuing.
-8. Forbidden to modify any `pom.xml`, forbidden to add new JUnit/Mockito/Spring Test dependencies. If `example-core` is missing test dependencies, this is not a fixable business diff; must place the RED test in `example-server`'s existing test harness.
-9. If `FIRST_SLICE_PROOF_PLAN.md` only gives the test class name without path or module, default to creating the test in `example-server/src/test/java/...` and run with `-pl example-server -am`. Forbidden to change to `example-core/src/test` or `-pl example-core`.
+【测试硬约束 — 必须遵守，否则 slice 会被验证器拒绝】
+1. 测试必须绑定 `PLAN_RESULT.md` / `FIRST_SLICE_PROOF_PLAN.md` 中的 `first_red_test`、`expected_test_class`、`expected_test_method`、`selected_carrier`。禁止运行或新增与这些字段无关的历史测试、memory/progress 示例测试、其他 replay 的测试。
+2. 测试 harness 模块由当前 worktree 的实际测试依赖和既有测试风格决定。先用 `rg` 搜索计划测试类、同包 TaskProcessor/Service 测试、`@Test`、Mockito/JUnit import，再决定测试路径和 `-pl` 模块；同时读取候选模块 `pom.xml`，确认该模块已有 JUnit/Mockito/Spring Test 依赖或已有可编译测试基类。
+3. 测试 harness 模块必须与验证器规则一致：默认把测试放在生产文件同一 Maven 模块的 `src/test/java`。只有当同模块缺少可用测试依赖，且某个既有测试模块的 `pom.xml` 明确依赖目标生产模块 artifactId 时，才允许使用这个既有跨模块 test harness；必须在 `behavior_test_charter` / `closure_proof` 中写明 `cross_module_test_harness_depends_on_production_module` 和读取过的两个 `pom.xml` 证据。禁止仅凭“某个外层模块能编译”就跨模块放测试；禁止通过修改任何 `pom.xml` 或新增测试依赖来制造 harness。若同模块和可证明的跨模块 harness 都不可用，写 BLOCKED JSON，`coverage_delta=0`，不要先写 GREEN。
+4. 对 `TaskProcessor` / `rebuildTaskData` / backend-only source-chain slice，Service/TaskProcessor 层是允许的真实生产承载点；不要因为不是 Facade/Controller 而改选入口、改测其他业务、或跑通用 claim-server 历史测试。
+5. 对 `TaskProcessor` / `rebuildTaskData` / source-chain slice，禁止用会启动完整 Spring 容器的测试形态：不得继承 `AbstractTestClass`，不得新增 `@RunWith(SpringJUnit4ClassRunner.class)`、`@SpringBootTest`、`@ContextConfiguration` 或 `@Resource` 注入目标 processor。必须使用 no-Spring JUnit + Mockito/反射风格：手工 `new` 真实 processor，反射或 `ReflectionTestUtils.setField` 注入 mock 依赖，只运行目标测试类。
+6. 对本轮 policyNum/insureNum rebuild source-chain，RED 必须是确定性的，不得依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext 或 `taskData == null` 时打印 WARN 后通过。必须 mock `AiClaimDataAssemblyHelper.buildRequestCommon(...)`，在 Mockito `thenAnswer` 中取得最后一个参数 `AiClaimDataAssemblyHelper.RequestBuildFunction`，构造 `RequestBuildContext` 并设置 `caseId`、`productName`、`liabilityType`、`insuredName`、`policyPeriod`、`policyNum`、`insureNum`、`reportInfo`、`materialInfo`、`nowTime`，然后调用真实 builder lambda。Mockito 1.x 或未知版本时必须用 `Object[] args = invocation.getArguments();` 再从最后一个参数强转，不得用 `invocation.getArgument(...)`。禁止在 `thenAnswer` 中直接 `return new AiApplyClaimRequest(...)`、`return new AiCalculateLossRequest(...)` 或直接返回手工 set 好字段的 request；这会绕过 production builder lambda，属于 synthetic carrier。断言 `rebuildTaskData` 返回非空，并断言 `taskData.getPolicyNum()` 与 `taskData.getInsureNum()` 等于 mock context 值；当前基线 RED 应因为 builder lambda 未把 context 字段复制到 request 而失败。GREEN 必须在两个 sibling processor 的 builder lambda 中补 `req.setPolicyNum(buildContext.getPolicyNum())` 和 `req.setInsureNum(buildContext.getInsureNum())`。
+7. 本轮 sibling surface 是强制项：`AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)` 与 `AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)` 必须在同一个测试类中各有业务断言，或用同一个 helper 分别驱动两个 processor。只覆盖 apply-claim、只覆盖 calculate-loss、只证明 terminal DTO getter/setter、或只验证 mock 被调用，均不能授权 GREEN，`coverage_delta` 必须为 0。
+8. 正确 import、JUnit/Mockito 版本、注入方式必须从当前 worktree 的既有测试文件中确认。不要照抄 unrelated memory 示例。JUnit 断言优先用项目已存在风格，如 `org.junit.Assert`；Mockito 版本若是 1.x，则使用项目现有 `Matchers` 风格。
+   - 写测试前必须建立 `MOCKITO_COMPATIBILITY_PROFILE`：读取目标测试模块 `pom.xml` 中的 Mockito 版本，并用 `rg "org.mockito.(runners.MockitoJUnitRunner|junit.MockitoJUnitRunner|Matchers|ArgumentMatchers)|invocation.getArgument|getArguments"` 搜索同模块既有测试。
+   - 若版本 `< 2.0`、既有测试使用 `org.mockito.runners.MockitoJUnitRunner` / `org.mockito.Matchers`，或无法确认版本，必须使用 legacy-compatible 写法：`org.mockito.runners.MockitoJUnitRunner`、`org.mockito.Matchers`、`Object[] args = invocation.getArguments();` 后强转参数。禁止使用 `org.mockito.junit.MockitoJUnitRunner`、`org.mockito.ArgumentMatchers`、`invocation.getArgument(...)`。
+   - 只有在 `pom.xml` 或既有测试明确证明 Mockito 2+ 时，才允许使用 `org.mockito.junit.MockitoJUnitRunner`、`org.mockito.ArgumentMatchers`、`invocation.getArgument(...)`。
+   - 在 `closure_proof` 中记录 `mockito_compatibility_profile`，包含读取过的 `pom.xml`、至少一个既有测试 import 证据、最终选择的 import/thenAnswer 取参方式。
+9. RED/GREEN 命令必须使用本轮计划测试类。例如：
+   `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test`
+   `<expected_test_class>` 必须来自 `PLAN_RESULT.json.expected_test_class` 或 `FIRST_SLICE_PROOF_PLAN.md.expected_test_class`，不得替换成无关测试类列表。
+   如果命令包含 `-Dtest`、`#`、`.` 或 `-Dsurefire.failIfNoSpecifiedTests=false`，在 PowerShell 下优先使用 `mvn --%` 形态；不要把 PowerShell 参数误解析当成 RED 或环境 blocker。
+10. 覆盖率执行门禁（v478）：`coverage_delta > 0` 只能在以下两项都满足时声明：
+   - `mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile` 返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_compilation_*` 字段。
+   - `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test` 实际运行目标测试，返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_execution_*` 字段。
+   如果 test-compile 失败、测试未执行、0 tests run、只创建测试文件、只描述 git diff、或只写“GREEN fix applied”，必须设置 `coverage_delta=0`，`slice_status=PARTIAL|BLOCKED`，`gap_flags` 包含 `test_compilation_failed` 或 `no_test_execution_evidence`。
+11. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若无法在现有 harness 中写出业务 RED，写 BLOCKED JSON，并说明 `red_business_assertion_not_observed`。
+12. 对本轮 `SOURCE_CHAIN_CONTRACT.json.next_required_slice` 指定的 source-chain，测试必须从真实 carrier 链路产生值；手工构造 terminal DTO、只断言字段存在、只跑旧测试都不能授权 GREEN。
+13. 如果 `PLAN_RESULT.md`、`FIRST_SLICE_PROOF_PLAN.md` 或 `TEST_CHARTER.md` 写了 "oracle changes already present"、"implementation already present"、"tests should pass with proper setup"，不要把这些话当成授权。你必须读取当前 worktree 源码并判断 source-chain 是否真的闭合；如果缺少 upstream assignment，就先写 RED，再补最小 GREEN 生产 diff。
+14. 对 source-chain / rebuild-path slice，已有的 downstream copy（例如 `taskData.setPolicyNum(request.getPolicyNum())`、`taskData.setInsureNum(request.getInsureNum())`）不是闭合证据。必须验证并实现 source/buildContext -> request 的赋值，再由 request -> taskData/payload 验证业务断言。
 
-## Test Contract Verification (MANDATORY)
-Before writing tests, must verify the interface contracts in FIRST_SLICE_PROOF_PLAN and IMPLEMENTATION_CONTRACT:
+【Test Contract Verification (MANDATORY)】
+写测试前必须核对 FIRST_SLICE_PROOF_PLAN 和 IMPLEMENTATION_CONTRACT 中的接口契约：
 
-1. **Return Type Alignment**: If the return type of `selected_real_entry` or `selected_carrier` is non-void (e.g., `SomeResponse`), the test must declare and assert the return value. Forbidden to write `void` tests for non-void entries (only asserting "no exception thrown" or "called a mock").
+1. **Return Type Alignment**：如果 `selected_real_entry` 或 `selected_carrier` 的返回类型是非 void（如 `SomeResponse`），测试必须声明并断言返回值。禁止对非 void 入口写 `void` 测试（只断言"不抛异常"或"调用了某个 mock"）。
 
-2. **Error Handling Alignment**:
-   - If `pattern_error_handling:` or `interface_contract_error_handling:` specifies `response_codes`, test error scenarios must assert response code (e.g., `assertEquals("500", result.getCode())`), cannot use `catch (Exception e)` + `fail()` pattern.
-   - If it specifies `exception_propagation`, tests must use exception-catching pattern.
-   - Violating any of the above means the test receives no coverage credit, `gap_flags` must include `test_contract_mismatch`.
+2. **Error Handling Alignment**：
+   - 如果 `pattern_error_handling:` 或 `interface_contract_error_handling:` 写明 `response_codes`，测试错误场景必须断言 response code（如 `assertEquals("500", result.getCode())`），不能用 `catch (Exception e)` + `fail()` 模式。
+   - 如果写明 `exception_propagation`，测试必须用 exception-catching 模式。
+   - 违反以上任何一条的测试不获得 coverage credit，`gap_flags` 必须包含 `test_contract_mismatch`。
 
-3. **Assertion Surface Alignment**: The test's assertion target must match the production entry's contract boundary. For public entries (Facade/Controller/API), assertions must land on response payload fields, not just on internal service mock verifies.
+3. **Assertion Surface Alignment**：测试的断言目标必须匹配生产入口的契约边界。对公共入口（Facade/Controller/API），断言必须落在 response payload 字段上，不能只落在内部 service 的 mock verify 上。
 
-Any slice violating the above will be marked by the verifier with `test_contract_mismatch`, `return_value_vs_exception_mismatch`, or `assertion_surface_mismatch`, `coverage_delta=0`.
+违反以上任何一条的 slice 会被 verifier 标记 `test_contract_mismatch`、`return_value_vs_exception_mismatch` 或 `assertion_surface_mismatch`，`coverage_delta=0`。
 
-## Behavioral Test Requirements (EXPERIMENT_1)
+【Behavioral Test Requirements (EXPERIMENT_1)】
 
-Your RED phase tests must assert **expected business behavior**, not structural deficiencies. Tests will be classified as BEHAVIORAL or STRUCTURAL.
+你的 RED 阶段测试必须断言**期望的业务行为**，而不是结构性缺失。测试将被分类为 BEHAVIORAL 或 STRUCTURAL。
 
-### BEHAVIORAL Tests (Required)
+## BEHAVIORAL 测试（必需）
 
-BEHAVIORAL tests assert expected business results: side effects, state changes, output.
+BEHAVIORAL 测试断言期望的业务结果：副作用、状态变化、输出。
 
-**Keywords**: assert, verify, equals, populate, insert, update, generate, create, status, progress, compensate, select, mapper, dao, repository, transaction, rollback, persist, save, delete
+**关键词**: assert、verify、equals、populate、insert、update、generate、create、status、progress、compensate、select、mapper、dao、repository、transaction、rollback、persist、save、delete
 
 **有效示例**:
 - ✅ "When executeAutoFlow is called with valid flash case, 理算表 is populated with AI settlement_details"
@@ -158,9 +173,9 @@ STRUCTURAL 测试只验证代码结构存在性，不足以驱动生产实现。
 **关键词**: exists、notexist、ClassNotFoundException、NoSuchMethodException、file、not、file、missing
 
 **禁止示例**:
-- ❌ "Class ExampleFlowService does not exist yet"
+- ❌ "Class AiAutoClaimFlowService does not exist yet"
 - ❌ "Method executeAutoFlow throws ClassNotFoundException"
-- ❌ "File example-server/src/main/java/.../ExampleFlowService.java is missing"
+- ❌ "File claim-server/src/main/java/.../AiAutoClaimFlowService.java is missing"
 
 ## 测试分类规则
 
@@ -272,7 +287,7 @@ runner 执行以下检查（通过 `calculate-coverage-penalty.py`）：
 
 ❌ **错误**：用 TODO 标记未实现功能
 ```java
-public void handle(Long caseId, ExampleApplyApiTask task) {
+public void handle(Long caseId, AiApplyClaimApiTask task) {
     // TODO: 验证参数
     // TODO: 写入补偿信息
     // TODO: 更新状态
@@ -282,7 +297,7 @@ public void handle(Long caseId, ExampleApplyApiTask task) {
 
 ✅ **正确**：增量实现，每个步骤对应测试断言
 ```java
-public void handle(Long caseId, ExampleApplyApiTask task) {
+public void handle(Long caseId, AiApplyClaimApiTask task) {
     // Test 1 验证：参数校验
     if (!isSupportedScope(task)) {
         return;  // 测试验证提前返回
@@ -332,7 +347,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
     - `{{CARRIER_RANK}}` 中 rank 1 的 required OPEN/PARTIAL family 是本 slice 的最高优先级生产承载点。若 forced family/sibling 与 rank 1 冲突，必须以 runner 给出的 forced sibling 为准；禁止自行降级到 helper、DTO、常量、静态枚举或非边界 sibling。
     - 必须重新核对 `FIRST_SLICE_PROOF_PLAN.md` 中的 `real_carrier_kind`、`minimum_side_effect_or_blocker`、`forbidden_substitute_check`。`real_carrier_kind` 不是生产入口/服务/controller/mapper/payload/template/lifecycle 承载点，或 `forbidden_substitute_check` 不是 `passed` 时，不得写生产 diff。
     - 第一片必须从 `FIRST_SLICE_PROOF_PLAN.md` / `IMPLEMENTATION_CONTRACT.md` 原样复制 `selected_real_entry`、`selected_carrier`、`first_red_test`。如果计划写明 `TaskServiceTransformCaseTaskPolicyTest`，就必须创建/运行这个测试；测试文件不存在时创建 RED 测试或写 `BLOCKED_PLAN_MISMATCH`，禁止替换成另一个需求/另一个 family 的测试类。
-    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `ExampleDataAssemblyHelper`、`InputData.policy_num`、`InputData.insure_num`、`AiPolicyNumSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
+    - 如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=false`，禁止选择 `AiClaimDataAssemblyHelper`、`InputData.policy_num`、`InputData.insure_num`、`AiPolicyNumSourceChainTest` 之类 source-chain carrier；这些只能在 source-chain contract 明确为 true 时使用。
     - `selected_carrier -> production_boundary -> expected failing assertion -> command -> fail_closed_condition` 五项必须能连起来；如果只能新增日志型、委托型、占位型或 helper-only carrier，直接写 `PARTIAL/BLOCKED`，`coverage_delta=0`。
    - exact-contract 只允许业务可断言项：页码/窗口数、请求字段、响应字段、payload shape、展示值、状态写入、顺序、must-not side effect。规划文件名、路径、模块名、phase/status、branch/commit/hash、generic gap flag 都不是 literal。
    - 如果本 slice 触碰 exact-contract family，必须在 `SLICE_RESULT` 写 `exact_contract_assertions`，每项包含 `literal`、`symbol_or_field`、`db_or_wire_or_display`、`boundary_type`、`production_boundary`、`closure_proof`、`production_predicate`、`forbidden_extra_predicate`、`test_assertion`、`source_type=requirement|code_fact`、`status=CLOSED|BLOCKED`。`production_predicate` 只能包含需求字面量要求的判断；若新增状态、渠道、类型、环境、旧链路等额外谓词，必须在 `forbidden_extra_predicate` 写出并提供“该谓词由生产入口逻辑必然推出”的可执行证明，否则本 slice 只能 `PARTIAL/BLOCKED`，不得关闭 family。
@@ -354,8 +369,10 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
 13. 如果 forced family 是 core_entry/stateful_side_effect 且仍有 open sibling surfaces，本 slice 必须先补其中一个具体副作用 sibling；不能只新增日志、常量、DTO 或 mock-only 断言。
 14. 如果本 slice 没有关闭或推进 REQUIREMENT_FAMILY_LEDGER 中任何 OPEN/PARTIAL family，`coverage_delta` 必须为 0，`gap_flags` 必须包含 `no_progress_slice`。
 15. 严格 TDD：先写/调整 RED，运行并记录失败，再最小 GREEN。`DONE` 必须至少有一条 `phase=RED,result=fail` 的测试证据；如果 RED 命令因 PowerShell 参数解析、`-Dtest`、`-Dsurefire...` 或 wrapper 参数问题被阻断，必须立刻用 `mvn --% -s ... -f {{WORKTREE}}\pom.xml ...` 重放同一个 RED，再决定是否编码。不能把“RED 命令 blocked”当成可接受 RED，也不能在没有 RED fail 的情况下进入 GREEN；若重放仍非业务断言失败，写 BLOCKED 或 PARTIAL，并在 `gap_flags` 写 `tdd_red_not_replayed`、`feedback_loop_blocker`。
-16. Maven 必须带 `-s {{MAVEN_SETTINGS}}` 和 `-f {{WORKTREE}}\pom.xml`。
-17. 不允许修改主工作区 {{PROJECT_ROOT}}。
+16. Maven 必须带 `-s D:\maven\settings\settings.xml` 和 `-f {{WORKTREE}}\pom.xml`。任何带 `-pl <module>` 的 Maven test/test-compile/compile 命令都必须同时带 `-am`，否则会绕过 reactor 源码并可能误用本机 Maven 仓库里的漂移 SNAPSHOT 依赖；禁止把这种 `-am` 缺失导致的 facade/interface 编译错误报告成 `base_compile_blocker`。
+17. 禁止执行 `mvn deploy`。默认禁止执行 `mvn install`；除非本 prompt 明确要求 isolated replay worktree 的 install，否则只能运行 `test-compile`、`test` 或必要的只读依赖检查。
+18. 禁止对主工作区运行 Maven：不得使用 `-f {{PROJECT_ROOT}}\pom.xml`，不得在 {{PROJECT_ROOT}} 下构建、测试、安装或发布。
+19. 不允许修改主工作区 {{PROJECT_ROOT}}。
 
 【生产承载点规则】
 - `target_subsurface_or_carrier` 必须是已有生产入口/承载点，或清楚说明由哪个已有生产入口调用的新实现边界。
@@ -417,6 +434,15 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
   "real_carrier_kind": "production_entry_or_service | production_controller_or_route | production_mapper_or_query | production_payload_builder | production_template_or_artifact_renderer | production_lifecycle_cleanup",
   "forbidden_substitute_check": "passed | failed:<reason>",
   "red_expectation": "",
+  "test_compilation_command": "",
+  "test_compilation_exit_code": null,
+  "test_compilation_stdout": "",
+  "test_compilation_stderr": "",
+  "test_execution_command": "",
+  "test_execution_exit_code": null,
+  "test_execution_stdout": "",
+  "test_execution_stderr": "",
+  "test_execution_evidence": "",
   "implemented_files": [],
   "current_slice_changed_files": [],
   "round_changed_files_snapshot": [],
@@ -443,7 +469,8 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
     "RED_command": "",
     "expected_RED_failure": "",
     "GREEN_command": "",
-    "evidence_file": ""
+    "evidence_file": "",
+    "evidence_files": []
   },
   "closed_assertions": [],
   "must_not_assertions": [],
@@ -475,7 +502,7 @@ Authorizing RED means all of the following are true:
 - the failure is a business assertion failure against the selected production carrier or observable output;
 - the failure is not caused by PowerShell parsing, Maven argument parsing, zero tests, missing dependency, compilation failure, environment setup, or a wrapper/tooling error.
 
-If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% -s {{MAVEN_SETTINGS}} -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
+If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
 
 When RED is blocked, passes, runs zero tests, or fails for non-business tooling reasons:
 - do not edit production files;
@@ -512,6 +539,13 @@ Every high-weight family touch must write `behavior_test_charter` in `{{SLICE_RE
 - `expected_RED_failure`
 - `GREEN_command`
 - `evidence_file`
+- `evidence_files` if more than one Java test source is required
+
+`behavior_test_charter.evidence_file` must be one actual worktree-relative Java test source that proves the behavior, for example `<test-module>/src/test/java/.../CarrierBehaviorTest.java`. It must exist under `src/test/java` or `src/test/resources`, must end with `Test.java`, and must not be a production source under `src/main/java`, `SLICE_RESULT_*.json`, `SLICE_VERIFY_*.json`, `ROUND_RESULT.md`, `AUTOPILOT_SUMMARY.md`, or any replay summary/generated artifact. A production file or self-referential result file is non-authorizing evidence.
+
+If the behavior needs multiple Java test sources, write them as a JSON array in `behavior_test_charter.evidence_files`. Do not put comma-separated or semicolon-separated paths into the singular `evidence_file` string. Each file in `evidence_files` must independently satisfy the same test-source rule.
+
+For each production file under `<module>/src/main/java`, the behavior test source should default to the same module under `<module>/src/test/java`. A test in a different module is `wrong_test_surface` unless the authorized carrier is explicitly a deploy/API/integration boundary whose observable behavior only exists in that outer module. If you choose a different module, record the deploy/API boundary reason in `closure_proof`; otherwise move the test before running Maven.
 
 The charter must not be mock-only, helper-only, static-only, file-presence-only, mapper-presence-only, or placeholder proof. Missing or non-authorizing charters force `behavior_test_charter_gap`, `wrong_test_surface`, zero adjusted coverage, and no family closure.
 
@@ -525,13 +559,15 @@ The charter must not be mock-only, helper-only, static-only, file-presence-only,
 
 Your TEST_CHARTER.md must contain ALL of the following sections:
 
-1. **Entry Point**: Exact Facade/Controller method to test
-   - Format: `Entry Point: YourFacade.yourMethod(paramTypes)`
-   - Example: `Entry Point: ExampleAutoClaimFlowFacade.executeAutoFlow(ExampleApplyApiTask)`
+1. **Entry Point**: Exact planned production entry/carrier to test
+   - Format: `Entry Point: YourCarrier.yourMethod(paramTypes)`
+   - Example for public flow: `Entry Point: AiAutoClaimFlowFacade.executeAutoFlow(AiApplyClaimApiTask)`
+   - Example for backend-only replay: `Entry Point: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)`
 
-2. **Test Surface**: Test class at Facade/Controller layer, NOT Service layer
-   - ✅ Correct: `ExampleAutoClaimFlowFacadeTest` or `ExampleAutoClaimFlowControllerTest`
-   - ❌ Wrong: `ExampleFlowServiceTest` (Service layer - cannot verify full request/response flow)
+2. **Test Surface**: Test class must match the planned carrier layer
+   - Public/deploy/API flows should prefer Facade/Controller tests.
+   - Backend-only `TaskProcessor` / `rebuildTaskData` / source-chain replay may test Service/TaskProcessor carriers directly when Phase 0/Plan selected them.
+   - Wrong surface means testing an unrelated layer or unrelated business carrier, not merely testing Service/TaskProcessor when the plan explicitly selected it.
 
 3. **DB Verification**: SELECT queries for each side effect
    - Example: `SELECT * FROM t_compensate_detail WHERE case_id = ?`
@@ -546,10 +582,10 @@ Your TEST_CHARTER.md must contain ALL of the following sections:
 
 ### Validation Gate
 
-Before starting RED phase, the `test_charter_prevalidator.py` script will validate your TEST_CHARTER.md:
+Before starting RED phase, the runner wrapper will validate your TEST_CHARTER.md:
 
-```bash
-python3 test_charter_prevalidator.py TEST_CHARTER.md --output json
+```powershell
+scripts\Invoke-TestCharterPrevalidator.ps1 -WorkDir {{REPLAY_ROOT}} -PassThru
 ```
 
 If validation FAILS, you MUST:
@@ -562,8 +598,8 @@ If validation FAILS, you MUST:
 
 #### WRONG_TEST_SURFACE (common)
 ```
-❌ [WRONG_TEST_SURFACE]: Testing Service layer instead of Facade/Controller layer
-   Required: Move test to Facade or Controller layer matching planned entry
+❌ [WRONG_TEST_SURFACE]: Testing unrelated carrier or layer instead of planned entry
+   Required: Move test to the planned carrier surface from PLAN_RESULT/FIRST_SLICE_PROOF_PLAN
 ```
 
 #### MISSING_ENTRY_POINT
@@ -611,7 +647,7 @@ compensateService.batchInsertCompensateDetail(list);
 
 #### Example correct pattern:
 ```java
-// Step 1: Read example-core/.../CompensateService.java
+// Step 1: Read claim-core/.../CompensateService.java
 // Step 2: Find: public void rewriteCompensateData(Long caseId, List<DetailBundle> bundles)
 // Step 3: Use verified signature
 compensateService.rewriteCompensateData(caseId, bundles);
@@ -710,6 +746,14 @@ Ensure all side effects have executable proof:
 
 #### Rule:
 If a side effect cannot be verified with executable test, mark slice as BLOCKED.
+
+### Post-GREEN Exact Contract Verification
+
+Before claiming `slice_status=DONE`, compare `{{NEXT_SLICE_EXACT_CONTRACT}}` and `{{EXACT_CONTRACT_ASSERTION_MATRIX}}` against `SLICE_RESULT.exact_contract_assertions`.
+
+- If any required or touched exact row lacks a matching `CLOSED` assertion, do not claim the family closed.
+- For wire/payload/API contracts, include literal -> symbol/field -> wire/db/display boundary -> executable test assertion.
+- If the production change is correct but exact contract proof is missing, set `slice_status=PARTIAL`, `coverage_delta=0`, and include `exact_contract_gap` plus `tooling_enforcement_stop`.
 
 ---
 

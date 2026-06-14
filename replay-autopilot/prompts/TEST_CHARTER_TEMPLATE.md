@@ -38,14 +38,14 @@
 ```java
 // Facade entry
 @Remote
-public class ExampleModuleConfigFacade {
-    public ExampleModuleConfigDto getConfig(String moduleName) { ... }
+public class AiClaimModuleConfigFacade {
+    public AiClaimModuleConfigDto getConfig(String moduleName) { ... }
 }
 
 // Test targets Facade, NOT Service
 @Test
 public void testGetConfig_WhenValid_ShouldReturnDto() {
-    ExampleModuleConfigDto dto = facade.getConfig("test");
+    AiClaimModuleConfigDto dto = facade.getConfig("test");
     assertThat(dto).isNotNull();
 }
 ```
@@ -115,14 +115,14 @@ public void test{{SCENARIO_NAME}}() {
 
 **Example**:
 ```java
-package com.example.project.facade;
+package com.huize.claim.facade;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
-public class ExampleModuleConfigFacadeTest {
+public class AiClaimModuleConfigFacadeTest {
 
     @Autowired
-    private ExampleModuleConfigFacade facade;
+    private AiClaimModuleConfigFacade facade;
 
     @Test
     public void test{{SCENARIO_NAME}}() {

@@ -6,7 +6,7 @@
     "skip-task-transform-case",
     "xiebao",
     "renbao-tuipiao",
-    "example-feature"
+    "aiClaimV2"
   ],
   "features": [
     {
@@ -66,16 +66,16 @@
       "base_must_not_contain_commits": [
         {
           "commit": "932a4d10abbe4d2810e814f4b37dcfcb9d9ae7df",
-          "reason": "Implementation commit 'feat：新增人保财深分回调接口' contaminates base; must use earlier clean commit"
+          "reason": "Implementation commit 'feat：新增人保财深分退票接口' contaminates base; must use earlier clean commit"
         }
       ],
       "notes": "External return-ticket integration; broader canary after small/medium probes. Base moved to 31c38b93 (clean, before 932a4d10)."
     },
     {
-      "feature_name": "example-feature",
+      "feature_name": "aiClaimV2",
       "enabled": true,
       "category": "large-reference-mainline",
-      "requirement_source": "D:\\opt\\claim\\.doc\\example-feature\\requirements.md",
+      "requirement_source": "D:\\opt\\claim\\.doc\\aiClaimV2\\requirements.md",
       "base_commit": "e19c16c5a8096c8d36938f2c469a7980deea71d4",
       "oracle_branch": "ai_claim_V2",
       "oracle_commit": "07d37b6c30d42f0737a2629f051b9d7b76baf78e",
@@ -87,7 +87,7 @@
       "enabled": false,
       "category": "candidate-api",
       "requirement_source": "D:\\opt\\claim\\.doc\\ai-case-batch-query\\requirements.md",
-      "exclude_reason": "oracle window not yet audited; commit candidates overlap example-feature changes",
+      "exclude_reason": "oracle window not yet audited; commit candidates overlap aiClaim changes",
       "notes": "Keep out of automatic rotation until oracle boundary is reviewed."
     },
     {

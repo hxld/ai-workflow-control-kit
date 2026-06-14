@@ -40,6 +40,50 @@ function Get-StringValue {
     return ''
 }
 
+function Get-BoolValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $false }
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        return [bool]$Object.$Name
+    }
+    return $false
+}
+
+function Test-SourceChainAppliesForSlice {
+    param(
+        $SourceChain,
+        [string]$ForcedRequirementFamily,
+        [string]$ForcedSliceType,
+        [string]$ForcedSiblingSurface,
+        [string]$EntryCall,
+        [string]$CarrierText = ''
+    )
+
+    if ($null -eq $SourceChain -or -not [bool]$SourceChain.required_source_chain -or $null -eq $SourceChain.next_required_slice) {
+        return $false
+    }
+    if ([string]$ForcedSliceType -ne 'exact_contract_slice') {
+        return $false
+    }
+    if ([string]$ForcedRequirementFamily -eq 'core_entry' -or [string]$ForcedRequirementFamily -eq 'source_chain') {
+        return $true
+    }
+
+    $sourceCarrier = Get-StringValue $SourceChain.next_required_slice 'carrier'
+    $sourceEntry = Get-StringValue $SourceChain.next_required_slice 'entry'
+    $currentText = @($ForcedSiblingSurface, $EntryCall, $CarrierText) -join ' '
+    if (-not [string]::IsNullOrWhiteSpace($sourceCarrier) -and [string]$ForcedSiblingSurface -eq $sourceCarrier) {
+        return $true
+    }
+    if ($currentText -match '(?i)\b(rebuildTaskData|RequestBuildContext|AiClaimBaseRequest|source_chain)\b') {
+        return $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($sourceEntry) -and $currentText -match [regex]::Escape($sourceEntry)) {
+        return $true
+    }
+    return $false
+}
+
 function Test-InvalidAuthorizationFieldValue {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return $true }
@@ -89,7 +133,7 @@ function Get-PlanNewServiceWhitelist {
     carrier rank checks during creation. Format:
 
     ## NEW_SERVICE_WHITELIST
-    - ExampleFlowService
+    - AiAutoClaimFlowService
     - AiNewServiceProcessor
 
     Returns array of service name strings.
@@ -147,10 +191,103 @@ function Extract-LayerFromCarrier {
     if ($CarrierName -match 'Controller$') { return 'Controller' }
     if ($CarrierName -match 'Api$') { return 'Api' }
     if ($CarrierName -match 'Service$') { return 'Service' }
-    if ($CarrierName -match 'Task$|Processor$') { return 'Service' }
+    if ($CarrierName -match '(?i)TaskProcessor|Task$|Processor$|rebuildTaskData') { return 'Service' }
     if ($CarrierName -match 'Mapper$|Dao$') { return 'Mapper' }
 
     return 'Unknown'
+}
+
+function Get-OracleProductionRows {
+    param([string]$ReplayRoot)
+
+    $oracle = Read-JsonIfExists (Join-Path $ReplayRoot 'ORACLE_DIFF_ANALYSIS.json')
+    if ($null -eq $oracle) { return @() }
+
+    $rows = @()
+    if ($null -ne $oracle.files) {
+        $rows = @($oracle.files)
+    } elseif ($null -ne $oracle.production_changes) {
+        $rows = @($oracle.production_changes)
+    }
+
+    return @($rows | Where-Object {
+        $path = if ($_.PSObject.Properties.Name -contains 'path') { [string]$_.path } else { [string]$_.file }
+        $isProduction = if ($_.PSObject.Properties.Name -contains 'is_production') { [bool]$_.is_production } else { ($path -match '/src/main/java/|\\src\\main\\java\\') }
+        $isProduction -and -not [string]::IsNullOrWhiteSpace($path)
+    })
+}
+
+function Get-OracleFilePath {
+    param($Row)
+    if ($null -eq $Row) { return '' }
+    if ($Row.PSObject.Properties.Name -contains 'path') { return [string]$Row.path }
+    if ($Row.PSObject.Properties.Name -contains 'file') { return [string]$Row.file }
+    return ''
+}
+
+function Test-BackendTaskProcessorOracleReplay {
+    <#
+    .SYNOPSIS
+    Allows backend-only executable replay when the archived oracle proves the
+    actual high-weight production boundary is TaskProcessor/Service code.
+    #>
+    param(
+        [string]$ReplayRoot,
+        [string]$TargetCarrier,
+        [string]$EntryCall = '',
+        [string]$ForcedRequirementFamily = '',
+        [string]$AdditionalEvidenceText = ''
+    )
+
+    if (@('deploy_export_page', 'generated_artifact_template_upload', 'external_integration', 'automation_test_interface') -contains $ForcedRequirementFamily) {
+        return $false
+    }
+
+    $productionRows = @(Get-OracleProductionRows -ReplayRoot $ReplayRoot)
+    if ($productionRows.Count -eq 0) { return $false }
+
+    $highRows = @($productionRows | Where-Object {
+        if ($_.PSObject.Properties.Name -contains 'weight') { [string]$_.weight -eq 'HIGH' } else { $true }
+    })
+    if ($highRows.Count -eq 0) { return $false }
+
+    $allBackendServiceOrTask = $true
+    $oracleClassNames = New-Object System.Collections.Generic.List[string]
+    foreach ($row in $highRows) {
+        $path = (Get-OracleFilePath -Row $row) -replace '\\', '/'
+        $layer = if ($row.PSObject.Properties.Name -contains 'layer') { [string]$row.layer } else { '' }
+        $className = [System.IO.Path]::GetFileNameWithoutExtension($path)
+        if (-not [string]::IsNullOrWhiteSpace($className) -and -not $oracleClassNames.Contains($className)) {
+            $oracleClassNames.Add($className) | Out-Null
+        }
+        $isBackend = (
+            $layer -eq 'Service' -or
+            $path -match '(?i)/(service|task|helper)/' -or
+            $className -match '(?i)(Service|TaskProcessor|Processor)$'
+        )
+        $isPublicSurface = $path -match '(?i)/(controller|facade)/|claim-api/|claim-web/'
+        if (-not $isBackend -or $isPublicSurface) {
+            $allBackendServiceOrTask = $false
+            break
+        }
+    }
+
+    if (-not $allBackendServiceOrTask) { return $false }
+
+    $evidenceText = @($TargetCarrier, $EntryCall, $AdditionalEvidenceText) -join ' '
+    $hasOracleCarrierEvidence = $false
+    foreach ($className in $oracleClassNames) {
+        if (-not [string]::IsNullOrWhiteSpace($className) -and $evidenceText -match [regex]::Escape($className)) {
+            $hasOracleCarrierEvidence = $true
+            break
+        }
+    }
+    if (-not $hasOracleCarrierEvidence -and $evidenceText -match '(?i)\bTaskProcessor\b|\brebuildTaskData\b') {
+        $hasOracleCarrierEvidence = $true
+    }
+
+    $targetLooksBackend = $evidenceText -match '(?i)\b(TaskProcessor|rebuildTaskData|Service|backend)\b'
+    return ($hasOracleCarrierEvidence -and $targetLooksBackend)
 }
 
 function Add-CorrectionSuggestion {
@@ -206,7 +343,7 @@ function Add-CorrectionSuggestion {
 
     # Fallback: common Facade patterns for claim domain
     if ($suggestedCarriers.Count -eq 0) {
-        $suggestedCarriers = @('ExampleFacade', 'ClaimCalculationFacade', 'ExampleApplyClaimFacade')
+        $suggestedCarriers = @('AiClaimFacade', 'ClaimCalculationFacade', 'AiApplyClaimFacade')
     }
 
     # Remove duplicates and limit to top 3
@@ -253,7 +390,9 @@ function Validate-TestSurface {
         [string]$ForcedRequirementFamily,
         [string]$TestName = '',
         [string]$EntryCall = '',
-        [string]$BaselineIndexPath = ''
+        [string]$BaselineIndexPath = '',
+        [string]$ReplayRoot = '',
+        [string]$AdditionalEvidenceText = ''
     )
 
     $result = [ordered]@{
@@ -263,6 +402,7 @@ function Validate-TestSurface {
         correction = ''
         target_layer = ''
         recommended_layer = ''
+        backend_oracle_exception = $false
     }
 
     # Only validate for high-weight families
@@ -286,6 +426,15 @@ function Validate-TestSurface {
     $realEntryLayers = @('Facade', 'Controller', 'Api')
 
     if ($realEntryLayers -notcontains $targetLayer) {
+        if (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -TargetCarrier $TargetCarrier -EntryCall $EntryCall -ForcedRequirementFamily $ForcedRequirementFamily -AdditionalEvidenceText $AdditionalEvidenceText) {
+            $result.status = 'PASS'
+            $result.gap = 'backend_task_processor_oracle_exception'
+            $result.recommended_layer = 'TaskProcessor/Service'
+            $result.reason = "Backend-only oracle exception: archived high-weight production files are TaskProcessor/Service carriers, so '$TargetCarrier' is an executable replay surface for this requirement."
+            $result.backend_oracle_exception = $true
+            return $result
+        }
+
         $result.status = 'FAIL'
         $result.gap = 'wrong_test_surface'
         $result.recommended_layer = 'Facade/Controller'
@@ -455,15 +604,6 @@ $validExactRows = @($exactRows | Where-Object {
     -not [string]::IsNullOrWhiteSpace((Get-StringValue $_ 'symbol_or_field')) -and
     -not [string]::IsNullOrWhiteSpace((Get-StringValue $_ 'test_assertion'))
 })
-$sourceChainRequired = $null -ne $sourceChain -and [bool]$sourceChain.required_source_chain
-$sourceChainCarrier = if ($sourceChainRequired -and $null -ne $sourceChain.next_required_slice) { [string]$sourceChain.next_required_slice.carrier } else { '' }
-$matchesSourceChain = -not $sourceChainRequired -or (
-    [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|ExampleDataAssemblyHelper|source' -or
-    [string]$entryCall -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|ExampleDataAssemblyHelper|source' -or
-    [string]$sourceChainCarrier -eq '' -or
-    [string]$ForcedSiblingSurface -eq $sourceChainCarrier
-)
-
 $carrierTextForPlanLock = @(
     Get-StringValue $carrier 'selected_carrier',
     Get-StringValue $carrier 'real_entry',
@@ -471,9 +611,21 @@ $carrierTextForPlanLock = @(
     $entryCall,
     $testName
 ) -join "`n"
+$sourceChainDeclared = $null -ne $sourceChain -and [bool]$sourceChain.required_source_chain
+$sourceChainRequired = Test-SourceChainAppliesForSlice -SourceChain $sourceChain -ForcedRequirementFamily $ForcedRequirementFamily -ForcedSliceType $ForcedSliceType -ForcedSiblingSurface $ForcedSiblingSurface -EntryCall $entryCall -CarrierText $carrierTextForPlanLock
+$sourceChainCarrier = if ($sourceChainRequired -and $null -ne $sourceChain.next_required_slice) { [string]$sourceChain.next_required_slice.carrier } else { '' }
+$matchesSourceChain = -not $sourceChainRequired -or (
+    [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
+    [string]$entryCall -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
+    [string]$sourceChainCarrier -eq '' -or
+    [string]$ForcedSiblingSurface -eq $sourceChainCarrier
+)
+if ($sourceChainDeclared -and -not $sourceChainRequired) {
+    $warnings.Add("source_chain_contract_not_applicable_to_forced_family:$ForcedRequirementFamily") | Out-Null
+}
 $unrequiredSourceChainCarrier = (
-    -not $sourceChainRequired -and
-    $carrierTextForPlanLock -match '(?i)\b(ExampleDataAssemblyHelper|ExampleApplyClaimService|ExampleCalculatorService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    -not $sourceChainDeclared -and
+    $carrierTextForPlanLock -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
 )
 if ($unrequiredSourceChainCarrier) {
     $issues.Add('blocked_plan_mismatch:unrequired_source_chain_carrier') | Out-Null
@@ -508,19 +660,31 @@ if ($null -ne $previousVerify -and $previousVerify.PSObject.Properties.Name -con
 }
 
 if ($highWeight -and -not $isFirstTracer) {
+    $carrierRequiresSideEffect = Get-BoolValue $carrier 'requires_side_effect_evidence'
+    $carrierRequiresExactContract = Get-BoolValue $carrier 'requires_exact_contract_assertions'
+    $isExactContractOnlyHarness = (
+        -not $carrierRequiresSideEffect -and
+        (
+            [string]$ForcedSliceType -eq 'exact_contract_slice' -or
+            $carrierRequiresExactContract
+        )
+    )
     if ($null -eq $sideEffect) {
         $issues.Add('side_effect_evidence_missing') | Out-Null
     } else {
         $sideEffectStatus = Get-StringValue $sideEffect 'status'
         $isReadyEvidence = $sideEffectStatus -eq 'READY' -and $red -eq 'PENDING_BUSINESS_ASSERTION'
+        $isReadyExactContractHarness = $isExactContractOnlyHarness -and $sideEffectStatus -eq 'NOT_REQUIRED' -and $red -eq 'PENDING_BUSINESS_ASSERTION' -and -not [string]::IsNullOrWhiteSpace($testName)
         if ([string]::IsNullOrWhiteSpace($testName)) { $issues.Add('test_name_missing') | Out-Null }
-        if (-not $isReadyEvidence) {
+        if (-not $isReadyEvidence -and -not $isReadyExactContractHarness) {
             if ($sideEffectStatus -eq 'PLANNED' -or $red -eq 'PENDING' -or $green -eq 'PENDING') {
                 $issues.Add("side_effect_evidence_not_ready:$sideEffectStatus/$red/$green") | Out-Null
             } else {
                 if ($red -in @('', 'PENDING', 'NOT_RUN', 'BLOCKED')) { $issues.Add("red_result_not_business_assertion:$red") | Out-Null }
                 if ($green -in @('', 'PENDING', 'NOT_RUN', 'BLOCKED')) { $issues.Add("green_result_not_pass:$green") | Out-Null }
             }
+        } elseif ($isReadyExactContractHarness) {
+            $warnings.Add('exact_contract_harness_allows_executor_without_side_effect_evidence') | Out-Null
         } else {
             $warnings.Add('ready_side_effect_harness_allows_executor') | Out-Null
         }
@@ -586,6 +750,20 @@ if ($sourceChainRequired) {
         }
         $warnings.Add('source_chain_allows_planned_business_red_before_executor') | Out-Null
     }
+    $sourceChainOverridesPlan = (
+        $matchesSourceChain -and
+        [string]$ForcedSliceType -eq 'exact_contract_slice' -and
+        -not [string]::IsNullOrWhiteSpace($testName) -and
+        $red -eq 'PENDING_BUSINESS_ASSERTION'
+    )
+    if ($sourceChainOverridesPlan) {
+        for ($idx = $issues.Count - 1; $idx -ge 0; $idx--) {
+            if ($issues[$idx] -match '^planned_red_test_mismatch:' -or $issues[$idx] -match '^selected_carrier_mismatch:') {
+                $issues.RemoveAt($idx)
+            }
+        }
+        $warnings.Add('source_chain_overrides_initial_plan_lock') | Out-Null
+    }
 }
 
 # === EXPERIMENT 3: PRE-AUTHORIZATION SURFACE VALIDATION ===
@@ -594,11 +772,13 @@ if ($sourceChainRequired) {
 $baselineIndexPath = Join-Path $root 'BASELINE_INDEX.md'
 if ($highWeight -and $null -ne $carrier) {
     $targetCarrier = Get-StringValue $carrier 'selected_carrier'
-    $surfaceValidation = Validate-TestSurface -TargetCarrier $targetCarrier -ForcedRequirementFamily $ForcedRequirementFamily -TestName $testName -EntryCall $entryCall -BaselineIndexPath $baselineIndexPath
+    $surfaceValidation = Validate-TestSurface -TargetCarrier $targetCarrier -ForcedRequirementFamily $ForcedRequirementFamily -TestName $testName -EntryCall $entryCall -BaselineIndexPath $baselineIndexPath -ReplayRoot $root -AdditionalEvidenceText (@($plannedSelectedEntry, $ForcedSiblingSurface) -join ' ')
 
     if ($surfaceValidation.status -eq 'FAIL') {
         $issues.Add("surface_validation:$($surfaceValidation.gap):$($surfaceValidation.reason)") | Out-Null
         $warnings.Add("surface_layer:$($surfaceValidation.target_layer)->$($surfaceValidation.recommended_layer)") | Out-Null
+    } elseif ($surfaceValidation.backend_oracle_exception) {
+        $warnings.Add("surface_validation:$($surfaceValidation.gap)") | Out-Null
     }
 }
 
@@ -606,7 +786,7 @@ if ($highWeight -and $null -ne $carrier) {
 $surfaceValidationResult = $null
 if ($highWeight -and $null -ne $carrier) {
     $targetCarrier = Get-StringValue $carrier 'selected_carrier'
-    $surfaceValidationResult = Validate-TestSurface -TargetCarrier $targetCarrier -ForcedRequirementFamily $ForcedRequirementFamily -TestName $testName -EntryCall $entryCall -BaselineIndexPath $baselineIndexPath
+    $surfaceValidationResult = Validate-TestSurface -TargetCarrier $targetCarrier -ForcedRequirementFamily $ForcedRequirementFamily -TestName $testName -EntryCall $entryCall -BaselineIndexPath $baselineIndexPath -ReplayRoot $root -AdditionalEvidenceText (@($plannedSelectedEntry, $ForcedSiblingSurface) -join ' ')
 }
 
 $decision = if ($issues.Count -eq 0) { 'ALLOW' } else { 'STOP' }

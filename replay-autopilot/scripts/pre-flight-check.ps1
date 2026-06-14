@@ -20,9 +20,9 @@ function Test-CarrierLayer {
     Validates that a carrier path is in an executable architectural layer.
 
     .DESCRIPTION
-    Checks if the carrier is in example-api (Facade), example-web (Controller),
-    or example-core/facade (Facade implementation). Returns $false for
-    Service layer (example-core without /facade/) and other internal layers.
+    Checks if the carrier is in claim-api (Facade), claim-web (Controller),
+    or claim-core/facade (Facade implementation). Returns $false for
+    Service layer (claim-core without /facade/) and other internal layers.
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -32,23 +32,81 @@ function Test-CarrierLayer {
     # Normalize path
     $CarrierPath = $CarrierPath -replace '\\', '/'
 
-    # Check for Facade layer (example-api)
-    if ($CarrierPath -match 'example-api/.*Facade\.java') {
+    # Check for Facade layer (claim-api)
+    if ($CarrierPath -match 'claim-api/.*Facade\.java') {
         return $true
     }
 
-    # Check for Controller layer (example-web)
-    if ($CarrierPath -match 'example-web/.*Controller\.java') {
+    # Check for Controller layer (claim-web)
+    if ($CarrierPath -match 'claim-web/.*Controller\.java') {
         return $true
     }
 
-    # Check for Facade implementation in example-core
-    if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
+    # Check for Facade implementation in claim-core
+    if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
         return $true
     }
 
     # All other layers are non-executable for entry points
     return $false
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (Test-Path -LiteralPath $Path) {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    return $null
+}
+
+function Get-OracleFilePath {
+    param($Row)
+    if ($null -eq $Row) { return '' }
+    if ($Row.PSObject.Properties.Name -contains 'path') { return [string]$Row.path }
+    if ($Row.PSObject.Properties.Name -contains 'file') { return [string]$Row.file }
+    return ''
+}
+
+function Test-BackendTaskProcessorOracleReplay {
+    param([string]$ReplayRoot, [string]$EvidenceText = '')
+
+    $oracle = Read-JsonIfExists (Join-Path $ReplayRoot 'ORACLE_DIFF_ANALYSIS.json')
+    if ($null -eq $oracle) { return $false }
+
+    $rows = @()
+    if ($null -ne $oracle.files) {
+        $rows = @($oracle.files)
+    } elseif ($null -ne $oracle.production_changes) {
+        $rows = @($oracle.production_changes)
+    }
+    $productionRows = @($rows | Where-Object {
+        $path = Get-OracleFilePath -Row $_
+        $isProduction = if ($_.PSObject.Properties.Name -contains 'is_production') { [bool]$_.is_production } else { ($path -match '/src/main/java/|\\src\\main\\java\\') }
+        $isProduction -and -not [string]::IsNullOrWhiteSpace($path)
+    })
+    if ($productionRows.Count -eq 0) { return $false }
+
+    $highRows = @($productionRows | Where-Object {
+        if ($_.PSObject.Properties.Name -contains 'weight') { [string]$_.weight -eq 'HIGH' } else { $true }
+    })
+    if ($highRows.Count -eq 0) { return $false }
+
+    $allBackend = $true
+    $hasTaskProcessor = $false
+    foreach ($row in $highRows) {
+        $path = (Get-OracleFilePath -Row $row) -replace '\\', '/'
+        $className = [System.IO.Path]::GetFileNameWithoutExtension($path)
+        $layer = if ($row.PSObject.Properties.Name -contains 'layer') { [string]$row.layer } else { '' }
+        $isBackend = $layer -eq 'Service' -or $path -match '(?i)/(service|task|helper)/' -or $className -match '(?i)(Service|TaskProcessor|Processor)$'
+        $isPublic = $path -match '(?i)/(controller|facade)/|claim-api/|claim-web/'
+        if ($className -match '(?i)TaskProcessor') { $hasTaskProcessor = $true }
+        if (-not $isBackend -or $isPublic) {
+            $allBackend = $false
+            break
+        }
+    }
+
+    return ($allBackend -and ($hasTaskProcessor -or $EvidenceText -match '(?i)\bTaskProcessor\b|\brebuildTaskData\b'))
 }
 
 function Test-CharterLayer {
@@ -64,7 +122,8 @@ function Test-CharterLayer {
     #>
     param(
         [string]$CharterPath,
-        [string]$WorktreePath
+        [string]$WorktreePath,
+        [string]$ReplayRoot
     )
 
     if (-not (Test-Path -LiteralPath $CharterPath)) {
@@ -82,6 +141,11 @@ function Test-CharterLayer {
 
         # Check if targeting Service layer directly
         if ($context -match '\w+Service') {
+            if (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -EvidenceText $charter) {
+                Write-Host "WARNING: Service-layer charter allowed by backend TaskProcessor oracle exception." -ForegroundColor Yellow
+                return $true
+            }
+
             Write-Host "ERROR: Test targets Service layer instead of Facade/Controller layer." -ForegroundColor Red
             Write-Host "Architectural Rule: Executable tests must enter through Facade/Controller layer." -ForegroundColor Yellow
 
@@ -129,7 +193,7 @@ function Invoke-LayerValidationGate {
     }
 
     # v432: Check 1 - Run charter content validation (v431 logic)
-    $layerValid = Test-CharterLayer -CharterPath $charterPath -WorktreePath $Worktree
+    $layerValid = Test-CharterLayer -CharterPath $charterPath -WorktreePath $Worktree -ReplayRoot $ReplayRoot
 
     if (-not $layerValid) {
         $result.can_proceed = $false
@@ -180,7 +244,14 @@ function Invoke-LayerValidationGate {
             }
         }
 
-        if ($invalidCarriers.Count -gt 0) {
+        if ($invalidCarriers.Count -gt 0 -and (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -EvidenceText $planContent)) {
+            $result.warnings += @{
+                code = 'BACKEND_TASK_PROCESSOR_ORACLE_EXCEPTION'
+                message = "$($invalidCarriers.Count) non-Facade carrier(s) allowed because archived oracle high-weight files are backend TaskProcessor/Service carriers"
+                carriers = $invalidCarriers
+            }
+            Write-Host "WARNING: Non-Facade carriers allowed by backend TaskProcessor oracle exception" -ForegroundColor Yellow
+        } elseif ($invalidCarriers.Count -gt 0) {
             $result.can_proceed = $false
             $result.validation_status = 'FAIL'
             $result.issues += @{

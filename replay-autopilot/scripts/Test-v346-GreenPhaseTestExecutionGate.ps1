@@ -55,8 +55,8 @@ if ($content -notmatch 'src/test/\(java\|resources\)') {
     Write-Host "FAIL: module inference does not inspect src/test/java or src/test/resources paths" -ForegroundColor Red
     exit 1
 }
-if ($content -match "\$testModule\s*=\s*'example-server'") {
-    Write-Host "FAIL: GREEN test execution still hardcodes example-server as the module" -ForegroundColor Red
+if ($content -match "\$testModule\s*=\s*'claim-server'") {
+    Write-Host "FAIL: GREEN test execution still hardcodes claim-server as the module" -ForegroundColor Red
     exit 1
 }
 Write-Host "PASS: test module is inferred from test evidence paths" -ForegroundColor Green

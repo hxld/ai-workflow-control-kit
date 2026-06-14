@@ -49,7 +49,7 @@ def search_service_classes(feature_name: str, project_root: Path) -> List[Path]:
     ]
 
     # Also search for common service patterns
-    service_root = project_root / "example-core" / "src" / "main" / "java"
+    service_root = project_root / "claim-core" / "src" / "main" / "java"
     if not service_root.exists():
         return []
 

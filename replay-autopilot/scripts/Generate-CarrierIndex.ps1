@@ -7,7 +7,7 @@ Scans the codebase for all Facade and Controller classes, writes them to
 SURFACE_CARRIER_SCAN.md for use by planning prompts.
 
 .PARAMETER ProjectRoot
-Root directory of the project (e.g., <PROJECT_ROOT>)
+Root directory of the project (e.g., D:\opt\claim)
 
 .PARAMETER OutputPath
 Output file path (default: {ProjectRoot}\SURFACE_CARRIER_SCAN.md)
@@ -54,13 +54,13 @@ try {
     $output += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     $output += "Project Root: $ProjectRoot"
     $output += ""
-    $output += "## Facade Layer (example-api / example-api-open)"
+    $output += "## Facade Layer (claim-api / claim-api-open)"
     $output += ""
 
     # Find all Facade interfaces
     $facades = @(rg "public interface.*Facade" --type java -n 2>$null |
                 ForEach-Object { Convert-RgClassMatch $_ } |
-                Where-Object { $_ -and $_.Path -match '(^|/)(example-api|example-api-open)(/|$)' })
+                Where-Object { $_ -and $_.Path -match '(^|/)(claim-api|claim-api-open)(/|$)' })
 
     foreach ($facade in ($facades | Sort-Object Name)) {
         if ($facade) {
@@ -69,7 +69,7 @@ try {
     }
 
     $output += ""
-    $output += "## Controller Layer (example-web)"
+    $output += "## Controller Layer (claim-web)"
     $output += ""
 
     # Find all Controllers
@@ -84,7 +84,7 @@ try {
     }
 
     $output += ""
-    $output += "## Facade Implementation Layer (example-core/.../facade/)"
+    $output += "## Facade Implementation Layer (claim-core/.../facade/)"
     $output += ""
 
     # Find all FacadeImpl classes

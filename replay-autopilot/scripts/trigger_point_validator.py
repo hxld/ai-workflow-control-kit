@@ -6,8 +6,8 @@ Validates that the selected carrier matches the trigger point in requirement tex
 This addresses the 'wrong_test_surface' gap by ensuring correct AI task processor selection.
 
 Maps 'XX成功后' language patterns to correct AI task processor types:
-- 'AI核赔结果获取成功后' → ExampleApplyClaimApiTaskProcessor (Apply Claim task)
-- '赔款计算成功后' → ExampleCalculatorApiTaskProcessor (Calculate Loss task)
+- 'AI核赔结果获取成功后' → AiApplyClaimApiTaskProcessor (Apply Claim task)
+- '赔款计算成功后' → AiCalculateLossApiTaskProcessor (Calculate Loss task)
 """
 
 import sys
@@ -19,24 +19,24 @@ from typing import Dict, List, Tuple, Optional
 
 # Trigger point to processor mapping
 TRIGGER_PATTERNS = {
-    "AI核赔结果获取成功后": "ExampleApplyClaimApiTaskProcessor",
-    "核赔结果获取成功后": "ExampleApplyClaimApiTaskProcessor",
-    "AI核赔成功后": "ExampleApplyClaimApiTaskProcessor",
-    "核赔成功后": "ExampleApplyClaimApiTaskProcessor",
-    "赔款计算成功后": "ExampleCalculatorApiTaskProcessor",
-    "计算损失成功后": "ExampleCalculatorApiTaskProcessor",
-    "理算成功后": "ExampleCalculatorApiTaskProcessor",
+    "AI核赔结果获取成功后": "AiApplyClaimApiTaskProcessor",
+    "核赔结果获取成功后": "AiApplyClaimApiTaskProcessor",
+    "AI核赔成功后": "AiApplyClaimApiTaskProcessor",
+    "核赔成功后": "AiApplyClaimApiTaskProcessor",
+    "赔款计算成功后": "AiCalculateLossApiTaskProcessor",
+    "计算损失成功后": "AiCalculateLossApiTaskProcessor",
+    "理算成功后": "AiCalculateLossApiTaskProcessor",
 }
 
 # Task processor to trigger pattern reverse mapping (for validation)
 PROCESSOR_TO_TRIGGER = {
-    "ExampleApplyClaimApiTaskProcessor": [
+    "AiApplyClaimApiTaskProcessor": [
         "AI核赔结果获取成功后",
         "核赔结果获取成功后",
         "AI核赔成功后",
         "核赔成功后",
     ],
-    "ExampleCalculatorApiTaskProcessor": [
+    "AiCalculateLossApiTaskProcessor": [
         "赔款计算成功后",
         "计算损失成功后",
         "理算成功后",

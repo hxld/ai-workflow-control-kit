@@ -55,27 +55,27 @@ function Test-TriggerPointValidation {
     $testCases = @(
         @{
             Requirement = "AI核赔结果获取成功后，自动流转"
-            Carrier = "ExampleCalculatorApiTaskProcessor"
+            Carrier = "AiCalculateLossApiTaskProcessor"
             ShouldPass = $false
-            Reason = "Wrong: AI核赔 should use ExampleApplyClaimApiTaskProcessor"
+            Reason = "Wrong: AI核赔 should use AiApplyClaimApiTaskProcessor"
         },
         @{
             Requirement = "AI核赔结果获取成功后，自动流转"
-            Carrier = "ExampleApplyClaimApiTaskProcessor"
+            Carrier = "AiApplyClaimApiTaskProcessor"
             ShouldPass = $true
-            Reason = "Correct: AI核赔 maps to ExampleApplyClaimApiTaskProcessor"
+            Reason = "Correct: AI核赔 maps to AiApplyClaimApiTaskProcessor"
         },
         @{
             Requirement = "赔款计算成功后"
-            Carrier = "ExampleCalculatorApiTaskProcessor"
+            Carrier = "AiCalculateLossApiTaskProcessor"
             ShouldPass = $true
-            Reason = "Correct: 赔款计算 maps to ExampleCalculatorApiTaskProcessor"
+            Reason = "Correct: 赔款计算 maps to AiCalculateLossApiTaskProcessor"
         },
         @{
             Requirement = "赔款计算成功后"
-            Carrier = "ExampleApplyClaimApiTaskProcessor"
+            Carrier = "AiApplyClaimApiTaskProcessor"
             ShouldPass = $false
-            Reason = "Wrong: 赔款计算 should use ExampleCalculatorApiTaskProcessor"
+            Reason = "Wrong: 赔款计算 should use AiCalculateLossApiTaskProcessor"
         }
     )
 
@@ -109,18 +109,18 @@ function Test-CarrierSuggestion {
 
     $requirement = "AI核赔结果获取成功后"
     $availableCarriers = @(
-        "ExampleCalculatorApiTaskProcessor",
-        "ExampleApplyClaimApiTaskProcessor",
+        "AiCalculateLossApiTaskProcessor",
+        "AiApplyClaimApiTaskProcessor",
         "CaseFlowStatusService"
     ) | ConvertTo-Json
 
     $result = python $ValidatorScript suggest $requirement $availableCarriers 2>&1 | ConvertFrom-Json
 
-    if ($result.suggested_carrier -eq "ExampleApplyClaimApiTaskProcessor") {
-        Write-Host "  PASS: Correctly suggested ExampleApplyClaimApiTaskProcessor" -ForegroundColor Green
+    if ($result.suggested_carrier -eq "AiApplyClaimApiTaskProcessor") {
+        Write-Host "  PASS: Correctly suggested AiApplyClaimApiTaskProcessor" -ForegroundColor Green
         return $true
     } else {
-        Write-Host "  FAIL: Expected ExampleApplyClaimApiTaskProcessor, got $($result.suggested_carrier)" -ForegroundColor Red
+        Write-Host "  FAIL: Expected AiApplyClaimApiTaskProcessor, got $($result.suggested_carrier)" -ForegroundColor Red
         return $false
     }
 }
@@ -130,12 +130,12 @@ function Test-V446BugReproduction {
 
     # This is the exact bug from v446
     $requirement = "AI核赔结果获取成功后，自动流转到保险公司理算"
-    $wrongCarrier = "ExampleCalculatorApiTaskProcessor"
+    $wrongCarrier = "AiCalculateLossApiTaskProcessor"
 
     $result = python $ValidatorScript validate $requirement $wrongCarrier 2>&1 | ConvertFrom-Json
 
     if ($result.valid -eq $false) {
-        Write-Host "  PASS: v446 bug detected - ExampleCalculatorApiTaskProcessor correctly rejected for AI核赔 trigger" -ForegroundColor Green
+        Write-Host "  PASS: v446 bug detected - AiCalculateLossApiTaskProcessor correctly rejected for AI核赔 trigger" -ForegroundColor Green
         Write-Host "    Error message: $($result.error)" -ForegroundColor Cyan
         return $true
     } else {

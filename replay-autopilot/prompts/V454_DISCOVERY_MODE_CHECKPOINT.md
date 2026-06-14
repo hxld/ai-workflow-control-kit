@@ -30,7 +30,7 @@ If checkpoint returns WARN (not FAIL), proceed in discovery mode
 
 - Coverage: 0% → >40% (S1 completes with at least core_entry family touched)
 - Rounds to progress: 11 → 1 (S1 completes)
-- Oracle overlap: 0% → >30% (at least ExampleApiTaskProcessor touched)
+- Oracle overlap: 0% → >30% (at least AiApplyClaimApiTaskProcessor touched)
 
 ---
 
@@ -38,7 +38,7 @@ If checkpoint returns WARN (not FAIL), proceed in discovery mode
 
 ```powershell
 # Run discovery mode experiment
-Invoke-ReplayAutopilot -Feature example-feature -Mode Discovery -MaxRounds 2
+Invoke-ReplayAutopilot -Feature aiClaimV2 -Mode Discovery -MaxRounds 2
 
 # Validate S1 completion
 $S1Result = Get-Content "$replayRoot\SLICE_VERIFY_01.json" | ConvertFrom-Json

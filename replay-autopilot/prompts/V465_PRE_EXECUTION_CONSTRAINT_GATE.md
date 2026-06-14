@@ -52,7 +52,7 @@ If `PRE_EXECUTION_CONSTRAINT_CHECK.json` status is `FAIL`:
 ## Validation Command
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Invoke-PreExecutionConstraintCheck.ps1 -ReplayRoot REPLAY_ROOT -Worktree WORKTREE -PlanResultPath PLAN_RESULT.json
+powershell -NoProfile -ExecutionPolicy Bypass -File D:\opt\replay-autopilot\scripts\Invoke-PreExecutionConstraintCheck.ps1 -ReplayRoot REPLAY_ROOT -Worktree WORKTREE -PlanResultPath PLAN_RESULT.json
 ```
 
 ## Expected Exit Codes

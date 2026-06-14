@@ -25,14 +25,14 @@ rg "class.*Facade.*java" --type java
 ## Step 1: Search for Facade Carriers
 
 ```bash
-rg "class.*Facade.*java" --type java example-core/src/main/java/
+rg "class.*Facade.*java" --type java claim-core/src/main/java/
 ```
 
 **Found Facades:**
-- `ExampleFacade` - Methods: submit, query, update
+- `AiClaimFacade` - Methods: submit, query, update
 - `ClaimCalculationFacade` - Methods: calculate, getBook
 
-**Decision:** Use `ExampleFacade` as entry point for core_entry family
+**Decision:** Use `AiClaimFacade` as entry point for core_entry family
 **Reason:** Facade layer is required for core_entry family per architecture
 ```
 
@@ -57,13 +57,13 @@ You MUST provide:
 ### New Service Justification
 
 **all_facades_checked:**
-- ExampleFacade - Checked: Methods do not include auto flow trigger
+- AiClaimFacade - Checked: Methods do not include auto flow trigger
 - ClaimCalculationFacade - Checked: Only calculation methods
 - RiskInfoFacade - Checked: Only risk query methods
 - ... (list ALL Facades checked)
 
 **facade_insufficiency_reason:**
-- `ExampleFacade`: Has `submit` method but not `triggerAutoFlow`
+- `AiClaimFacade`: Has `submit` method but not `triggerAutoFlow`
 - `ClaimCalculationFacade`: Read-only calculation, no state change
 - `RiskInfoFacade`: Risk query only, no flow orchestration
 
@@ -107,11 +107,11 @@ The verifier will check:
 ### Step 1: Search Facade Layer
 
 ```bash
-rg "class.*Facade.*java" --type java example-core/src/main/java/
+rg "class.*Facade.*java" --type java claim-core/src/main/java/
 ```
 
 **Found 5 Facades:**
-1. `ExampleFacade` - Methods: submit, query, updateStatus
+1. `AiClaimFacade` - Methods: submit, query, updateStatus
 2. `ClaimCalculationFacade` - Methods: calculate, getBook
 3. `RiskInfoFacade` - Methods: queryRisk, updateRisk
 4. `CompensateFacade` - Methods: create, query, update
@@ -119,7 +119,7 @@ rg "class.*Facade.*java" --type java example-core/src/main/java/
 
 ### Step 2: Check Each Facade for Auto Flow Support
 
-**ExampleFacade:** No `triggerAutoFlow` method found
+**AiClaimFacade:** No `triggerAutoFlow` method found
 **ClaimCalculationFacade:** Calculation only, no flow methods
 **RiskInfoFacade:** Read-only query methods
 **CompensateFacade:** Compensation-specific methods
@@ -127,7 +127,7 @@ rg "class.*Facade.*java" --type java example-core/src/main/java/
 
 ### Step 3: Decision
 
-**Selected Carrier:** `ExampleFacade` (EXISTING)
+**Selected Carrier:** `AiClaimFacade` (EXISTING)
 **Reason:** Closest match for core_entry family, has `submit` method that can be extended
 **Layer:** Facade (correct for core_entry)
 **Implementation:** Add new method `triggerAutoFlow` to existing Facade
@@ -138,11 +138,11 @@ rg "class.*Facade.*java" --type java example-core/src/main/java/
 ```markdown
 ## WRONG: Skipping Facade Search
 
-### Selected Carrier: ExampleFlowService (NEW)
+### Selected Carrier: AiAutoClaimFlowService (NEW)
 
 **Problem:**
 1. Did NOT search `rg "class.*Facade.*java"` first
-2. Did NOT check `ExampleFacade` which could handle this
+2. Did NOT check `AiClaimFacade` which could handle this
 3. Created NEW service when existing Facade exists
 
 **Correct Action:**
@@ -174,7 +174,7 @@ When writing `IMPLEMENTATION_CONTRACT.md`, each carrier must include:
 
 ```json
 {
-  "classpath": "com.example.project.api.facade.ExampleFacade",
+  "classpath": "com.huize.claim.api.facade.AiClaimFacade",
   "target_family": "core_entry",
   "target_layer": "Facade",
   "layer_justification": "Facade layer is required for core_entry family per architectural rules",
@@ -187,13 +187,13 @@ For NEW services:
 
 ```json
 {
-  "classpath": "com.example.project.service.ExampleFlowService",
+  "classpath": "com.huize.claim.service.AiAutoClaimFlowService",
   "target_family": "core_entry",
   "target_layer": "Service",
   "layer_justification": "No existing Facade has auto flow trigger capability; all_facades_checked lists 5 Facades, all inadequate for flow orchestration",
   "carrier_type": "NEW",
   "all_facades_checked": [
-    "ExampleFacade",
+    "AiClaimFacade",
     "ClaimCalculationFacade",
     "RiskInfoFacade",
     "CompensateFacade",

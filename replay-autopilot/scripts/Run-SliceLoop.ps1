@@ -32,7 +32,6 @@ param(
     [string]$Approval = 'never',
     [int]$TimeoutMinutes = 240,
     [int]$MaxSlices = 3,
-    [string]$MavenSettings = '',
     [switch]$ValidateOnly
 )
 
@@ -72,6 +71,97 @@ function Read-JsonObject {
         }
         throw
     }
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return Read-JsonObject -Path $Path } catch { return $null }
+}
+
+function Read-FeatureClassification {
+    param([string]$ReplayRoot)
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot)) { return $null }
+    return Read-JsonIfExists -Path (Join-Path $ReplayRoot 'FEATURE_CLASSIFICATION.json')
+}
+
+function Resolve-RunSliceLoopScriptRoot {
+    if (-not [string]::IsNullOrWhiteSpace($script:RunSliceLoopScriptRootOverride)) {
+        return $script:RunSliceLoopScriptRootOverride
+    }
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot
+    }
+    return (Split-Path -Parent $PSCommandPath)
+}
+
+function Test-NarrowBackendReadOnlyFeature {
+    param($FeatureClassification)
+    if ($null -eq $FeatureClassification) { return $false }
+    $classification = [string]$FeatureClassification.classification
+    $baseClassification = [string]$FeatureClassification.base_classification
+    $readOnly = $false
+    if ($FeatureClassification.PSObject.Properties.Name -contains 'read_only') {
+        $readOnly = [bool]$FeatureClassification.read_only
+    }
+    return $readOnly -and (
+        $classification -eq 'narrow_backend_read_only_fix' -or
+        $baseClassification -eq 'narrow_backend_fix'
+    )
+}
+
+function Get-FeatureNonApplicableFamilies {
+    param($FeatureClassification)
+    $families = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $FeatureClassification) { return @() }
+    if ($null -ne $FeatureClassification.verifier_adjustments -and
+        $FeatureClassification.verifier_adjustments.PSObject.Properties.Name -contains 'non_applicable_families') {
+        foreach ($family in @(Get-StringArray $FeatureClassification.verifier_adjustments.non_applicable_families)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$family) -and -not $families.Contains([string]$family)) {
+                $families.Add([string]$family) | Out-Null
+            }
+        }
+    }
+    if (Test-NarrowBackendReadOnlyFeature -FeatureClassification $FeatureClassification) {
+        foreach ($family in @('stateful_side_effect', 'deploy_export_page', 'config_policy_threshold', 'generated_artifact_template_upload', 'external_integration', 'lifecycle_cleanup_retention')) {
+            if (-not $families.Contains($family)) { $families.Add($family) | Out-Null }
+        }
+    }
+    return @($families)
+}
+
+function Apply-FeatureClassificationToLedger {
+    param(
+        $Ledger,
+        [string]$ReplayRoot
+    )
+    if ($null -eq $Ledger -or $null -eq $Ledger.families) { return $false }
+    $feature = Read-FeatureClassification -ReplayRoot $ReplayRoot
+    if ($null -eq $feature) { return $false }
+    $nonApplicableFamilies = @(Get-FeatureNonApplicableFamilies -FeatureClassification $feature)
+    if ($nonApplicableFamilies.Count -eq 0) { return $false }
+
+    $changed = $false
+    Set-ObjectProperty -Object $Ledger -Name 'feature_classification' -Value ([ordered]@{
+        classification = [string]$feature.classification
+        base_classification = [string]$feature.base_classification
+        read_only = [bool]$feature.read_only
+        non_applicable_families = @($nonApplicableFamilies)
+    })
+    foreach ($family in @($Ledger.families)) {
+        $id = [string]$family.id
+        if ([string]::IsNullOrWhiteSpace($id)) { continue }
+        if ($nonApplicableFamilies -notcontains $id) { continue }
+        if (-not [bool]$family.required -and [string]$family.status -eq 'NOT_APPLICABLE_BY_FEATURE_CLASSIFIER') { continue }
+        Set-ObjectProperty -Object $family -Name 'required' -Value $false
+        Set-ObjectProperty -Object $family -Name 'status' -Value 'NOT_APPLICABLE_BY_FEATURE_CLASSIFIER'
+        Set-ObjectProperty -Object $family -Name 'coverage_cap_if_open' -Value 100
+        Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+        Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+        Set-ObjectProperty -Object $family -Name 'last_reason' -Value 'Excluded by feature classifier; this feature class is narrow backend read-only and does not require this family unless requirement_source explicitly says otherwise.'
+        $changed = $true
+    }
+    return $changed
 }
 
 function Move-ReplayScratchArtifacts {
@@ -177,11 +267,89 @@ function Get-TestModuleFromSliceEvidence {
     return ''
 }
 
+function Get-TestClassFromSliceEvidence {
+    param($SliceResultObject)
+
+    $candidatePaths = New-Object System.Collections.Generic.List[string]
+    if ($null -ne $SliceResultObject -and $SliceResultObject.PSObject.Properties['behavior_test_charter']) {
+        foreach ($file in @(Get-SliceEvidenceFiles -BehaviorCharter $SliceResultObject.behavior_test_charter)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$file)) {
+                $candidatePaths.Add([string]$file) | Out-Null
+            }
+        }
+    }
+    foreach ($propertyName in @('implemented_files', 'current_slice_changed_files', 'changed_files')) {
+        if ($null -ne $SliceResultObject -and $SliceResultObject.PSObject.Properties[$propertyName]) {
+            foreach ($file in @($SliceResultObject.$propertyName)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$file)) {
+                    $candidatePaths.Add([string]$file) | Out-Null
+                }
+            }
+        }
+    }
+    if ($null -ne $SliceResultObject -and $SliceResultObject.PSObject.Properties['tests']) {
+        foreach ($testEntry in @($SliceResultObject.tests)) {
+            foreach ($propertyName in @('evidence_file', 'file', 'path')) {
+                if ($testEntry.PSObject.Properties[$propertyName]) {
+                    $pathValue = [string]$testEntry.$propertyName
+                    if (-not [string]::IsNullOrWhiteSpace($pathValue)) {
+                        $candidatePaths.Add($pathValue) | Out-Null
+                    }
+                }
+            }
+        }
+    }
+
+    foreach ($pathValue in @($candidatePaths | Select-Object -Unique)) {
+        $normalized = ([string]$pathValue).Trim().Trim('"').Trim("'") -replace '\\', '/'
+        $leaf = [System.IO.Path]::GetFileName($normalized)
+        if ($leaf -match '^(?<class>[A-Za-z_][A-Za-z0-9_]*Test)\.java$') {
+            return $matches['class']
+        }
+    }
+
+    return ''
+}
+
 function Test-TransientExecutorError {
     param([string]$StdoutLogPath)
     if (-not (Test-Path -LiteralPath $StdoutLogPath)) { return $false }
     $logText = Get-Content -LiteralPath $StdoutLogPath -Raw -Encoding UTF8
     return ($logText -match '(?i)429|rate.?limit|too.?many.?requests|throttl')
+}
+
+function Get-LatestExecutorMetadata {
+    param([string]$LogDir)
+    if ([string]::IsNullOrWhiteSpace($LogDir) -or -not (Test-Path -LiteralPath $LogDir)) { return $null }
+    $metaFile = Get-ChildItem -LiteralPath $LogDir -Filter '*.exec.json' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($null -eq $metaFile) { return $null }
+    try {
+        return Get-Content -LiteralPath $metaFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-PermanentExecutorResourceBlocker {
+    param([string]$LogDir)
+    $meta = Get-LatestExecutorMetadata -LogDir $LogDir
+    if ($null -eq $meta) {
+        return [pscustomobject]@{ IsResourceBlocker = $false; Category = ''; Diagnostic = '' }
+    }
+    $category = [string]$meta.failure_category
+    $resourceCategories = @('executor_credit_required', 'usage_limit', 'auth')
+    if ($resourceCategories -notcontains $category) {
+        return [pscustomobject]@{ IsResourceBlocker = $false; Category = $category; Diagnostic = '' }
+    }
+    $diagnostic = switch ($category) {
+        'executor_credit_required' { 'Executor account needs credit or positive balance before replay can continue.' }
+        'usage_limit' { 'Executor usage limit reached; wait for quota reset or intentionally switch executor.' }
+        'auth' { 'Executor authentication failed; login must be repaired before replay can continue.' }
+        default { 'Executor resource blocker.' }
+    }
+    return [pscustomobject]@{ IsResourceBlocker = $true; Category = $category; Diagnostic = $diagnostic }
 }
 
 function Invoke-SliceExecutorWithRetry {
@@ -236,8 +404,7 @@ function Invoke-GreenPhaseNoMockGate {
         [Parameter(Mandatory = $true)]
         [int]$SliceIndex,
         [Parameter(Mandatory = $true)]
-        [string]$RunnerContractPath,
-        [string]$MavenSettings = ''
+        [string]$RunnerContractPath
     )
 
     $gatePath = Join-Path $ReplayRoot ('GREEN_PHASE_VERIFY_{0:D2}.json' -f $SliceIndex)
@@ -284,8 +451,8 @@ function Invoke-GreenPhaseNoMockGate {
         return [pscustomobject]@{ CanProceed = $false; ResultPath = $gatePath; Blocker = 'verify_green_phase_script_missing' }
     }
 
-    $implementedFiles | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $implementedFilesPath -Encoding UTF8
-    $touchedFamilies | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $touchedFamiliesPath -Encoding UTF8
+    ConvertTo-Json -InputObject @($implementedFiles) -Depth 6 | Set-Content -LiteralPath $implementedFilesPath -Encoding UTF8
+    ConvertTo-Json -InputObject @($touchedFamilies) -Depth 6 | Set-Content -LiteralPath $touchedFamiliesPath -Encoding UTF8
 
     # v346: Test Execution Verification - implemented files require an executable GREEN test,
     # even when touched family metadata is missing or stale.
@@ -315,6 +482,9 @@ function Invoke-GreenPhaseNoMockGate {
             }
         }
     }
+    if ([string]::IsNullOrWhiteSpace($testClass)) {
+        $testClass = Get-TestClassFromSliceEvidence -SliceResultObject $sliceResultObject
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($testClass)) {
         Write-Host "Running test execution verification for $testClass..." -ForegroundColor Cyan
@@ -329,7 +499,7 @@ function Invoke-GreenPhaseNoMockGate {
             $testExecutionResult.reason = 'test_execution_running'
 
             $mavenArgs = @(
-                '-s', $MavenSettings,
+                '-s', 'D:\maven\settings\settings.xml',
                 '-f', (Join-Path $Worktree 'pom.xml'),
                 'test',
                 '-pl', $testModule,
@@ -366,8 +536,25 @@ function Invoke-GreenPhaseNoMockGate {
         return [pscustomobject]@{ CanProceed = $false; ResultPath = $testExecutionPath; Blocker = $blocker }
     }
 
-    & python $gateScript verify $Worktree $implementedFilesPath $touchedFamiliesPath > $stdoutPath 2> $stderrPath
+    $pythonResolver = Join-Path (Resolve-RunSliceLoopScriptRoot) 'Resolve-PythonLauncher.ps1'
+    . $pythonResolver
+    $python = Resolve-PythonLauncher
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $pythonOutput = & $python.Command @($python.Arguments + @($gateScript, 'verify', $Worktree, $implementedFilesPath, $touchedFamiliesPath)) 2>&1
     $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldPreference
+    $stdoutItems = @()
+    $stderrItems = @()
+    foreach ($line in @($pythonOutput)) {
+        if ($line -is [System.Management.Automation.ErrorRecord]) {
+            $stderrItems += [string]$line
+        } else {
+            $stdoutItems += [string]$line
+        }
+    }
+    Set-Content -LiteralPath $stdoutPath -Encoding UTF8 -Value $stdoutItems
+    Set-Content -LiteralPath $stderrPath -Encoding UTF8 -Value $stderrItems
     $stdoutText = Read-TextIfExists -Path $stdoutPath
     $stderrText = Read-TextIfExists -Path $stderrPath
     try {
@@ -397,7 +584,10 @@ function Invoke-GreenPhaseNoMockGate {
         $gateResult = [pscustomobject]@{
             can_proceed = $false
             block_green = $true
-            issues = @([pscustomobject]@{ code = 'green_phase_gate_unparseable'; message = $_.Exception.Message })
+            issues = @([pscustomobject]@{
+                code = 'green_phase_gate_unparseable'
+                message = $_.Exception.Message
+            })
         }
     }
     Set-ObjectProperty -Object $gateResult -Name 'gate' -Value 'green_phase_no_mock'
@@ -473,6 +663,153 @@ function Resolve-SliceEvidenceFile {
     return (Join-Path $Worktree $clean)
 }
 
+function Get-SliceEvidenceFiles {
+    param($BehaviorCharter)
+
+    $files = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $BehaviorCharter) { return @() }
+
+    if ($BehaviorCharter.PSObject.Properties['evidence_files']) {
+        foreach ($file in @(Get-StringArray $BehaviorCharter.evidence_files)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$file)) {
+                $files.Add(([string]$file).Trim()) | Out-Null
+            }
+        }
+    }
+
+    if ($BehaviorCharter.PSObject.Properties['evidence_file']) {
+        $rawEvidenceFile = [string]$BehaviorCharter.evidence_file
+        if (-not [string]::IsNullOrWhiteSpace($rawEvidenceFile)) {
+            foreach ($file in @($rawEvidenceFile -split "[,;`r`n]+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+                $files.Add(([string]$file).Trim()) | Out-Null
+            }
+        }
+    }
+
+    return @($files | Select-Object -Unique)
+}
+
+function Get-SourcePathModule {
+    param(
+        [string]$Path,
+        [ValidateSet('main', 'test')]
+        [string]$SourceKind
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $normalized = ([string]$Path).Trim().Trim('"').Trim("'") -replace '\\', '/'
+    $normalized = $normalized.TrimStart('./')
+
+    if ($SourceKind -eq 'main') {
+        if ($normalized -match '^(.+)/src/main/java/') { return $matches[1] }
+        if ($normalized -match '^src/main/java/') { return '.' }
+    } else {
+        if ($normalized -match '^(.+)/src/test/(java|resources)/') { return $matches[1] }
+        if ($normalized -match '^src/test/(java|resources)/') { return '.' }
+    }
+
+    return ''
+}
+
+function Get-MavenArtifactId {
+    param(
+        [string]$Worktree,
+        [string]$Module
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or [string]::IsNullOrWhiteSpace($Module)) { return '' }
+    $moduleRelative = if ($Module -eq '.') { '' } else { $Module -replace '/', [System.IO.Path]::DirectorySeparatorChar }
+    $pomPath = Join-Path (Join-Path $Worktree $moduleRelative) 'pom.xml'
+    if (-not (Test-Path -LiteralPath $pomPath)) { return '' }
+
+    $pomText = Get-Content -LiteralPath $pomPath -Raw -Encoding UTF8
+    $matches = [regex]::Matches($pomText, '(?is)<artifactId>\s*([^<\s]+)\s*</artifactId>')
+    foreach ($match in $matches) {
+        $artifactId = ([string]$match.Groups[1].Value).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($artifactId) -and $artifactId -ne '${project.artifactId}') {
+            return $artifactId
+        }
+    }
+
+    return ''
+}
+
+function Test-TestModuleDependsOnProductionModule {
+    param(
+        [string]$Worktree,
+        [string]$TestModule,
+        [string]$ProductionModule
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or [string]::IsNullOrWhiteSpace($TestModule) -or [string]::IsNullOrWhiteSpace($ProductionModule)) {
+        return $false
+    }
+
+    $testModuleRelative = if ($TestModule -eq '.') { '' } else { $TestModule -replace '/', [System.IO.Path]::DirectorySeparatorChar }
+    $testPom = Join-Path (Join-Path $Worktree $testModuleRelative) 'pom.xml'
+    if (-not (Test-Path -LiteralPath $testPom)) { return $false }
+
+    $productionArtifactId = Get-MavenArtifactId -Worktree $Worktree -Module $ProductionModule
+    $candidateIds = @($ProductionModule, ($ProductionModule -split '[\\/]' | Select-Object -Last 1), $productionArtifactId) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique
+    if ($candidateIds.Count -eq 0) { return $false }
+
+    $testPomText = Get-Content -LiteralPath $testPom -Raw -Encoding UTF8
+    foreach ($candidateId in $candidateIds) {
+        if ($testPomText -match ('(?is)<artifactId>\s*' + [regex]::Escape([string]$candidateId) + '\s*</artifactId>')) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-TestFileMatchesProductionModule {
+    param(
+        [string]$TestFile,
+        [string[]]$ImplementedFiles,
+        [string]$Worktree = ''
+    )
+
+    $testModule = Get-SourcePathModule -Path $TestFile -SourceKind test
+    $productionModules = @($ImplementedFiles | ForEach-Object {
+        Get-SourcePathModule -Path ([string]$_) -SourceKind main
+    } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+
+    if ([string]::IsNullOrWhiteSpace($testModule) -or $productionModules.Count -eq 0) {
+        return [pscustomobject]@{
+            valid = $true
+            test_module = $testModule
+            production_modules = @($productionModules)
+            reason = 'module_not_inferred'
+        }
+    }
+
+    $sameModule = @($productionModules | Where-Object { $_ -eq $testModule }).Count -gt 0
+    $crossModuleHarness = $false
+    if (-not $sameModule -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+        $dependencyChecks = @($productionModules | ForEach-Object {
+            Test-TestModuleDependsOnProductionModule -Worktree $Worktree -TestModule $testModule -ProductionModule ([string]$_)
+        })
+        $crossModuleHarness = $dependencyChecks.Count -gt 0 -and @($dependencyChecks | Where-Object { -not $_ }).Count -eq 0
+    }
+
+    $valid = $sameModule -or $crossModuleHarness
+    return [pscustomobject]@{
+        valid = $valid
+        test_module = $testModule
+        production_modules = @($productionModules)
+        reason = if ($sameModule) {
+            'same_module'
+        } elseif ($crossModuleHarness) {
+            'cross_module_test_harness_depends_on_production_module'
+        } else {
+            'test_module_differs_from_production_module'
+        }
+    }
+}
+
 function Invoke-V348SliceQualityGates {
     param(
         [Parameter(Mandatory = $true)]
@@ -513,6 +850,11 @@ function Invoke-V348SliceQualityGates {
             checked_files = @()
             failures = @()
         }
+        exact_contract = [ordered]@{
+            invoked = $false
+            decision = 'SKIPPED'
+            issues = @()
+        }
     }
 
     if (-not (Test-Path -LiteralPath $SliceResultPath)) {
@@ -537,7 +879,7 @@ function Invoke-V348SliceQualityGates {
     # Now applies to ALL S1 slices with implemented files, not just "complex" ones
     if ($SliceIndex -eq 1 -and $implementedFiles.Count -gt 0) {
         if (Test-Path -LiteralPath $horizontalScript) {
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $horizontalScript -SliceResultFile $SliceResultPath > $horizontalStdout 2> $horizontalStderr
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $horizontalScript -SliceResultFile $SliceResultPath -FeatureClassificationPath (Join-Path $ReplayRoot 'FEATURE_CLASSIFICATION.json') > $horizontalStdout 2> $horizontalStderr
             $horizontalExit = $LASTEXITCODE
             $result.horizontal_slice.invoked = $true
             $result.horizontal_slice.exit_code = $horizontalExit
@@ -556,8 +898,10 @@ function Invoke-V348SliceQualityGates {
     }
 
     $candidateTestFiles = New-Object System.Collections.Generic.List[string]
-    if ($null -ne $sliceResultObject.behavior_test_charter -and $sliceResultObject.behavior_test_charter.PSObject.Properties['evidence_file']) {
-        $candidateTestFiles.Add([string]$sliceResultObject.behavior_test_charter.evidence_file) | Out-Null
+    if ($null -ne $sliceResultObject.behavior_test_charter) {
+        foreach ($evidenceFile in @(Get-SliceEvidenceFiles -BehaviorCharter $sliceResultObject.behavior_test_charter)) {
+            $candidateTestFiles.Add([string]$evidenceFile) | Out-Null
+        }
     }
     foreach ($file in @($implementedFiles + @(Get-StringArray $sliceResultObject.current_slice_changed_files))) {
         if ([string]$file -match 'Test\.java$') { $candidateTestFiles.Add([string]$file) | Out-Null }
@@ -571,18 +915,38 @@ function Invoke-V348SliceQualityGates {
                 $resolved = Resolve-SliceEvidenceFile -Worktree $Worktree -Path $testFile
                 $stdout = Join-Path $ReplayRoot ('V348_TEST_CHARTER_GATE_{0:D2}_{1}.stdout.log' -f $SliceIndex, ([System.IO.Path]::GetFileNameWithoutExtension($resolved)))
                 $stderr = Join-Path $ReplayRoot ('V348_TEST_CHARTER_GATE_{0:D2}_{1}.stderr.log' -f $SliceIndex, ([System.IO.Path]::GetFileNameWithoutExtension($resolved)))
+                $normalizedTestFile = ([string]$testFile).Trim().Trim('"').Trim("'") -replace '\\', '/'
+                $testFileLeaf = [System.IO.Path]::GetFileName(([string]$testFile))
                 $entry = [ordered]@{
                     file = $resolved
                     exit_code = $null
                     stdout_log = $stdout
                     stderr_log = $stderr
                     decision = 'NOT_RUN'
+                    surface_module = $null
+                }
+                $generatedReplayArtifact = $testFileLeaf -match '^(SLICE_RESULT|SLICE_VERIFY)_\d+\.json$|^(ROUND_RESULT|AUTOPILOT_SUMMARY|RUN_CONTROL_SUMMARY|FINAL_REPLAY_REPORT)\.(md|json)$'
+                if ($generatedReplayArtifact -or $normalizedTestFile -notmatch '(?i)Test\.java$') {
+                    $entry.decision = 'INVALID_EVIDENCE_FILE'
+                    $result.test_charter.failures += @($entry)
+                    $result.can_proceed = $false
+                    $result.issues += 'behavior_test_charter_evidence_file_invalid'
+                    continue
                 }
                 if (-not (Test-Path -LiteralPath $resolved)) {
                     $entry.decision = 'MISSING'
                     $result.test_charter.failures += @($entry)
                     $result.can_proceed = $false
                     $result.issues += 'test_charter_file_missing'
+                    continue
+                }
+                $surfaceModule = Test-TestFileMatchesProductionModule -TestFile $testFile -ImplementedFiles $implementedFiles -Worktree $Worktree
+                $entry.surface_module = $surfaceModule
+                if (-not [bool]$surfaceModule.valid) {
+                    $entry.decision = 'WRONG_TEST_SURFACE'
+                    $result.test_charter.failures += @($entry)
+                    $result.can_proceed = $false
+                    $result.issues += 'wrong_test_surface'
                     continue
                 }
                 & powershell -NoProfile -ExecutionPolicy Bypass -File $testCharterScript -TestFile $resolved > $stdout 2> $stderr
@@ -604,6 +968,41 @@ function Invoke-V348SliceQualityGates {
         }
     } else {
         $result.test_charter.decision = 'SKIPPED_NO_TEST_FILE'
+    }
+
+    if (Test-Path -LiteralPath $SliceVerifyPath) {
+        try {
+            $verifyForExact = Read-JsonObject -Path $SliceVerifyPath
+            $exactSignals = @(
+                @(Get-StringArray $verifyForExact.gap_flags),
+                @(Get-StringArray $verifyForExact.warnings),
+                @(Get-StringArray $verifyForExact.authorization_blockers)
+            ) | ForEach-Object { $_ }
+            $blockingExactSignals = @($exactSignals | Where-Object {
+                @(
+                    'exact_contract_assertion_missing',
+                    'exact_contract_not_closed',
+                    'exact_contract_boundary_proof_stop',
+                    'exact_contract_minimum_coverage_gap'
+                ) -contains [string]$_
+            } | Select-Object -Unique)
+            if ($blockingExactSignals.Count -gt 0) {
+                $result.exact_contract.invoked = $true
+                $result.exact_contract.decision = 'FAIL'
+                $result.exact_contract.issues = @($blockingExactSignals)
+                $result.can_proceed = $false
+                $result.issues += 'exact_contract_post_green_not_closed'
+            } else {
+                $result.exact_contract.invoked = $true
+                $result.exact_contract.decision = 'PASS'
+            }
+        } catch {
+            $result.exact_contract.invoked = $true
+            $result.exact_contract.decision = 'UNREADABLE_VERIFY'
+            $result.exact_contract.issues = @('slice_verify_unreadable_for_exact_contract_gate')
+            $result.can_proceed = $false
+            $result.issues += 'slice_verify_unreadable_for_exact_contract_gate'
+        }
     }
 
     $result.issues = @($result.issues | Select-Object -Unique)
@@ -798,7 +1197,8 @@ function Invoke-IncrementalVerificationGate {
         return [pscustomobject]@{ CanProceed = $false; Blocker = "invalid_phase_$Phase" }
     }
 
-    $gateScript = Join-Path $PSScriptRoot 'Invoke-IncrementalVerification.ps1'
+    $localScriptRoot = Resolve-RunSliceLoopScriptRoot
+    $gateScript = Join-Path $localScriptRoot 'Invoke-IncrementalVerification.ps1'
     $stdoutPath = Join-Path $ReplayRoot ('INCREMENTAL_VERIFICATION_{0}_{1:D2}.stdout.log' -f $Phase, $SliceIndex)
     $resultPath = Join-Path $ReplayRoot ('INCREMENTAL_VERIFICATION_{0}_{1:D2}.json' -f $Phase, $SliceIndex)
 
@@ -829,10 +1229,30 @@ function Invoke-IncrementalVerificationGate {
     $filesToCheck = @()
     if (Test-Path -LiteralPath $SliceResultPath) {
         $sliceResult = Read-JsonObject -Path $SliceResultPath
-        if ($null -ne $sliceResult.implemented_files) {
+        if ($Phase -eq 'RED') {
+            $redEvidenceFiles = New-Object System.Collections.Generic.List[string]
+            if ($null -ne $sliceResult.behavior_test_charter) {
+                foreach ($file in @(Get-SliceEvidenceFiles -BehaviorCharter $sliceResult.behavior_test_charter)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$file)) {
+                        $redEvidenceFiles.Add([string]$file) | Out-Null
+                    }
+                }
+            }
+            if ($null -ne $sliceResult.tests) {
+                foreach ($test in $sliceResult.tests) {
+                    if ($test.phase -eq $Phase -and $null -ne $test.evidence_file) {
+                        $redEvidenceFiles.Add([string]$test.evidence_file) | Out-Null
+                    }
+                }
+            }
+            if ($redEvidenceFiles.Count -gt 0) {
+                $filesToCheck = @($redEvidenceFiles | Select-Object -Unique)
+            }
+        }
+        if ($filesToCheck.Count -eq 0 -and $null -ne $sliceResult.implemented_files) {
             $filesToCheck = @(Get-StringArray $sliceResult.implemented_files)
         }
-        if ($null -ne $sliceResult.tests) {
+        if ($Phase -ne 'RED' -and $null -ne $sliceResult.tests) {
             foreach ($test in $sliceResult.tests) {
                 if ($test.phase -eq $Phase -and $null -ne $test.evidence_file) {
                     $filesToCheck += [string]$test.evidence_file
@@ -841,12 +1261,37 @@ function Invoke-IncrementalVerificationGate {
         }
     }
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -Phase $Phase -WorkDir $ReplayRoot -Files $filesToCheck -PassThru *> $stdoutPath
+    $runInfo = Read-JsonIfExists -Path (Join-Path $ReplayRoot 'AUTOPILOT_RUN.json')
+    $workDir = if ($null -ne $runInfo -and $runInfo.PSObject.Properties.Name -contains 'worktree' -and -not [string]::IsNullOrWhiteSpace([string]$runInfo.worktree)) {
+        [string]$runInfo.worktree
+    } else {
+        Join-Path $ReplayRoot 'worktree'
+    }
+    if (-not (Test-Path -LiteralPath $workDir)) {
+        $workDir = $ReplayRoot
+    }
+
+    $invokeArgs = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $gateScript,
+        '-Phase', $Phase,
+        '-WorkDir', $workDir
+    )
+    if ($filesToCheck.Count -gt 0) {
+        $invokeArgs += '-Files'
+        foreach ($file in $filesToCheck) { $invokeArgs += [string]$file }
+    }
+    $invokeArgs += '-PassThru'
+
+    & powershell @invokeArgs *> $stdoutPath
     $exitCode = $LASTEXITCODE
     $stdoutText = Read-TextIfExists -Path $stdoutPath
 
     $result.exit_code = $exitCode
     $result.stdout_log = $stdoutPath
+    $result.work_dir = $workDir
+    $result.files_checked = @($filesToCheck)
 
     if ($exitCode -eq 0) {
         Write-Host "$Phase phase incremental verification: PASSED" -ForegroundColor Green
@@ -886,7 +1331,8 @@ function Invoke-TodoDetectorGate {
         [string]$RunnerContractPath
     )
 
-    $gateScript = Join-Path $PSScriptRoot 'Invoke-TodoPlaceholderCheck.ps1'
+    $localScriptRoot = Resolve-RunSliceLoopScriptRoot
+    $gateScript = Join-Path $localScriptRoot 'Invoke-TodoPlaceholderCheck.ps1'
     $stdoutPath = Join-Path $ReplayRoot ('TODO_DETECTION_{0:D2}.stdout.log' -f $SliceIndex)
     $resultPath = Join-Path $ReplayRoot ('TODO_DETECTION_{0:D2}.json' -f $SliceIndex)
 
@@ -907,12 +1353,44 @@ function Invoke-TodoDetectorGate {
 
     Write-Host "Running TODO placeholder production-code gate..." -ForegroundColor Cyan
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -Worktree $Worktree *> $stdoutPath
+    $todoPaths = @()
+    $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $SliceIndex)
+    if (Test-Path -LiteralPath $sliceResultPath) {
+        try {
+            $sliceResult = Read-JsonObject -Path $sliceResultPath
+            $todoPaths = @(
+                @($sliceResult.implemented_files) +
+                @($sliceResult.current_slice_changed_files) +
+                @($sliceResult.changed_files)
+            ) | ForEach-Object { [string]$_ } | Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_) -and
+                $_ -match '(?i)src[\\/]+main[\\/]+java' -and
+                $_ -notmatch '(?i)src[\\/]+test[\\/]+java'
+            } | Select-Object -Unique
+        } catch {
+            $todoPaths = @()
+        }
+    }
+
+    $todoArgs = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $gateScript,
+        '-Worktree', $Worktree,
+        '-ResultPath', (Join-Path $ReplayRoot ('TODO_CHECK_RESULT_{0:D2}.json' -f $SliceIndex))
+    )
+    if ($todoPaths.Count -gt 0) {
+        $todoArgs += @('-PathList', (($todoPaths | ForEach-Object { [string]$_ }) -join [System.IO.Path]::PathSeparator))
+    }
+
+    & powershell @todoArgs *> $stdoutPath
     $exitCode = $LASTEXITCODE
     $stdoutText = Read-TextIfExists -Path $stdoutPath
 
     $result.exit_code = $exitCode
     $result.stdout_log = $stdoutPath
+    $result.paths_checked = @($todoPaths)
+    $result.placeholder_result_path = (Join-Path $ReplayRoot ('TODO_CHECK_RESULT_{0:D2}.json' -f $SliceIndex))
 
     if ($exitCode -eq 0) {
         Write-Host "TODO placeholder gate: NO PRODUCTION PLACEHOLDERS" -ForegroundColor Green
@@ -935,6 +1413,29 @@ function Invoke-TodoDetectorGate {
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
 
     return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $resultPath; Blocker = 'todo_placeholders_found' }
+}
+
+function Convert-TestCharterDiagnosticList {
+    param($Items)
+
+    $diagnostics = @()
+    foreach ($item in @($Items)) {
+        if ($null -eq $item) { continue }
+        $entry = [ordered]@{}
+        foreach ($name in @('code', 'message', 'detail')) {
+            if ($item.PSObject.Properties[$name]) {
+                $entry[$name] = [string]$item.$name
+            }
+        }
+        if ($item.PSObject.Properties['patterns']) {
+            $entry['patterns'] = @(Get-StringArray $item.patterns)
+        }
+        if ($entry.Count -eq 0) {
+            $entry['message'] = [string]$item
+        }
+        $diagnostics += [pscustomobject]$entry
+    }
+    return @($diagnostics)
 }
 
 function Invoke-TestCharterPrevalidatorGate {
@@ -982,10 +1483,16 @@ function Invoke-TestCharterPrevalidatorGate {
     # Check if TEST_CHARTER.md exists
     $testCharterPath = Join-Path $ReplayRoot 'TEST_CHARTER.md'
     if (-not (Test-Path -LiteralPath $testCharterPath)) {
-        Write-Host "Test charter prevalidation: TEST_CHARTER.md not found (skipping)" -ForegroundColor DarkGray
+        Write-Host "Test charter prevalidation: TEST_CHARTER.md not found" -ForegroundColor Red
         $result.verification_status = 'NO_TEST_CHARTER'
+        $result.can_proceed = $false
+        $result.failures = @([ordered]@{
+            code = 'TEST_CHARTER_MISSING'
+            message = 'TEST_CHARTER.md is required before RED/test implementation.'
+        })
         $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
-        return [pscustomobject]@{ CanProceed = $true; ResultPath = $resultPath; Blocker = '' }
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter prevalidation stop | test_charter_prevalidation | tdd_compliance | non_authorizing_evidence | missing=TEST_CHARTER.md; result={1}. |" -f $SliceIndex, $resultPath)
+        return [pscustomobject]@{ CanProceed = $false; ResultPath = $resultPath; Blocker = 'test_charter_missing_before_implementation' }
     }
 
     Write-Host "Running test charter prevalidation..." -ForegroundColor Cyan
@@ -1013,26 +1520,174 @@ function Invoke-TestCharterPrevalidatorGate {
         $result.verification_status = 'PASSED'
         $result.can_proceed = $true
         if ($null -ne $jsonOutput) {
-            $result.warnings = @($jsonOutput.warnings)
+            $result.warnings = @(Convert-TestCharterDiagnosticList $jsonOutput.warnings)
+            if ($jsonOutput.PSObject.Properties['warning_count']) {
+                $result.warning_count = [int]$jsonOutput.warning_count
+            }
         }
         Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter prevalidation pass | test_charter_prevalidation | tdd_compliance | executable_evidence | result={1}. |" -f $SliceIndex, $resultPath)
     } else {
         Write-Host "Test charter prevalidation: FAILED" -ForegroundColor Red
         $result.verification_status = 'FAILED'
         $result.can_proceed = $false
-        $result.stdout_output = $stdoutText
         if ($null -ne $jsonOutput) {
-            $result.failures = @($jsonOutput.failures)
-            $result.warnings = @($jsonOutput.warnings)
-            $result.failure_count = $jsonOutput.failure_count
-            $result.warning_count = $jsonOutput.warning_count
+            $result.failures = @(Convert-TestCharterDiagnosticList $jsonOutput.failures)
+            $result.warnings = @(Convert-TestCharterDiagnosticList $jsonOutput.warnings)
+            if ($jsonOutput.PSObject.Properties['failure_count']) {
+                $result.failure_count = [int]$jsonOutput.failure_count
+            }
+            if ($jsonOutput.PSObject.Properties['warning_count']) {
+                $result.warning_count = [int]$jsonOutput.warning_count
+            }
         }
         Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter prevalidation stop | test_charter_prevalidation | tdd_compliance | non_authorizing_evidence | exit_code={1}; result={2}. |" -f $SliceIndex, $exitCode, $resultPath)
     }
 
-    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
+    ([pscustomobject]$result) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
 
     return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $resultPath; Blocker = 'test_charter_validation_failed' }
+}
+
+function Invoke-TestCharterRepairGate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [Parameter(Mandatory = $true)]
+        [string]$RunnerContractPath,
+        [Parameter(Mandatory = $true)]
+        $ForcedDecision,
+        [Parameter(Mandatory = $true)]
+        $FailedGate,
+        [string]$Executor = 'claude',
+        [string]$Sandbox = 'danger-full-access',
+        [string]$Approval = 'never',
+        [int]$TimeoutMinutes = 10,
+        [string]$Model = '',
+        [string]$ReasoningEffort = ''
+    )
+
+    if ($Executor -eq 'manual') {
+        return $FailedGate
+    }
+
+    $repairPrompt = Join-Path $ReplayRoot ('TEST_CHARTER_REPAIR_PROMPT_{0:D2}.md' -f $SliceIndex)
+    $repairResult = Join-Path $ReplayRoot ('TEST_CHARTER_REPAIR_RESULT_{0:D2}.md' -f $SliceIndex)
+    $repairLogDir = Join-Path (Join-Path $ReplayRoot 'logs\test-charter-repair') ('slice{0:D2}' -f $SliceIndex)
+    $validator = Join-Path $PSScriptRoot 'Invoke-TestCharterPrevalidator.ps1'
+    $charterPath = Join-Path $ReplayRoot 'TEST_CHARTER.md'
+    $stdoutPath = Join-Path $ReplayRoot ('TEST_CHARTER_VALIDATION_{0:D2}.stdout.log' -f $SliceIndex)
+    $failedEvidence = ''
+    if ($null -ne $FailedGate -and -not [string]::IsNullOrWhiteSpace([string]$FailedGate.ResultPath) -and (Test-Path -LiteralPath ([string]$FailedGate.ResultPath))) {
+        $failedEvidence = Read-TextIfExists -Path ([string]$FailedGate.ResultPath)
+    } elseif (Test-Path -LiteralPath $stdoutPath) {
+        $failedEvidence = Read-TextIfExists -Path $stdoutPath
+    }
+    if ([string]::IsNullOrWhiteSpace($failedEvidence)) {
+        $failedEvidence = 'No structured validation evidence was written; inspect TEST_CHARTER.md against Invoke-TestCharterPrevalidator.ps1.'
+    }
+
+    $referenceFiles = @(
+        'PLAN_RESULT.md',
+        'FIRST_SLICE_PROOF_PLAN.md',
+        ('CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex),
+        ('SIDE_EFFECT_EVIDENCE_{0:D2}.json' -f $SliceIndex),
+        ('NEXT_SLICE_EXACT_CONTRACT_{0:D2}.json' -f $SliceIndex),
+        'IMPLEMENTATION_CONTRACT.md',
+        'REPLAY_PLAN.md'
+    ) | ForEach-Object { Join-Path $ReplayRoot $_ } | Where-Object { Test-Path -LiteralPath $_ }
+    $referenceText = if (@($referenceFiles).Count -gt 0) { ($referenceFiles | ForEach-Object { "- $_" }) -join "`n" } else { '- none' }
+    $forcedFamily = [string]$ForcedDecision.family_id
+    $forcedSliceType = [string]$ForcedDecision.slice_type
+    $forcedSurface = [string]$ForcedDecision.target_sibling_surface
+    $repairTimeout = [Math]::Min([Math]::Max($TimeoutMinutes, 1), 10)
+
+    $prompt = @(
+        '# Test Charter Repair',
+        '',
+        'Repair only the replay-root TEST_CHARTER.md so the pre-implementation test charter prevalidator passes.',
+        '',
+        'Hard constraints:',
+        '- Edit only TEST_CHARTER.md in the replay root unless writing the required repair result file.',
+        '- Do not edit production code or test code in the worktree.',
+        '- Do not introduce fixed numeric database case ids, real database dependencies, Spring test harnesses, or null-task-data pass paths.',
+        '- Preserve the selected real production carrier and source-chain proof from the reference artifacts.',
+        '',
+        'Validation failure evidence:',
+        '```json',
+        $failedEvidence.Trim(),
+        '```',
+        '',
+        'Forced slice:',
+        "- family: $forcedFamily",
+        "- slice_type: $forcedSliceType",
+        "- sibling_surface: $forcedSurface",
+        '',
+        'Reference artifacts:',
+        $referenceText,
+        '',
+        'TEST_CHARTER.md must include markdown labels recognized by scripts/test_charter_prevalidator.py:',
+        '- `Entry Point: <exact production entry method(s)>`',
+        '- `Test Class: <no-Spring JUnit/Mockito test class in claim-server or the selected test module>`',
+        '- `DB Verification: <AtomicReference capture, mock ArgumentCaptor, or SELECT/query verification method>`',
+        '- `Side Effects:` followed by bullet lines that each include verify/assert/query language.',
+        '',
+        'For source-chain rebuild requirements, the entry point must name the real rebuildTaskData carrier(s), and the verification must prove policyNum and insureNum move from the production source chain into the rebuilt task data / AI input data. Do not describe a synthetic or hand-built TaskData-only proof.',
+        '',
+        'After editing, run this validation command and continue editing until it reports can_proceed=true:',
+        "powershell -NoProfile -ExecutionPolicy Bypass -File `"$validator`" -WorkDir `"$ReplayRoot`" -PassThru",
+        '',
+        "Finally write $repairResult with:",
+        '- repair_status: COMPLETE or BLOCKED',
+        '- validation_status: PASSED or FAILED',
+        '- files_modified: TEST_CHARTER.md',
+        '- remaining_blocker: none or a concrete blocker'
+    ) -join "`n"
+    Set-Content -LiteralPath $repairPrompt -Value $prompt -Encoding UTF8
+
+    $repairArgs = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'),
+        '-PromptPath', $repairPrompt,
+        '-WorkDir', $Worktree,
+        '-LogDir', $repairLogDir,
+        '-Executor', $Executor,
+        '-Sandbox', $Sandbox,
+        '-Approval', $Approval,
+        '-TimeoutMinutes', $repairTimeout,
+        '-CompletionPath', $repairResult,
+        '-CompletionQuietSeconds', 30,
+        '-Name', ('test-charter-repair-{0:D2}' -f $SliceIndex)
+    )
+    if (-not [string]::IsNullOrWhiteSpace($Model)) { $repairArgs += @('-Model', $Model) }
+    if (-not [string]::IsNullOrWhiteSpace($ReasoningEffort)) { $repairArgs += @('-ReasoningEffort', $ReasoningEffort) }
+
+    $smokeArgs = @($repairArgs + @('-ValidateOnly'))
+    & powershell @smokeArgs | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter repair smoke stop | {1} | {2} | test_charter_repair_invocation_failed | validate-only exit_code={3}; original_result={4}. |" -f $SliceIndex, $forcedFamily, $forcedSliceType, $LASTEXITCODE, $FailedGate.ResultPath)
+        return $FailedGate
+    }
+
+    $repairExit = Invoke-SliceExecutorWithRetry -AgentArgs $repairArgs -SliceLogDir $repairLogDir -SliceId ('test-charter-repair-{0:D2}' -f $SliceIndex) -MaxRetries 1 -DelaySeconds 30
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter repair pass | {1} | {2} | test_charter_repair_attempt | exit_code={3}; result={4}. |" -f $SliceIndex, $forcedFamily, $forcedSliceType, $repairExit, $repairResult)
+
+    $recheck = Invoke-TestCharterPrevalidatorGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if ([bool]$recheck.CanProceed) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter repair verified | {1} | {2} | executable_evidence | prevalidator passed after repair; result={3}. |" -f $SliceIndex, $forcedFamily, $forcedSliceType, $recheck.ResultPath)
+        if ($repairExit -ne 0) {
+            Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} test charter repair executor nonzero ignored | {1} | {2} | executable_evidence | repair executor exit_code={3}; prevalidator passed after repair; result={4}. |" -f $SliceIndex, $forcedFamily, $forcedSliceType, $repairExit, $recheck.ResultPath)
+        }
+        return $recheck
+    }
+    if ($repairExit -ne 0) {
+        return $FailedGate
+    }
+    return $recheck
 }
 
 function Invoke-LayerValidationGate {
@@ -1205,7 +1860,7 @@ function Invoke-Phase0PrecheckGate {
         [int]$SliceIndex,
         [Parameter(Mandatory = $true)]
         [string]$RunnerContractPath,
-        [string]$MavenSettings = ''
+        [string]$MavenSettings = 'D:\maven\settings\settings.xml'
     )
 
     $gateScript = Join-Path $PSScriptRoot 'phase0-precheck.ps1'
@@ -1227,7 +1882,7 @@ function Invoke-Phase0PrecheckGate {
         return [pscustomobject]@{ CanProceed = $true; ResultPath = ''; Blocker = '' }
     }
 
-    $stdoutText = & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -ReplayRoot $ReplayRoot -Worktree $Worktree -MavenSettings $MavenSettings 2>&1 | Out-String
+    $stdoutText = & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -ReplayRoot $ReplayRoot -Worktree $Worktree -MavenSettings $MavenSettings -SliceIndex $SliceIndex 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
 
     $result.exit_code = $exitCode
@@ -1469,7 +2124,7 @@ function Test-ExplicitRequirementFamilyScope {
             return $combined -match '(?i)(模板|图片|png|pdf|附件|上传|生成文件|影像|template|image|upload|artifact|attachment)'
         }
         'external_integration' {
-            return $combined -match '(?i)(外部|对接|外部接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
+            return $combined -match '(?i)(外部|对接|保司接口|第三方|回调|推送|http|client|adapter|external|integration|partner)'
         }
         'lifecycle_cleanup_retention' {
             if ($combined -match '(?i)(清理|删除|移除|过期|保留|留存|expire|cleanup|delete|remove|retention|duplicate|idempotent|same-status|same status|re-entry)') { return $true }
@@ -1489,6 +2144,7 @@ function Apply-FamilyScopeFilter {
     )
 
     if ($null -eq $Ledger -or $null -eq $Ledger.families) { return $false }
+    $featureChanged = Apply-FeatureClassificationToLedger -Ledger $Ledger -ReplayRoot $ReplayRoot
     $requirementText = Read-TextIfExists -Path $RequirementSource
     $familyContractPath = Join-Path $ReplayRoot 'FAMILY_CONTRACT.json'
     $contractFamiliesById = @{}
@@ -1512,7 +2168,7 @@ function Apply-FamilyScopeFilter {
         (Join-Path $ReplayRoot 'REPLAY_PLAN.md')
     ) | ForEach-Object { Read-TextIfExists $_ }) -join "`n"
 
-    $changed = $false
+    $changed = [bool]$featureChanged
     $strictScopeFamilies = @(
         'deploy_export_page',
         'automation_test_interface',
@@ -1527,12 +2183,12 @@ function Apply-FamilyScopeFilter {
         if ($strictScopeFamilies -notcontains $id) { continue }
         $contractFamily = if ($contractFamiliesById.ContainsKey($id)) { $contractFamiliesById[$id] } else { $null }
         if (-not (Test-ExplicitRequirementFamilyScope -FamilyId $id -RequirementText $requirementText -ContractFamily $contractFamily -EvidenceText $evidenceText)) {
-            $family.required = $false
-            $family.status = 'NOT_REQUIRED_BY_SCOPE_FILTER'
-            $family.coverage_cap_if_open = 100
-            $family.open_sibling_surfaces = @()
-            $family.open_sibling_count = 0
-            $family.last_reason = 'Excluded by requirement-scope filter; no explicit requirement or concrete production carrier supports this family.'
+            Set-ObjectProperty -Object $family -Name 'required' -Value $false
+            Set-ObjectProperty -Object $family -Name 'status' -Value 'NOT_REQUIRED_BY_SCOPE_FILTER'
+            Set-ObjectProperty -Object $family -Name 'coverage_cap_if_open' -Value 100
+            Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+            Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+            Set-ObjectProperty -Object $family -Name 'last_reason' -Value 'Excluded by requirement-scope filter; no explicit requirement or concrete production carrier supports this family.'
             $changed = $true
         }
     }
@@ -1624,7 +2280,7 @@ function Initialize-RequirementFamilyLedger {
         }
     })
 
-    [ordered]@{
+    $ledgerObject = [ordered]@{
         schema_version = 1
         replay_root = $ReplayRoot
         max_slices = $MaxSlices
@@ -1640,7 +2296,9 @@ function Initialize-RequirementFamilyLedger {
         no_progress_slices = @()
         open_required_after_max = @()
         coverage_cap = 100
-    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -Encoding UTF8
+    }
+    Apply-FeatureClassificationToLedger -Ledger $ledgerObject -ReplayRoot $ReplayRoot | Out-Null
+    $ledgerObject | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
 function Get-FamilyLedger {
@@ -1652,7 +2310,47 @@ function Get-FamilyLedger {
 function Save-FamilyLedger {
     param($Ledger, [string]$Path)
     $Ledger.updated_at = (Get-Date).ToString('s')
-    $Ledger | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -Encoding UTF8
+    $tmp = "$Path.tmp.$PID"
+    $Ledger | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $tmp -Encoding UTF8
+    Move-Item -LiteralPath $tmp -Destination $Path -Force
+}
+
+function Write-FamilyLedgerAudit {
+    param(
+        [string]$ReplayRoot,
+        [string]$Stage,
+        [int]$SliceIndex,
+        $Before,
+        $After,
+        [string[]]$ClosedFamilies = @(),
+        [string[]]$TouchedFamilies = @()
+    )
+
+    $auditPath = Join-Path $ReplayRoot 'LEDGER_AUDIT_TRAIL.jsonl'
+    $summarize = {
+        param($Ledger)
+        if ($null -eq $Ledger -or $null -eq $Ledger.families) { return @() }
+        return @($Ledger.families | ForEach-Object {
+            [ordered]@{
+                id = [string]$_.id
+                required = [bool]$_.required
+                status = [string]$_.status
+                touched_count = $(if ($null -ne $_.touched_count -and "$($_.touched_count)" -match '^\d+$') { [int]$_.touched_count } else { 0 })
+                slices = @(Get-StringArray $_.slices)
+                open_sibling_count = $(if ($null -ne $_.open_sibling_count -and "$($_.open_sibling_count)" -match '^\d+$') { [int]$_.open_sibling_count } else { 0 })
+            }
+        })
+    }
+    $entry = [ordered]@{
+        timestamp = (Get-Date).ToString('s')
+        stage = $Stage
+        slice_index = $SliceIndex
+        touched_families = @($TouchedFamilies)
+        closed_families = @($ClosedFamilies)
+        before = (& $summarize $Before)
+        after = (& $summarize $After)
+    }
+    Add-Content -LiteralPath $auditPath -Encoding UTF8 -Value ($entry | ConvertTo-Json -Depth 12 -Compress)
 }
 
 function Normalize-SiblingSurface {
@@ -2016,6 +2714,267 @@ function Get-ForcedFamilyDecision {
     return $empty
 }
 
+function Test-RequiredFamilyOpenInLedger {
+    param($Ledger, [string]$FamilyId)
+    if ($null -eq $Ledger -or $null -eq $Ledger.families -or [string]::IsNullOrWhiteSpace($FamilyId)) { return $false }
+    $family = @($Ledger.families | Where-Object { [string]$_.id -eq $FamilyId } | Select-Object -First 1)
+    if ($family.Count -eq 0) { return $false }
+    return [bool]$family[0].required -and @('OPEN', 'PARTIAL') -contains ([string]$family[0].status)
+}
+
+function Test-NoOpenRequiredFamilyForSlice {
+    param($Ledger, $CarrierRank, $ForcedDecision)
+
+    if ($null -eq $Ledger -or $null -eq $Ledger.families) { return $false }
+
+    $openRequired = @($Ledger.families | Where-Object {
+        [bool]$_.required -and @('OPEN', 'PARTIAL') -contains ([string]$_.status)
+    })
+    if ($openRequired.Count -gt 0) { return $false }
+
+    $rankedFamilies = @()
+    if ($null -ne $CarrierRank -and $null -ne $CarrierRank.families) {
+        $rankedFamilies = @($CarrierRank.families | Where-Object {
+            [bool]$_.required -and -not [string]::IsNullOrWhiteSpace([string]$_.family)
+        })
+    }
+    if ($rankedFamilies.Count -gt 0) { return $false }
+
+    if ($null -ne $ForcedDecision -and -not [string]::IsNullOrWhiteSpace([string]$ForcedDecision.family_id)) {
+        return $false
+    }
+
+    return $true
+}
+
+function Resolve-ForcedFamilyDecisionForSlice {
+    param(
+        $Ledger,
+        [int]$SliceIndex,
+        $CarrierRank,
+        [string]$SourceChainContractPath,
+        [string]$RunnerContractPath
+    )
+
+    $forced = Get-ForcedFamilyDecision -Ledger $Ledger -SliceIndex $SliceIndex -CarrierRank $CarrierRank
+    if (-not (Test-Path -LiteralPath $SourceChainContractPath)) { return $forced }
+
+    try {
+        $sourceChain = Read-JsonObject -Path $SourceChainContractPath
+        $coreStillOpen = Test-RequiredFamilyOpenInLedger -Ledger $Ledger -FamilyId 'core_entry'
+        if ([bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice -and $coreStillOpen) {
+            return [ordered]@{
+                family_id = 'core_entry'
+                slice_type = [string]$sourceChain.next_required_slice.slice_type
+                target_sibling_surface = [string]$sourceChain.next_required_slice.carrier
+                reason = 'Runner contract: named source-chain requirement detected; source extraction/service/request/task chain must be closed before terminal payload/stateful follow-up.'
+                open_families = [string]$forced.open_families
+            }
+        }
+        if ([bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice -and -not $coreStillOpen -and $SliceIndex -gt 1) {
+            Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} source-chain override skipped | source_chain | exact_contract_slice | executable_evidence | core_entry is already closed; preserving router-selected family={1}. |" -f $SliceIndex, $forced.family_id)
+        }
+    } catch {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} source-chain analysis warning | source_chain | exact_contract_slice | source_chain_contract_unreadable | {1}. |" -f $SliceIndex, $_.Exception.Message)
+    }
+    return $forced
+}
+
+function Archive-StaleSliceArtifacts {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex,
+        [string[]]$Paths,
+        [string]$Reason,
+        [string]$RunnerContractPath
+    )
+
+    $staleDir = Join-Path (Join-Path $ReplayRoot 'logs\stale-slice-results') ('slice{0:D2}' -f $SliceIndex)
+    if (-not (Test-Path -LiteralPath $staleDir)) {
+        New-Item -ItemType Directory -Force -Path $staleDir | Out-Null
+    }
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    foreach ($path in @($Paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $leaf = [System.IO.Path]::GetFileName($path)
+        Move-Item -LiteralPath $path -Destination (Join-Path $staleDir ("{0}.{1}" -f $leaf, $stamp)) -Force
+    }
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} stale slice artifact invalidated | resume_safety | stale_blocker_replay | executable_evidence | {1}. |" -f $SliceIndex, ($Reason -replace '\|', '/'))
+}
+
+function Test-AuthorizingSliceEvidence {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex
+    )
+
+    $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $SliceIndex)
+    $sliceVerifyPath = Join-Path $ReplayRoot ('SLICE_VERIFY_{0:D2}.json' -f $SliceIndex)
+    if (-not (Test-Path -LiteralPath $sliceResultPath) -or -not (Test-Path -LiteralPath $sliceVerifyPath)) {
+        return $false
+    }
+
+    try {
+        $sliceResult = Read-JsonObject -Path $sliceResultPath
+        $sliceVerify = Read-JsonObject -Path $sliceVerifyPath
+        $resultStatus = [string]$sliceResult.slice_status
+        $verifyStatus = [string]$sliceVerify.verification_status
+        $verifySliceStatus = [string]$sliceVerify.slice_status
+        $hasAuthorization = (
+            ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and [bool]$sliceVerify.authorized_for_next_slice) -or
+            ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and [bool]$sliceVerify.authorized_for_synthesis)
+        )
+        return (
+            $verifyStatus -in @('PASS', 'PARTIAL') -and
+            ($resultStatus -in @('DONE', 'PARTIAL') -or $verifySliceStatus -in @('DONE', 'PARTIAL')) -and
+            $hasAuthorization
+        )
+    } catch {
+        return $false
+    }
+}
+
+function Set-SliceProgressFromAuthorizingEvidence {
+    param(
+        [string]$Path,
+        [string]$ReplayRoot,
+        [int]$MaxSlices
+    )
+
+    $completed = New-Object System.Collections.Generic.List[int]
+    for ($idx = 1; $idx -le $MaxSlices; $idx++) {
+        if (Test-AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $idx) {
+            $completed.Add($idx) | Out-Null
+        }
+    }
+
+    [ordered]@{
+        replay_root = $ReplayRoot
+        max_slices = $MaxSlices
+        completed = @($completed)
+        stopped = $false
+        stop_reason = ''
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Get-SliceScopedArtifactPaths {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex
+    )
+
+    $names = @(
+        'SLICE_RESULT_{0:D2}.json',
+        'SLICE_VERIFY_{0:D2}.json',
+        'SLICE_AUTHORIZATION_{0:D2}.json',
+        'CARRIER_AUTHORIZATION_{0:D2}.json',
+        'CARRIER_RANK_{0:D2}.json',
+        'EXACT_CONTRACT_ASSERTION_MATRIX_{0:D2}.json',
+        'NEXT_SLICE_EXACT_CONTRACT_{0:D2}.json',
+        'SIDE_EFFECT_EVIDENCE_{0:D2}.json',
+        'PRE_SLICE_AUTHORIZATION_{0:D2}.json',
+        'PRE_SLICE_CAP_DISPLAY_{0:D2}.json',
+        'CHECKPOINT_GATE_{0:D2}.json',
+        'V348_SLICE_QUALITY_GATE_{0:D2}.json',
+        'V348_HORIZONTAL_SLICE_GATE_{0:D2}.stdout.log',
+        'V348_HORIZONTAL_SLICE_GATE_{0:D2}.stderr.log',
+        'RED_PHASE_GATE_{0:D2}.json',
+        'RED_PHASE_GATE_{0:D2}.stdout.log',
+        'RED_PHASE_GATE_{0:D2}.stderr.log',
+        'CONTRACT_VERIFICATION_{0:D2}.json',
+        'CONTRACT_VERIFICATION_{0:D2}.stdout.log',
+        'GREEN_PHASE_VERIFY_{0:D2}.json',
+        'GREEN_PHASE_VERIFY_{0:D2}.stdout.log',
+        'GREEN_PHASE_VERIFY_{0:D2}.stderr.log',
+        'GREEN_PHASE_IMPLEMENTED_FILES_{0:D2}.json',
+        'GREEN_PHASE_TOUCHED_FAMILIES_{0:D2}.json',
+        'GREEN_PHASE_TEST_EXECUTION_{0:D2}.json',
+        'GREEN_PHASE_TEST_EXECUTION_{0:D2}.stdout.log',
+        'LAYER_VALIDATION_{0:D2}.stdout.log',
+        'SIDE_EFFECT_LEDGER_VERIFICATION_{0:D2}.stdout.log',
+        'PHASE0_PRECHECK_{0:D2}.stdout.log',
+        'TEST_CHARTER_VALIDATION_{0:D2}.json',
+        'TEST_CHARTER_VALIDATION_{0:D2}.stdout.log',
+        'TODO_DETECTION_{0:D2}.json',
+        'TODO_DETECTION_{0:D2}.stdout.log',
+        'TODO_CHECK_RESULT_{0:D2}.json',
+        'TEST_CHARTER_REPAIR_PROMPT_{0:D2}.md',
+        'TEST_CHARTER_REPAIR_RESULT_{0:D2}.md',
+        'PHASE1_SLICE_{0:D2}_PROMPT.md',
+        'PHASE1_SLICE_{0:D2}_RETRY_PROMPT.md',
+        'PHASE1_SLICE_{0:D2}_FORCED_FAMILY_REPAIR_PROMPT.md',
+        'SLICE_RESULT_{0:D2}.before_forced_family_repair.json',
+        'SLICE_RESULT_{0:D2}.worktree_before_forced_family_repair.json',
+        'EXECUTABLE_EVIDENCE_GATE_{0:D2}.json'
+    )
+
+    return @($names | ForEach-Object { Join-Path $ReplayRoot ($_ -f $SliceIndex) })
+}
+
+function Clear-SliceArtifactsAfterRequirementClosure {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex,
+        [int]$MaxSlices,
+        [string]$RunnerContractPath
+    )
+
+    $archivedCount = 0
+    for ($idx = $SliceIndex; $idx -le $MaxSlices; $idx++) {
+        if (Test-AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $idx) {
+            Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} closure cleanup skipped | requirement_family_ledger | authorized_slice | all_required_families_closed | preserving active authorized slice evidence while removing only future/stale artifacts. |" -f $idx)
+            continue
+        }
+        $paths = @(Get-SliceScopedArtifactPaths -ReplayRoot $ReplayRoot -SliceIndex $idx)
+        $existing = @($paths | Where-Object { Test-Path -LiteralPath $_ })
+        if ($existing.Count -eq 0) { continue }
+        Archive-StaleSliceArtifacts `
+            -ReplayRoot $ReplayRoot `
+            -SliceIndex $idx `
+            -Paths $existing `
+            -Reason 'all_required_families_closed before this slice; future/stale slice artifacts are ignored before synthesis' `
+            -RunnerContractPath $RunnerContractPath
+        $archivedCount += $existing.Count
+    }
+
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} completion stop | requirement_family_ledger | none | all_required_families_closed | no OPEN/PARTIAL required family remains; archived_future_or_stale_artifacts={1}; proceeding to synthesis without creating another slice. |" -f $SliceIndex, $archivedCount)
+    return $archivedCount
+}
+
+function Test-StaleBlockedSliceForResume {
+    param(
+        $SliceResultObject,
+        $SliceVerifyObject,
+        $ForcedDecision
+    )
+
+    if ($null -eq $SliceResultObject) { return $false }
+    $sliceStatus = [string]$SliceResultObject.slice_status
+    if (@('BLOCKED', 'INVALID_REPLAY') -notcontains $sliceStatus) { return $false }
+
+    $gapFlags = @((@(Get-StringArray $SliceResultObject.gap_flags) + @(Get-StringArray $SliceVerifyObject.gap_flags)) | Select-Object -Unique)
+    $implementedFiles = @(Get-StringArray $SliceResultObject.implemented_files)
+    $closedFamilies = @(Get-StringArray $SliceVerifyObject.closed_requirement_families)
+    $currentFamily = [string]$ForcedDecision.family_id
+    $oldForcedFamily = ''
+    if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['next_required_slice']) {
+        $oldForcedFamily = [string]$SliceVerifyObject.next_required_slice.family
+    }
+    $reasonText = @(
+        [string]$SliceResultObject.slice_title,
+        [string]$SliceResultObject.blocker,
+        (Get-StringArray $SliceResultObject.remaining_gaps) -join ' ',
+        (Get-StringArray $SliceVerifyObject.authorization_blockers) -join ' '
+    ) -join "`n"
+
+    $hasNoProgressFlag = @(@('no_progress_slice', 'gate_present_but_not_enforced', 'tooling_executor_failed') | Where-Object { $gapFlags -contains $_ }).Count -gt 0
+    $noProgressBlocker = ($implementedFiles.Count -eq 0 -and $hasNoProgressFlag)
+    if ($noProgressBlocker) { return $true }
+    if (-not [string]::IsNullOrWhiteSpace($currentFamily) -and -not [string]::IsNullOrWhiteSpace($oldForcedFamily) -and $oldForcedFamily -ne $currentFamily) { return $true }
+    if ($reasonText -match 'forced_family_not_highest_weight_open' -and -not [string]::IsNullOrWhiteSpace($currentFamily) -and $closedFamilies -notcontains $currentFamily) { return $true }
+    return $false
+}
+
 function Add-RunnerEnforcementContract {
     param(
         [string]$Path,
@@ -2061,13 +3020,22 @@ function Update-FamilyLedgerFromSlice {
 
     $ledger = Get-FamilyLedger -Path $Path
     if ($null -eq $ledger) { return }
+    $replayRootForLedger = Split-Path -Parent $Path
+    $featureClassification = Read-FeatureClassification -ReplayRoot $replayRootForLedger
+    $narrowReadOnlyFeature = Test-NarrowBackendReadOnlyFeature -FeatureClassification $featureClassification
+    if (Apply-FeatureClassificationToLedger -Ledger $ledger -ReplayRoot $replayRootForLedger) {
+        Save-FamilyLedger -Ledger $ledger -Path $Path
+    }
     $result = Read-JsonObject -Path $SliceResultPath
     $verify = Read-JsonObject -Path $SliceVerifyPath
     $specs = Get-RequirementFamilySpecs
 
-    $explicitTouched = @(Get-StringArray $result.touched_requirement_families)
-    $explicitClosed = @(Get-StringArray $result.closed_requirement_families)
+    $verifyTouched = @(Get-StringArray $verify.touched_requirement_families)
+    $verifyClosed = @(Get-StringArray $verify.closed_requirement_families)
+    $explicitTouched = @(if ($verifyTouched.Count -gt 0 -or $verifyClosed.Count -gt 0) { @($verifyTouched + $verifyClosed) | Select-Object -Unique } else { Get-StringArray $result.touched_requirement_families })
+    $explicitClosed = @(if ($verifyClosed.Count -gt 0) { $verifyClosed } else { Get-StringArray $result.closed_requirement_families })
     $hasExplicitTouched = $explicitTouched.Count -gt 0
+    $ledgerBefore = $ledger | ConvertTo-Json -Depth 12 | ConvertFrom-Json
 
     $resultText = @(
         [string]$result.slice_type,
@@ -2097,6 +3065,9 @@ function Update-FamilyLedgerFromSlice {
             'automation_test_interface' { @('exact_contract_gap', 'wrong_test_surface') }
             'lifecycle_cleanup_retention' { @('side_effect_ledger_gap', 'needs_transaction_test', 'exact_contract_gap', 'lifecycle_cleanup_gap') }
             default { @() }
+        }
+        if ($narrowReadOnlyFeature -and [string]$family.id -eq 'automation_test_interface') {
+            $familyGap = @('wrong_test_surface', 'behavior_test_charter_gap')
         }
           $hasFamilyGap = @($familyGap | Where-Object { $gapFlags -contains $_ }).Count -gt 0
          $isTouched = if ($hasExplicitTouched) {
@@ -2128,6 +3099,9 @@ function Update-FamilyLedgerFromSlice {
             $wasExecutableClosed = @('EXECUTABLE_CLOSED', 'CLOSED') -contains ([string]$family.status)
             $touched.Add([string]$family.id) | Out-Null
             $siblingSurfaces = @(Get-FamilySiblingSurfaces -Value $result.required_sibling_surfaces -FamilyId ([string]$family.id) -TouchedFamilies $explicitTouched)
+            if ($narrowReadOnlyFeature -and @('core_entry', 'automation_test_interface') -contains [string]$family.id) {
+                $siblingSurfaces = @()
+            }
             $family.open_sibling_surfaces = @($siblingSurfaces)
             $family.open_sibling_count = @($siblingSurfaces).Count
             $family.last_next_recommended_slice_type = [string]$result.next_recommended_slice_type
@@ -2156,7 +3130,13 @@ function Update-FamilyLedgerFromSlice {
                 'side_effect_ledger_depth_incomplete',
                 'proof_type_mismatch'
             ) | Where-Object { $verifyWarnings -contains $_ }
+            if ($narrowReadOnlyFeature) {
+                $blockingClosureWarnings = @($blockingClosureWarnings | Where-Object {
+                    @('red_phase_missing', 'family_sibling_surface_open', 'side_effect_ledger_depth_incomplete') -notcontains [string]$_
+                })
+            }
             $authorizedForNextSlice = if ($null -ne $verify.authorized_for_next_slice) { [bool]$verify.authorized_for_next_slice } else { $true }
+            $verifyBlockers = @(Get-StringArray $verify.authorization_blockers)
             $proofMismatchFamilies = @(Get-StringArray $verify.proof_type_mismatch_families)
             $familyProofTypeMatches = -not ($proofMismatchFamilies -contains [string]$family.id)
             $nonAuthorizingForFamily = @(
@@ -2174,16 +3154,30 @@ function Update-FamilyLedgerFromSlice {
                 'side_effect_red_not_business_assertion',
                 'exact_contract_not_closed'
             ) | Where-Object { $gapFlags -contains $_ }
-            if ($explicitlyClosed -and $authorizedForNextSlice -and @('PASS', 'PARTIAL') -contains [string]$verify.verification_status -and @('DONE', 'PARTIAL') -contains [string]$result.slice_status -and -not $hasFamilyGap -and $familyProofTypeMatches -and $blockingClosureWarnings.Count -eq 0 -and @($nonAuthorizingForFamily).Count -eq 0) {
-                $family.status = 'EXECUTABLE_CLOSED'
-                $family.open_sibling_surfaces = @()
-                $family.open_sibling_count = 0
-                $family.last_reason = "Closed by S$SliceIndex with family-scoped executable verification."
+            $explicitlyClosedByVerifier = $verifyClosed -contains [string]$family.id
+            $authoritativeVerifierClosure = $explicitlyClosedByVerifier `
+                -and $authorizedForNextSlice `
+                -and [string]$verify.verification_status -eq 'PASS' `
+                -and @('DONE', 'PARTIAL') -contains [string]$result.slice_status `
+                -and -not $hasFamilyGap `
+                -and $familyProofTypeMatches `
+                -and $verifyBlockers.Count -eq 0 `
+                -and @($nonAuthorizingForFamily).Count -eq 0
+            if ($authoritativeVerifierClosure -or ($explicitlyClosed -and $authorizedForNextSlice -and @('PASS', 'PARTIAL') -contains [string]$verify.verification_status -and @('DONE', 'PARTIAL') -contains [string]$result.slice_status -and -not $hasFamilyGap -and $familyProofTypeMatches -and $blockingClosureWarnings.Count -eq 0 -and @($nonAuthorizingForFamily).Count -eq 0)) {
+                Set-ObjectProperty -Object $family -Name 'status' -Value 'EXECUTABLE_CLOSED'
+                Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+                Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+                $closureReason = if ($authoritativeVerifierClosure) {
+                    "Closed by S$SliceIndex from authoritative SLICE_VERIFY closed_requirement_families."
+                } else {
+                    "Closed by S$SliceIndex with family-scoped executable verification."
+                }
+                Set-ObjectProperty -Object $family -Name 'last_reason' -Value $closureReason
             } elseif ($wasExecutableClosed -and -not $explicitlyClosed -and -not $hasFamilyGap -and $familyProofTypeMatches -and $blockingClosureWarnings.Count -eq 0 -and @($nonAuthorizingForFamily).Count -eq 0) {
-                $family.status = 'EXECUTABLE_CLOSED'
-                $family.open_sibling_surfaces = @()
-                $family.open_sibling_count = 0
-                $family.last_reason = "Retained prior executable closure after S$SliceIndex supporting touch; no family-specific gap or proof mismatch was introduced."
+                Set-ObjectProperty -Object $family -Name 'status' -Value 'EXECUTABLE_CLOSED'
+                Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
+                Set-ObjectProperty -Object $family -Name 'open_sibling_count' -Value 0
+                Set-ObjectProperty -Object $family -Name 'last_reason' -Value "Retained prior executable closure after S$SliceIndex supporting touch; no family-specific gap or proof mismatch was introduced."
             } else {
                 $family.status = 'PARTIAL'
                 $siblingReason = if (@($siblingSurfaces).Count -gt 0) { " Open sibling surfaces: $((@($siblingSurfaces) | Select-Object -First 3) -join '; ')" } else { '' }
@@ -2225,6 +3219,8 @@ function Update-FamilyLedgerFromSlice {
     }
 
     Save-FamilyLedger -Ledger $ledger -Path $Path
+    $ledgerAfter = Get-FamilyLedger -Path $Path
+    Write-FamilyLedgerAudit -ReplayRoot $replayRootForLedger -Stage 'post_slice_verify_absorption' -SliceIndex $SliceIndex -Before $ledgerBefore -After $ledgerAfter -TouchedFamilies $explicitTouched -ClosedFamilies $explicitClosed
 }
 
 function Write-FamilyCapReport {
@@ -2350,12 +3346,20 @@ function Write-ExecutorBlockedSliceResult {
         $ForcedDecision,
         [string]$SliceLogDir,
         [int]$ExitCode,
-        [string]$Reason = 'executor failed before completing slice'
+        [string]$Reason = 'executor failed before completing slice',
+        [string]$FailureCategory = '',
+        [string]$ExecutorDiagnostic = ''
     )
 
     $sliceId = 'S{0}' -f $SliceIndex
     $forcedFamily = [string]$ForcedDecision.family_id
     $gapFlags = @('tooling_executor_failed', 'no_progress_slice')
+    if (-not [string]::IsNullOrWhiteSpace($FailureCategory)) {
+        $gapFlags += $FailureCategory
+        if (@('executor_credit_required', 'usage_limit', 'auth') -contains $FailureCategory) {
+            $gapFlags += 'executor_resource_blocker'
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($forcedFamily)) {
         $gapFlags += 'gate_present_but_not_enforced'
     }
@@ -2389,6 +3393,9 @@ function Write-ExecutorBlockedSliceResult {
             "$Reason. Forced family: $forcedFamily"
         )
         gap_flags = $gapFlags
+        executor_failure_category = $FailureCategory
+        executor_diagnostic = $ExecutorDiagnostic
+        executor_resource_blocker = (@('executor_credit_required', 'usage_limit', 'auth') -contains $FailureCategory)
         touched_requirement_families = @()
         closed_requirement_families = @()
         blocker = "Phase1 slice blocked: $Reason. Executor exit code $ExitCode. Inspect logs under $SliceLogDir."
@@ -2599,6 +3606,7 @@ $familyCapPath = Join-Path $replayRootFull 'REQUIREMENT_FAMILY_CAP.md'
 $runnerContractPath = Join-Path $replayRootFull 'RUNNER_ENFORCEMENT_CONTRACT.md'
 $roundResultPath = Join-Path $replayRootFull 'ROUND_RESULT.md'
 $surfaceCarrierScanPath = Join-Path $replayRootFull 'SURFACE_CARRIER_SCAN.md'
+$featureClassificationPath = Join-Path $replayRootFull 'FEATURE_CLASSIFICATION.json'
 $logsRoot = Join-Path $replayRootFull 'logs\phase1-slices'
 
 $required = @($replayRootFull, $worktreeFull, $requirementSourceFull, $baselineIndexFull, $contextManifestFull, $sliceTemplatePath, $synthesisTemplatePath)
@@ -2625,6 +3633,20 @@ if ($ValidateOnly) {
     exit 0
 }
 
+if (-not (Test-Path -LiteralPath $featureClassificationPath)) {
+    $featureClassifierScript = Join-Path $PSScriptRoot 'Classify-Feature.ps1'
+    if (Test-Path -LiteralPath $featureClassifierScript) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $featureClassifierScript `
+            -ReplayRoot $replayRootFull `
+            -Worktree $worktreeFull `
+            -RequirementSource $requirementSourceFull `
+            -OutPath $featureClassificationPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Classify-Feature failed for $replayRootFull"
+        }
+    }
+}
+
 Initialize-RequirementFamilyLedger -Path $familyLedgerPath -ReplayRoot $replayRootFull -RequirementSource $requirementSourceFull -MaxSlices $MaxSlices
 $initialLedger = Get-FamilyLedger -Path $familyLedgerPath
 if (Apply-FamilyScopeFilter -Ledger $initialLedger -RequirementSource $requirementSourceFull -ReplayRoot $replayRootFull) {
@@ -2642,7 +3664,7 @@ if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
 
 # v465: Pre-execution constraint check
 if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PreExecutionConstraintCheck.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') -BaselineRoot $projectRootFull | Out-Null
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PreExecutionConstraintCheck.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') -BaselineRoot $projectRootFull -FeatureClassificationPath $featureClassificationPath | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw "Pre-execution constraint check failed. Inspect $(Join-Path $replayRootFull 'PRE_EXECUTION_CONSTRAINT_CHECK.json')"
     }
@@ -2686,6 +3708,89 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     $hasExistingResult = Test-Path -LiteralPath $sliceResult
     $hasExistingVerify = Test-Path -LiteralPath $sliceVerify
     $blockedBeforeExecutor = $false
+    $ledger = Get-FamilyLedger -Path $familyLedgerPath
+    $rankMap = New-CarrierRankMap -Ledger $ledger -SliceIndex $i
+    $rankMap | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierRank -Encoding UTF8
+    $rankMap | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRootFull 'CARRIER_RANK.json') -Encoding UTF8
+    $currentForced = Resolve-ForcedFamilyDecisionForSlice `
+        -Ledger $ledger `
+        -SliceIndex $i `
+        -CarrierRank $rankMap `
+        -SourceChainContractPath $sourceChainContractPath `
+        -RunnerContractPath $runnerContractPath
+
+    if (Test-NoOpenRequiredFamilyForSlice -Ledger $ledger -CarrierRank $rankMap -ForcedDecision $currentForced) {
+        Clear-SliceArtifactsAfterRequirementClosure `
+            -ReplayRoot $replayRootFull `
+            -SliceIndex $i `
+            -MaxSlices $MaxSlices `
+            -RunnerContractPath $runnerContractPath | Out-Null
+        Set-SliceProgressFromAuthorizingEvidence -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices
+        break
+    }
+
+    $testCharterRepairResult = Join-Path $replayRootFull ('TEST_CHARTER_REPAIR_RESULT_{0:D2}.md' -f $i)
+    if ($hasExistingResult -and $hasExistingVerify -and (Test-Path -LiteralPath $testCharterRepairResult)) {
+        try {
+            $existingSliceResult = Read-JsonObject -Path $sliceResult
+            $repairResultText = Read-TextIfExists -Path $testCharterRepairResult
+            $isStaleTestCharterBlocker = (
+                [string]$existingSliceResult.slice_status -eq 'BLOCKED' -and
+                (
+                    [string]$existingSliceResult.blocker -match 'test charter' -or
+                    [string]$existingSliceResult.slice_title -match 'test charter'
+                ) -and
+                $repairResultText -match '(?im)^\s*-\s*validation_status:\s*PASSED\s*$' -and
+                $repairResultText -match '(?im)^\s*-\s*can_proceed:\s*true\s*$'
+            )
+            if ($isStaleTestCharterBlocker) {
+                $staleDir = Join-Path (Join-Path $replayRootFull 'logs\stale-slice-results') ('slice{0:D2}' -f $i)
+                if (-not (Test-Path -LiteralPath $staleDir)) {
+                    New-Item -ItemType Directory -Force -Path $staleDir | Out-Null
+                }
+                $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+                Move-Item -LiteralPath $sliceResult -Destination (Join-Path $staleDir ("SLICE_RESULT_{0:D2}.{1}.json" -f $i, $stamp)) -Force
+                Move-Item -LiteralPath $sliceVerify -Destination (Join-Path $staleDir ("SLICE_VERIFY_{0:D2}.{1}.json" -f $i, $stamp)) -Force
+                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} stale test charter blocker invalidated | test_charter_repair | resume_safety | executable_evidence | archived stale slice result because repair result passed; repair_result={1}. |" -f $i, $testCharterRepairResult)
+                $hasExistingResult = $false
+                $hasExistingVerify = $false
+            }
+        } catch {
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} stale test charter blocker check skipped | test_charter_repair | resume_safety | non_authorizing_evidence | error={1}. |" -f $i, ($_.Exception.Message -replace '\|', '/'))
+        }
+    }
+    if ($hasExistingResult -and $hasExistingVerify) {
+        try {
+            $existingSliceResult = Read-JsonObject -Path $sliceResult
+            $existingSliceVerify = Read-JsonObject -Path $sliceVerify
+            if (Test-StaleBlockedSliceForResume -SliceResultObject $existingSliceResult -SliceVerifyObject $existingSliceVerify -ForcedDecision $currentForced) {
+                Archive-StaleSliceArtifacts `
+                    -ReplayRoot $replayRootFull `
+                    -SliceIndex $i `
+                    -Paths @(
+                        $sliceResult,
+                        $sliceVerify,
+                        $carrierAuthorization,
+                        $preSliceAuthorization,
+                        $preSliceCapDisplay,
+                        $carrierRank,
+                        $exactContractMatrix,
+                        $nextSliceExactContract,
+                        $sideEffectEvidence,
+                        (Join-Path $replayRootFull ('CHECKPOINT_GATE_{0:D2}.json' -f $i)),
+                        (Join-Path $replayRootFull ('V348_SLICE_QUALITY_GATE_{0:D2}.json' -f $i)),
+                        (Join-Path $replayRootFull ('LAYER_VALIDATION_{0:D2}.stdout.log' -f $i)),
+                        (Join-Path $replayRootFull ('PHASE0_PRECHECK_{0:D2}.stdout.log' -f $i))
+                    ) `
+                    -Reason ("stale no-progress/blocker slice invalidated before resume; current forced family={0}; old status={1}" -f $currentForced.family_id, $existingSliceResult.slice_status) `
+                    -RunnerContractPath $runnerContractPath
+                $hasExistingResult = $false
+                $hasExistingVerify = $false
+            }
+        } catch {
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} stale blocker resume check skipped | resume_safety | stale_blocker_replay | non_authorizing_evidence | error={1}. |" -f $i, ($_.Exception.Message -replace '\|', '/'))
+        }
+    }
     if ($hasExistingResult -and $hasExistingVerify) {
         Write-Host "Reusing existing Phase 1 $sliceId result; regenerating authoritative verification."
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
@@ -2725,7 +3830,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -2758,7 +3863,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification: $($redIncrementalGate.Blocker)"
             break
         }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
         Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
         $verify = Read-JsonObject -Path $sliceVerify
@@ -2781,13 +3886,19 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
+        $verify = Read-JsonObject -Path $sliceVerify
+        if ($null -ne $verify.authorized_for_next_slice -and -not [bool]$verify.authorized_for_next_slice) {
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay authorization stop | existing_artifact_replay | existing_artifact_replay | non_authorizing_evidence | authorized_for_next_slice=false; downstream existing slice artifacts are ignored until S{0} is fixed. blockers={1}. |" -f $i, ((Get-StringArray $verify.authorization_blockers) -join ','))
+            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "non_authorizing_existing_artifact_replay: $(((Get-StringArray $verify.authorization_blockers) -join ','))"
+            break
+        }
         if (-not [bool]$verify.should_continue) {
             $nextExistingResult = Join-Path $replayRootFull ('SLICE_RESULT_{0:D2}.json' -f ($i + 1))
             if (Test-Path -LiteralPath $nextExistingResult) {
-                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay continue | existing_artifact_replay | existing_artifact_replay | none | verifier requested stop, but S{1} already exists; continuing artifact replay without launching a new slice. |" -f $i, ($i + 1))
-            } else {
-                break
+                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay stop | existing_artifact_replay | existing_artifact_replay | verifier_stop | should_continue=false; S{1} existing artifact is ignored until S{0} passes verification. |" -f $i, ($i + 1))
+                Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "verifier_stop_existing_artifact_replay"
             }
+            break
         }
         continue
     }
@@ -2796,23 +3907,12 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     $rankMap = New-CarrierRankMap -Ledger $ledger -SliceIndex $i
     $rankMap | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierRank -Encoding UTF8
     $rankMap | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRootFull 'CARRIER_RANK.json') -Encoding UTF8
-    $forced = Get-ForcedFamilyDecision -Ledger $ledger -SliceIndex $i -CarrierRank $rankMap
-    if (Test-Path -LiteralPath $sourceChainContractPath) {
-        try {
-            $sourceChain = Read-JsonObject -Path $sourceChainContractPath
-            if ([bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice) {
-                $forced = [ordered]@{
-                    family_id = 'core_entry'
-                    slice_type = [string]$sourceChain.next_required_slice.slice_type
-                    target_sibling_surface = [string]$sourceChain.next_required_slice.carrier
-                    reason = 'Runner contract: named source-chain requirement detected; source extraction/service/request/task chain must be closed before terminal payload/stateful follow-up.'
-                    open_families = [string]$forced.open_families
-                }
-            }
-        } catch {
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} source-chain analysis warning | source_chain | exact_contract_slice | source_chain_contract_unreadable | {1}. |" -f $i, $_.Exception.Message)
-        }
-    }
+    $forced = Resolve-ForcedFamilyDecisionForSlice `
+        -Ledger $ledger `
+        -SliceIndex $i `
+        -CarrierRank $rankMap `
+        -SourceChainContractPath $sourceChainContractPath `
+        -RunnerContractPath $runnerContractPath
     Add-RunnerEnforcementContract -Path $runnerContractPath -SliceIndex $i -ForcedDecision $forced
 
     $capDisplayArgs = @(
@@ -2919,6 +4019,32 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         }
     }
 
+    if (-not $blockedBeforeExecutor) {
+        $preImplementationCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
+        if (-not [bool]$preImplementationCharterGate.CanProceed) {
+            Write-Host "Test charter prevalidation failed before executor for slice ${i}. Starting test charter repair pass."
+            $preImplementationCharterGate = Invoke-TestCharterRepairGate `
+                -ReplayRoot $replayRootFull `
+                -Worktree $worktreeFull `
+                -SliceIndex $i `
+                -RunnerContractPath $runnerContractPath `
+                -ForcedDecision $forced `
+                -FailedGate $preImplementationCharterGate `
+                -Executor $Executor `
+                -Sandbox $Sandbox `
+                -Approval $Approval `
+                -TimeoutMinutes $sliceTimeoutMinutes `
+                -Model $Model `
+                -ReasoningEffort $ReasoningEffort
+        }
+        if (-not [bool]$preImplementationCharterGate.CanProceed) {
+            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode 0 -Reason "pre-implementation test charter gate stopped before executor: $($preImplementationCharterGate.Blocker)"
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-implementation test charter stop | {1} | {2} | test_charter_missing_before_implementation | result={3}. |" -f $i, $forced.family_id, $forced.slice_type, $preImplementationCharterGate.ResultPath)
+            $blockedBeforeExecutor = $true
+            $hasExistingResult = $true
+        }
+    }
+
     $values = @{
         PROJECT_ROOT = $projectRootFull
         FEATURE_NAME = $FeatureName
@@ -2931,6 +4057,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         BASELINE_INDEX = $baselineIndexFull
         CONTEXT_MANIFEST = $contextManifestFull
         SURFACE_CARRIER_SCAN = $surfaceCarrierScanPath
+        FEATURE_CLASSIFICATION = $featureClassificationPath
         SYSTEM_CONTEXT_DIR = $systemContextDirFull
         RUN_LABEL = $RunLabel
         ROUND_ID = $RoundId
@@ -3005,60 +4132,68 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
 
     [void](Copy-SliceResultFromWorktree -Worktree $worktreeFull -Destination $sliceResult -SliceIndex $i)
     if (-not (Test-Path -LiteralPath $sliceResult) -and -not $hasExistingResult -and -not $blockedBeforeExecutor) {
-        $retryPrompt = Join-Path $replayRootFull ('PHASE1_SLICE_{0:D2}_RETRY_PROMPT.md' -f $i)
-        $retryLogDir = Join-Path $logsRoot ('{0}-retry' -f $sliceId)
-        $lastMessagePath = Join-Path $sliceLogDir ('phase1-{0}.last-message.md' -f $sliceId)
-        $lastMessage = Read-TextIfExists -Path $lastMessagePath
-        $retryPreamble = @(
-            'RECOVERY MODE: the previous slice executor exited without writing the required SLICE_RESULT JSON.',
-            '',
-            'Do not ask the user for confirmation. In this automated replay, dirty or untracked files inside the isolated worktree are expected from earlier slices and are authorized context.',
-            'Continue from the current isolated worktree, execute or classify this one slice, and always write the required JSON to the exact slice result path.',
-            'Narrow the slice before retrying: choose the smallest deployable carrier for the forced family, close one concrete surface with RED/GREEN evidence, and leave sibling surfaces as explicit remaining gaps.',
-            'If you cannot safely continue, write a BLOCKED SLICE_RESULT JSON with the concrete blocker instead of ending with a question.',
-            '',
-            'Previous last message excerpt:',
-            '```text',
-            ($lastMessage.Substring(0, [Math]::Min($lastMessage.Length, 2000))),
-            '```',
-            '',
-            'Original slice prompt follows.',
-            ''
-        ) -join "`n"
-        Set-Content -LiteralPath $retryPrompt -Encoding UTF8 -Value ($retryPreamble + "`n" + (Get-Content -LiteralPath $slicePrompt -Raw -Encoding UTF8))
-        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor retry | {1} | {2} | missing_slice_result_retry | first attempt wrote no result; retrying once with non-interactive dirty-worktree authorization. |" -f $i, $forced.family_id, $forced.slice_type)
-
-        $retryAgentArgs = @(
-            '-NoProfile',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'),
-            '-PromptPath', $retryPrompt,
-            '-WorkDir', $worktreeFull,
-            '-LogDir', $retryLogDir,
-            '-Executor', $Executor,
-            '-Sandbox', $Sandbox,
-            '-Approval', $Approval,
-            '-TimeoutMinutes', $sliceTimeoutMinutes,
-            '-CompletionPath', $sliceResult,
-            '-CompletionQuietSeconds', 90,
-            '-Name', ('phase1-{0}-retry' -f $sliceId)
-        )
-        if (-not [string]::IsNullOrWhiteSpace($Model)) { $retryAgentArgs += @('-Model', $Model) }
-        if (-not [string]::IsNullOrWhiteSpace($ReasoningEffort)) { $retryAgentArgs += @('-ReasoningEffort', $ReasoningEffort) }
-        $retryExitCode = 0
-        $retrySmokeArgs = @($retryAgentArgs + @('-ValidateOnly'))
-        & powershell @retrySmokeArgs | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            $retryExitCode = $LASTEXITCODE
-            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $retryLogDir -ExitCode $LASTEXITCODE -Reason "runner retry invocation smoke failed before starting executor"
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry runner invocation smoke blocked | {1} | {2} | runner_invocation_error | validate-only exit_code={3}; retry executor was not started. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE)
+        $resourceBlocker = Get-PermanentExecutorResourceBlocker -LogDir $sliceLogDir
+        if ([bool]$resourceBlocker.IsResourceBlocker) {
+            $retryExitCode = $executorExitCode
+            $blockedReason = "permanent executor resource blocker: $($resourceBlocker.Category)"
+            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $executorExitCode -Reason $blockedReason -FailureCategory ([string]$resourceBlocker.Category) -ExecutorDiagnostic ([string]$resourceBlocker.Diagnostic)
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor resource blocked | {1} | {2} | {3} | exit_code={4}; no retry prompt generated because this requires external executor remediation. |" -f $i, $forced.family_id, $forced.slice_type, $resourceBlocker.Category, $executorExitCode)
         } else {
-            $retryExitCode = Invoke-SliceExecutorWithRetry -AgentArgs $retryAgentArgs -SliceLogDir $retryLogDir -SliceId "$sliceId-retry" -MaxRetries 1 -DelaySeconds 60
-            if ($retryExitCode -ne 0) {
-                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry executor failed | {1} | {2} | executor_failed_without_result | retry exit_code={3}; preserving actual retry failure code for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $retryExitCode)
+            $retryPrompt = Join-Path $replayRootFull ('PHASE1_SLICE_{0:D2}_RETRY_PROMPT.md' -f $i)
+            $retryLogDir = Join-Path $logsRoot ('{0}-retry' -f $sliceId)
+            $lastMessagePath = Join-Path $sliceLogDir ('phase1-{0}.last-message.md' -f $sliceId)
+            $lastMessage = Read-TextIfExists -Path $lastMessagePath
+            $retryPreamble = @(
+                'RECOVERY MODE: the previous slice executor exited without writing the required SLICE_RESULT JSON.',
+                '',
+                'Do not ask the user for confirmation. In this automated replay, dirty or untracked files inside the isolated worktree are expected from earlier slices and are authorized context.',
+                'Continue from the current isolated worktree, execute or classify this one slice, and always write the required JSON to the exact slice result path.',
+                'Narrow the slice before retrying: choose the smallest deployable carrier for the forced family, close one concrete surface with RED/GREEN evidence, and leave sibling surfaces as explicit remaining gaps.',
+                'If you cannot safely continue, write a BLOCKED SLICE_RESULT JSON with the concrete blocker instead of ending with a question.',
+                '',
+                'Previous last message excerpt:',
+                '```text',
+                ($lastMessage.Substring(0, [Math]::Min($lastMessage.Length, 2000))),
+                '```',
+                '',
+                'Original slice prompt follows.',
+                ''
+            ) -join "`n"
+            Set-Content -LiteralPath $retryPrompt -Encoding UTF8 -Value ($retryPreamble + "`n" + (Get-Content -LiteralPath $slicePrompt -Raw -Encoding UTF8))
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor retry | {1} | {2} | missing_slice_result_retry | first attempt wrote no result; retrying once with non-interactive dirty-worktree authorization. |" -f $i, $forced.family_id, $forced.slice_type)
+
+            $retryAgentArgs = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'),
+                '-PromptPath', $retryPrompt,
+                '-WorkDir', $worktreeFull,
+                '-LogDir', $retryLogDir,
+                '-Executor', $Executor,
+                '-Sandbox', $Sandbox,
+                '-Approval', $Approval,
+                '-TimeoutMinutes', $sliceTimeoutMinutes,
+                '-CompletionPath', $sliceResult,
+                '-CompletionQuietSeconds', 90,
+                '-Name', ('phase1-{0}-retry' -f $sliceId)
+            )
+            if (-not [string]::IsNullOrWhiteSpace($Model)) { $retryAgentArgs += @('-Model', $Model) }
+            if (-not [string]::IsNullOrWhiteSpace($ReasoningEffort)) { $retryAgentArgs += @('-ReasoningEffort', $ReasoningEffort) }
+            $retryExitCode = 0
+            $retrySmokeArgs = @($retryAgentArgs + @('-ValidateOnly'))
+            & powershell @retrySmokeArgs | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                $retryExitCode = $LASTEXITCODE
+                Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $retryLogDir -ExitCode $LASTEXITCODE -Reason "runner retry invocation smoke failed before starting executor"
+                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry runner invocation smoke blocked | {1} | {2} | runner_invocation_error | validate-only exit_code={3}; retry executor was not started. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE)
+            } else {
+                $retryExitCode = Invoke-SliceExecutorWithRetry -AgentArgs $retryAgentArgs -SliceLogDir $retryLogDir -SliceId "$sliceId-retry" -MaxRetries 1 -DelaySeconds 60
+                if ($retryExitCode -ne 0) {
+                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry executor failed | {1} | {2} | executor_failed_without_result | retry exit_code={3}; preserving actual retry failure code for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $retryExitCode)
+                }
             }
+            [void](Copy-SliceResultFromWorktree -Worktree $worktreeFull -Destination $sliceResult -SliceIndex $i)
         }
-        [void](Copy-SliceResultFromWorktree -Worktree $worktreeFull -Destination $sliceResult -SliceIndex $i)
     }
     if (-not (Test-Path -LiteralPath $sliceResult)) {
         $finalExecutorExitCode = 0
@@ -3086,7 +4221,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         break
     }
     # v431: Phase0 precheck gate (test framework validation)
-    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
     if (-not [bool]$phase0Precheck.CanProceed) {
         Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -3112,7 +4247,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification: $($redIncrementalGate.Blocker)"
         break
     }
-    $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+    $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
     Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
     Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
     # v431: Side effect ledger gate (verify after GREEN phase)
@@ -3227,6 +4362,22 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         # v379: Test charter pre-validation gate
         $testCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$testCharterGate.CanProceed) {
+            Write-Host "Test charter prevalidation failed after forced-family repair for slice ${i}. Starting test charter repair pass."
+            $testCharterGate = Invoke-TestCharterRepairGate `
+                -ReplayRoot $replayRootFull `
+                -Worktree $worktreeFull `
+                -SliceIndex $i `
+                -RunnerContractPath $runnerContractPath `
+                -ForcedDecision $forced `
+                -FailedGate $testCharterGate `
+                -Executor $Executor `
+                -Sandbox $Sandbox `
+                -Approval $Approval `
+                -TimeoutMinutes $sliceTimeoutMinutes `
+                -Model $Model `
+                -ReasoningEffort $ReasoningEffort
+        }
+        if (-not [bool]$testCharterGate.CanProceed) {
             Write-Host "Test charter prevalidation gate failed for slice ${i}: $($testCharterGate.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "test_charter_prevalidation: $($testCharterGate.Blocker)"
             break
@@ -3239,7 +4390,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for repaired slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck_after_repair: $($phase0Precheck.Blocker)"
@@ -3265,7 +4416,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification_after_repair: $($redIncrementalGate.Blocker)"
             break
         }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
+        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
         Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
         # v431: Side effect ledger gate (verify after GREEN phase)
@@ -3370,6 +4521,7 @@ $synthesisValues = @{
     BASELINE_INDEX = $baselineIndexFull
     CONTEXT_MANIFEST = $contextManifestFull
     SURFACE_CARRIER_SCAN = $surfaceCarrierScanPath
+    FEATURE_CLASSIFICATION = $featureClassificationPath
     SYSTEM_CONTEXT_DIR = $systemContextDirFull
     RUN_LABEL = $RunLabel
     ROUND_ID = $RoundId

@@ -43,7 +43,7 @@ try {
     Write-Text -Path (Join-Path $newCarrierRoot 'PHASE0_RESULT.md') -Value @'
 # Phase 0 Result
 
-- selected_real_entry: ExampleFlowService (planned_new_carrier per oracle)
+- selected_real_entry: AiAutoClaimFlowService (planned_new_carrier per oracle)
 
 ## Verified from Current Worktree
 

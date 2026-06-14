@@ -1,10 +1,10 @@
 {
     "schema_version": 1,
     "files": [
-        {"path": "example-core/src/main/java/com/example/project/service/examine/ExamineFlowService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
-        {"path": "example-core/src/main/java/com/example/project/service/examine/ExamineFlowFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true},
-        {"path": "example-core/src/main/java/com/example/project/service/push/ExamplePushService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
-        {"path": "example-core/src/main/java/com/example/project/service/return/ExampleTicketContext.java", "layer": "DTO", "weight": "LOW", "is_production": true},
-        {"path": "example-api/src/main/java/com/example/project/api/facade/ai/ExampleDataFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true}
+        {"path": "claim-core/src/main/java/com/huize/claim/service/examine/ExamineFlowService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/examine/ExamineFlowFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/push/InsureCompanyPushService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "claim-core/src/main/java/com/huize/claim/service/return/ReturnTicketContext.java", "layer": "DTO", "weight": "LOW", "is_production": true},
+        {"path": "claim-api/src/main/java/com/huize/claim/api/facade/ai/AiClaimDataFacade.java", "layer": "Controller", "weight": "HIGH", "is_production": true}
     ]
 }

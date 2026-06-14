@@ -18,6 +18,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$pythonResolver = Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'
+if (Test-Path -LiteralPath $pythonResolver) {
+    . $pythonResolver
+} else {
+    throw "Python launcher resolver missing: $pythonResolver"
+}
+
 $validPhases = @('RED', 'GREEN', 'SIDE_EFFECT')
 if ($Phase -notin $validPhases) {
     Write-Error "Invalid phase: $Phase. Must be one of: $($validPhases -join ', ')"
@@ -43,7 +50,8 @@ try {
         $pythonArgs += $Files
     }
 
-    $result = & python3 @pythonArgs 2>&1
+    $python = Resolve-PythonLauncher
+    $result = & $python.Command @($python.Arguments + $pythonArgs) 2>&1
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 0) {

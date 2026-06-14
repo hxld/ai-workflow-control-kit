@@ -68,7 +68,7 @@ In `DEEP_REVIEW_REPORT.md`, review these lenses. Each lens must include evidence
 5. Slice lens: whether slices follow high-weight business flow or easy helper/static surfaces.
 6. Verifier lens: whether verifier blocks synthetic carriers, static-only green, and test-only closure.
 7. Test lens: whether tests prove real entry, transaction/side effects, export/page/async behavior instead of replay-only abstractions.
-8. Token/cost lens: which exploration can be compressed through `example-system-context`, baseline index, or reusable plan contracts.
+8. Token/cost lens: which exploration can be compressed through `claim-system-context`, baseline index, or reusable plan contracts.
 9. Generalization lens: whether the improvement is cross-project and not feature-specific.
 10. Next experiment lens: at most 3 falsifiable next-round hypotheses and their success/rollback metrics.
 

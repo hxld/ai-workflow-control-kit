@@ -12,7 +12,7 @@
 #>
 
 param(
-    [string]$ReplayRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\example-feature\claim-codex-replay-v355-autopilot-20260517-r01"
+    [string]$ReplayRoot = "D:\opt\replay-evidence\aiClaimV2\claim-codex-replay-v355-autopilot-20260517-r01"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,8 +30,8 @@ new_service_created: true
 new_service_justification: orphan_feature
 selected_carrier_from_search: NONE_FOUND
 carrier_search_status: COMPLETED
-carrier_search_queries: rg "CarrierSearchFacade" example-core
-existing_production_carriers: ExampleDataFacade
+carrier_search_queries: rg "CarrierSearchFacade" claim-core
+existing_production_carriers: AiClaimDataFacade
 '@
 
 $testPlanPath = Join-Path $env:TEMP "v356-test-plan-result.md"
@@ -105,7 +105,7 @@ Remove-Item -LiteralPath $testPlanPath2 -Force -ErrorAction SilentlyContinue
 # Test 3: Verify actual verifier script has the fixes
 Write-Host "`n[Test 3] Verify-PlanContract.ps1 contains fixes..." -ForegroundColor Yellow
 
-$verifierPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts\Verify-PlanContract.ps1'
+$verifierPath = "D:\opt\replay-autopilot\scripts\Verify-PlanContract.ps1"
 $verifierContent = Get-Content -LiteralPath $verifierPath -Raw -Encoding UTF8
 
 $fix1Present = $verifierContent -match 'new_service_created'

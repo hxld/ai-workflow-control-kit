@@ -290,23 +290,23 @@ if ($redPassedBeforeImplementation -and $implementedFiles.Count -gt 0 -and -not 
     $warnings.Add('RED phase PASSED before implementation - invalid TDD workflow') | Out-Null
 }
 
-# v289: Test harness placement validation. example-core has no test dependency
+# v289: Test harness placement validation. claim-core has no test dependency
 # harness in this repository; RED/VERIFY tests must be authored and executed
-# through example-server, without modifying POM dependencies.
+# through claim-server, without modifying POM dependencies.
 $allChangedForHarness = @(
     $implementedFiles +
     (Get-StringArray $slice.current_slice_changed_files) +
     (Get-StringArray $slice.round_changed_files_snapshot)
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-if (@($allChangedForHarness | Where-Object { $_ -match '(?i)example-core[/\\]src[/\\]test' }).Count -gt 0) {
-    $issues.Add('wrong_test_surface:example_core_test_harness') | Out-Null
-    $warnings.Add('Tests were placed under example-core/src/test even though this replay requires example-server test harness') | Out-Null
+if (@($allChangedForHarness | Where-Object { $_ -match '(?i)claim-core[/\\]src[/\\]test' }).Count -gt 0) {
+    $issues.Add('wrong_test_surface:claim_core_test_harness') | Out-Null
+    $warnings.Add('Tests were placed under claim-core/src/test even though this replay requires claim-server test harness') | Out-Null
 }
 foreach ($test in @($slice.tests)) {
     $commandText = [string]$test.command
-    if ($commandText -match '(?i)-pl\s+example-core\b') {
-        $issues.Add('wrong_test_surface:example_core_maven_module') | Out-Null
-        $warnings.Add('RED/GREEN command used -pl example-core; use -pl example-server -am for replay tests') | Out-Null
+    if ($commandText -match '(?i)-pl\s+claim-core\b') {
+        $issues.Add('wrong_test_surface:claim_core_maven_module') | Out-Null
+        $warnings.Add('RED/GREEN command used -pl claim-core; use -pl claim-server -am for replay tests') | Out-Null
     }
 }
 if (@($allChangedForHarness | Where-Object { $_ -match '(?i)(^|[/\\])pom\.xml$' }).Count -gt 0) {

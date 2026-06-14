@@ -23,7 +23,7 @@ $configPath = Join-Path $tempRoot 'config.yaml'
 try {
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null
     @"
-project_root: /path/to/project
+project_root: D:\opt\claim
 replay_root_base: $($replayRoot -replace '\\claim-codex-replay-v001-r01$', '\claim-codex-replay-v001')
 executor: claude
 external_practice_seed_urls: https://example.com/a,https://example.com/b
@@ -52,7 +52,7 @@ external_practice_seed_urls: https://example.com/a,https://example.com/b
 
     $fallbackOutput = Join-Path $evidenceRoot '_external-practice-fallback'
     @"
-project_root: /path/to/project
+project_root: D:\opt\claim
 replay_root_base: $($replayRoot -replace '\\claim-codex-replay-v001-r01$', '\claim-codex-replay-v001')
 executor: claude
 external_practice_primary_executor: claude

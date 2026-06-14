@@ -21,7 +21,7 @@ function New-WorktreeClass {
         [string]$MethodName = 'handle'
     )
 
-    $dir = Join-Path $Root 'worktree\example-core\src\main\java\com\example'
+    $dir = Join-Path $Root 'worktree\claim-core\src\main\java\com\example'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     Write-Text -Path (Join-Path $dir "$ClassName.java") -Value @"
 package com.example;
@@ -48,7 +48,7 @@ try {
     Write-Text -Path (Join-Path $pathRoot 'PHASE0_RESULT.md') -Value @'
 # Phase 0 Result
 
-**selected_real_entry**: `example-core/src/main/java/com/example/ExistingEntry.handle`
+**selected_real_entry**: `claim-core/src/main/java/com/example/ExistingEntry.handle`
 
 ## Search Commands Used
 
@@ -83,7 +83,7 @@ rg "class ExistingEntry|handle" --type java
     Write-Text -Path (Join-Path $missingMethodRoot 'PHASE0_RESULT.md') -Value @'
 # Phase 0 Result
 
-**selected_real_entry**: `example-core/src/main/java/com/example/ExistingEntry.notRealMethod`
+**selected_real_entry**: `claim-core/src/main/java/com/example/ExistingEntry.notRealMethod`
 
 ## Search Commands Used
 

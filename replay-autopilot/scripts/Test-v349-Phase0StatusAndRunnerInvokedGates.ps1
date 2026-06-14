@@ -72,7 +72,7 @@ db write
 cap
 
 ## Expected Diff Matrix
-example-core service
+claim-core service
 '@
 
     Write-Utf8 (Join-Path $tempRoot 'FAMILY_CONTRACT.json') @'
@@ -99,6 +99,40 @@ example-core service
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Parse-ReplayReport.ps1') -ReplayRoot $tempRoot | Out-Null
     $summaryText = Get-Content -LiteralPath (Join-Path $tempRoot 'AUTOPILOT_SUMMARY.md') -Raw -Encoding UTF8
     Assert-True ($summaryText -match '(?m)^- phase0_status: PROCEED') 'Parser summary must normalize generic PROCEED_WITH_* to PROCEED.'
+
+    Write-Utf8 (Join-Path $tempRoot 'PHASE0_RESULT.md') @'
+# Phase 0 Result
+
+- phase0_status: GREEN_PROCEED
+- selected_real_entry: ClaimService.handle()
+- first_executable_slice: S1 core path
+- first_slice_type: core_path
+'@
+
+    Write-Utf8 (Join-Path $tempRoot 'FAMILY_CONTRACT.json') @'
+{
+  "phase0_status": "GREEN_PROCEED",
+  "selected_real_entry": "ClaimService.handle()",
+  "first_executable_slice": "S1 core path",
+  "families": [
+    {
+      "id": "core_entry",
+      "required": true,
+      "proof_required": ["real_entry_behavior"]
+    }
+  ]
+}
+'@
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $tempRoot -Stage Phase0 | Out-Null
+    $verify = Get-Content -LiteralPath (Join-Path $tempRoot 'PHASE0_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $issuesText = (@($verify.issues) -join ',')
+    Assert-True ($issuesText -match 'phase0_status_noncanonical:GREEN_PROCEED') 'Verifier must flag GREEN_PROCEED as noncanonical.'
+    Assert-True ($issuesText -notmatch 'phase0_status_not_proceed') 'Verifier must normalize GREEN_PROCEED to PROCEED for runner continuation.'
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Parse-ReplayReport.ps1') -ReplayRoot $tempRoot | Out-Null
+    $summaryText = Get-Content -LiteralPath (Join-Path $tempRoot 'AUTOPILOT_SUMMARY.md') -Raw -Encoding UTF8
+    Assert-True ($summaryText -match '(?m)^- phase0_status: PROCEED') 'Parser summary must normalize GREEN_PROCEED to PROCEED.'
 
     $runLoopText = Get-Content -LiteralPath (Join-Path $scriptRoot 'Run-ReplayLoop.ps1') -Raw -Encoding UTF8
     $sliceLoopText = Get-Content -LiteralPath (Join-Path $scriptRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8

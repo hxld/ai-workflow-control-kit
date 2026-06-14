@@ -14,21 +14,21 @@ Test Scenarios:
 4. Verify fallback behavior when build-test-profile.yaml is missing
 
 .REQUIREMENTS
-- <PROJECT_ROOT> must exist with .memory/build-test-profile.yaml
+- D:\opt\claim must exist with .memory/build-test-profile.yaml
 - Test worktree must exist
 
 .EXPECTED_RESULTS
-- Maven should be invoked with: -s <path-to-maven-settings>
-- Maven should be invoked with: -f <PROJECT_ROOT>\pom.xml
+- Maven should be invoked with: -s D:\maven\settings\settings.xml
+- Maven should be invoked with: -f D:\opt\claim\pom.xml
 - Result JSON should contain maven_settings_used, root_pom_used, maven_command_args
 #>
 
 $ErrorActionPreference = 'Stop'
 
 # Test configuration
-$ReplayRoot = (Split-Path $PSScriptRoot -Parent)
-$Worktree = "$env:AI_WORKFLOW_PROJECT_ROOT"
-$ProjectRoot = "$env:AI_WORKFLOW_PROJECT_ROOT"
+$ReplayRoot = 'D:\opt\replay-autopilot'
+$Worktree = 'D:\opt\claim'
+$ProjectRoot = 'D:\opt\claim'
 
 Write-Host "========================================"
 Write-Host "Test v282: Maven Preflight Gate Fix"
@@ -136,8 +136,8 @@ Write-Host "  PASS: Maven settings and root POM were correctly applied"
 
 # Test 6: Verify expected values
 Write-Host "[Test 6] Verifying expected values..."
-$expectedSettings = '<maven-settings>'
-$expectedPom = "$env:AI_WORKFLOW_PROJECT_ROOT\pom.xml"
+$expectedSettings = 'D:\maven\settings\settings.xml'
+$expectedPom = 'D:\opt\claim\pom.xml'
 
 if ($mavenSettingsUsed -ne $expectedSettings) {
     Write-Host "  WARN: Maven settings ($mavenSettingsUsed) does not match expected ($expectedSettings)"

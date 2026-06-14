@@ -176,6 +176,8 @@ node scripts/diagnose-powershell-r6016.js
 - 硬反思门禁（hard reflection gate）
 - 无人值守控制循环
 
+当前目录同时保留了用于验证控制平面的 benchmark 派生 `configs/`、`requirements/` 和部分回归 fixture。它们是评测输入和回归材料，不是安装后的凭据、运行态日志、私密 oracle diff 或业务源码。默认安装仍然通过参数指定目标路径和本机证据目录。
+
 校验控制器：
 
 ```powershell
@@ -193,6 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\R
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v372-UnattendedControlLoop.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v470-FailureAuditPackAndHardReflection.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Test-v565-PolicyRebuildPlanHarnessEvidenceClosesClaimServerGate.ps1
 ```
 
 ## 安全

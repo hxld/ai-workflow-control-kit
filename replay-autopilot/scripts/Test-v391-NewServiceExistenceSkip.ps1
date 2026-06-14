@@ -36,9 +36,9 @@ try {
 
 - plan_status: PROCEED
 - carrier_search: performed
-- carrier_search_queries: Grep "class.*AutoFlow.*Service" type=java; Glob **/*Service.java under example-core; Grep "auto.*claim|auto.*flow" type=java -i; Grep "class.*Flow.*\{" type=java
-- existing_production_carriers: ExampleCalculatorService; ExampleModuleConfigService; ExamineFlowFacadeImpl; AiOcrService; AiReviewMaterialService; AiDetermineLiabilityService
-- selected_carrier_from_search: NEW_SERVICE_ExampleFlowService
+- carrier_search_queries: Grep "class.*AutoFlow.*Service" type=java; Glob **/*Service.java under claim-core; Grep "auto.*claim|auto.*flow" type=java -i; Grep "class.*Flow.*\{" type=java
+- existing_production_carriers: AiCalculateLossService; AiClaimModuleConfigService; ExamineFlowFacadeImpl; AiOcrService; AiReviewMaterialService; AiDetermineLiabilityService
+- selected_carrier_from_search: NEW_SERVICE_AiAutoClaimFlowService
 - new_service_proposed: true
 - new_service_justification: orphan_feature_no_existing_domain
 - first_slice: S1 - Auto-flow core path
@@ -50,8 +50,8 @@ try {
 # First Slice Proof Plan
 
 - first_slice: S1
-- first_red_test: ExampleFlowServiceTest.testExecuteAutoFlow_FlashCase_Success
-- selected_carrier: ExampleFlowService
+- first_red_test: AiAutoClaimFlowServiceTest.testExecuteAutoFlow_FlashCase_Success
+- selected_carrier: AiAutoClaimFlowService
 '@
 
     # Run verifier - the key assertion is that carrier_not_found issue should NOT be present
@@ -72,7 +72,7 @@ try {
 - plan_status: PROCEED
 - carrier_search: performed
 - carrier_search_queries: Grep "class.*TestService.*Service" type=java; Grep "class.*Another.*Service" type=java; Grep "class.*Third.*Service" type=java
-- existing_production_carriers: ExampleCalculatorService
+- existing_production_carriers: AiCalculateLossService
 - selected_carrier_from_search: SyntheticCarrierService
 - new_service_proposed: false
 '@
@@ -94,7 +94,7 @@ try {
 - plan_status: PROCEED
 - carrier_search: performed
 - carrier_search_queries: Grep "class.*TestService.*Service" type=java; Grep "class.*Another.*Service" type=java; Grep "class.*Third.*Service" type=java
-- existing_production_carriers: ExampleCalculatorService
+- existing_production_carriers: AiCalculateLossService
 - selected_carrier_from_search: NEW_SERVICE_MyNewService
 - new_service_proposed: true
 - new_service_justification: weak_reason

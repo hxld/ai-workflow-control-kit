@@ -18,7 +18,7 @@ $autopilotRoot = Split-Path -Parent $scriptRoot
 $cases = New-Object System.Collections.Generic.List[string]
 
 # Test 1: Semicolon format parsing
-$semicolonText = '- oracle_out_of_scope_files: ExamplePushFacade (dock domain); ExamineFlowFacade (examine domain); AiOcrService (OCR processing)'
+$semicolonText = '- oracle_out_of_scope_files: InsureCompanyPushFacade (dock domain); ExamineFlowFacade (examine domain); AiOcrService (OCR processing)'
 $parts = @()
 if ($semicolonText -match '(?im)^\s*-?\s*oracle_out_of_scope_files\s*[:=]\s*(.+)') {
     $content = $Matches[1]
@@ -31,7 +31,7 @@ if ($semicolonText -match '(?im)^\s*-?\s*oracle_out_of_scope_files\s*[:=]\s*(.+)
     }
 }
 $cases.Add((Assert-True -Name 'semicolon_format_parse_count' -Condition ($fileNames.Count -eq 3))) | Out-Null
-$cases.Add((Assert-True -Name 'semicolon_format_first_file' -Condition ($fileNames[0] -eq 'ExamplePushFacade'))) | Out-Null
+$cases.Add((Assert-True -Name 'semicolon_format_first_file' -Condition ($fileNames[0] -eq 'InsureCompanyPushFacade'))) | Out-Null
 
 # Test 2: Bracket format parsing
 $bracketText = '- oracle_out_of_scope_files: [File1, File2, File3]'
@@ -50,7 +50,7 @@ $cases.Add((Assert-True -Name 'bracket_format_parse_count' -Condition ($fileName
 
 # Test 3: Exact filename match (no substring false positive)
 $outOfScope = @('Facade', 'Service')
-$testFiles = @('ExampleAutoClaimFlowFacade.java', 'ExamplePushFacade.java', 'MyService.java', 'AiOcrService.java')
+$testFiles = @('AiAutoClaimFlowFacade.java', 'InsureCompanyPushFacade.java', 'MyService.java', 'AiOcrService.java')
 $filtered = @($testFiles | Where-Object {
     $f = $_
     $fn = [System.IO.Path]::GetFileNameWithoutExtension($f)
@@ -60,20 +60,20 @@ $filtered = @($testFiles | Where-Object {
     })
 })
 # After filtering, only files NOT exactly matching 'Facade' or 'Service' should remain
-# 'ExampleAutoClaimFlowFacade' != 'Facade', so it should NOT be filtered out (previous bug)
-# 'ExamplePushFacade' != 'Facade', so it should NOT be filtered out
-# But wait - the out-of-scope list contains just 'Facade', not 'ExamplePushFacade'
+# 'AiAutoClaimFlowFacade' != 'Facade', so it should NOT be filtered out (previous bug)
+# 'InsureCompanyPushFacade' != 'Facade', so it should NOT be filtered out
+# But wait - the out-of-scope list contains just 'Facade', not 'InsureCompanyPushFacade'
 # So the expected behavior is:
-# - 'ExampleAutoClaimFlowFacade' - NOT filtered (filename != 'Facade')
-# - 'ExamplePushFacade' - NOT filtered (filename != 'Facade')
+# - 'AiAutoClaimFlowFacade' - NOT filtered (filename != 'Facade')
+# - 'InsureCompanyPushFacade' - NOT filtered (filename != 'Facade')
 # - 'MyService' - NOT filtered (filename != 'Service')
 # - 'AiOcrService' - NOT filtered (filename != 'Service')
-# All should remain because 'Facade' != 'ExampleAutoClaimFlowFacade'
+# All should remain because 'Facade' != 'AiAutoClaimFlowFacade'
 $cases.Add((Assert-True -Name 'exact_match_no_false_positive' -Condition ($filtered.Count -eq 4))) | Out-Null
 
 # Test 4: Exact filename match (correct exclusion)
 $outOfScope2 = @('AiOcrService', 'ExamineFlowFacade')
-$testFiles2 = @('AiOcrService.java', 'ExamineFlowFacade.java', 'ExampleFlowService.java')
+$testFiles2 = @('AiOcrService.java', 'ExamineFlowFacade.java', 'AiAutoClaimFlowService.java')
 $filtered2 = @($testFiles2 | Where-Object {
     $f = $_
     $fn = [System.IO.Path]::GetFileNameWithoutExtension($f)
@@ -84,8 +84,8 @@ $filtered2 = @($testFiles2 | Where-Object {
 })
 # 'AiOcrService' == 'AiOcrService' - filtered out
 # 'ExamineFlowFacade' == 'ExamineFlowFacade' - filtered out
-# 'ExampleFlowService' != any - NOT filtered
-$cases.Add((Assert-True -Name 'exact_match_correct_exclusion' -Condition ($filtered2.Count -eq 1 -and $filtered2[0] -eq 'ExampleFlowService.java'))) | Out-Null
+# 'AiAutoClaimFlowService' != any - NOT filtered
+$cases.Add((Assert-True -Name 'exact_match_correct_exclusion' -Condition ($filtered2.Count -eq 1 -and $filtered2[0] -eq 'AiAutoClaimFlowService.java'))) | Out-Null
 
 # Test 5: Case sensitivity (PowerShell -eq is case-insensitive by default)
 $outOfScope3 = @('aiocrservice')  # lowercase
@@ -104,10 +104,10 @@ $cases.Add((Assert-True -Name 'case_insensitive_exact_match' -Condition ($filter
 
 # Test 6: Domain filtering for cross-feature oracles
 $allOracleFiles = @(
-    'example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java',
-    'example-core/src/main/java/com/example/project/core/ai/service/AiOcrService.java',
-    'example-core/src/main/java/com/example/project/core/dock/service/ExamplePushService.java',
-    'example-core/src/main/java/com/example/project/core/examine/service/ExamineService.java'
+    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java',
+    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiOcrService.java',
+    'claim-core/src/main/java/com/huize/claim/core/dock/service/InsureCompanyPushService.java',
+    'claim-core/src/main/java/com/huize/claim/core/examine/service/ExamineService.java'
 )
 $primaryDomain = 'ai'
 $domainFiltered = @($allOracleFiles | Where-Object {
@@ -117,7 +117,7 @@ $domainFiltered = @($allOracleFiles | Where-Object {
 # Should only match files containing "/ai/" in path
 $cases.Add((Assert-True -Name 'domain_filter_ai_only' -Condition (
     $domainFiltered.Count -eq 2 -and
-    $domainFiltered[0] -eq 'example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java'
+    $domainFiltered[0] -eq 'claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java'
 ))) | Out-Null
 
 # Test 7: Domain filter with no matching domain
@@ -131,8 +131,8 @@ $cases.Add((Assert-True -Name 'domain_filter_no_match' -Condition ($domainFilter
 
 # Test 8: Domain filter exact match (not substring)
 $trickyFiles = @(
-    'example-core/src/main/java/com/example/project/core/ai/service/AiService.java',
-    'example-core/src/main/java/com/example/project/core/daily/DailyAiTaskService.java'
+    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiService.java',
+    'claim-core/src/main/java/com/huize/claim/core/daily/DailyAiTaskService.java'
 )
 $primaryDomain3 = 'ai'
 $domainFiltered3 = @($trickyFiles | Where-Object {
@@ -142,7 +142,7 @@ $domainFiltered3 = @($trickyFiles | Where-Object {
 # Should only match first file (contains "/ai/"), not second (contains "/daily/" not "/ai/")
 $cases.Add((Assert-True -Name 'domain_filter_exact_path_match' -Condition (
     $domainFiltered3.Count -eq 1 -and
-    $domainFiltered3[0] -eq 'example-core/src/main/java/com/example/project/core/ai/service/AiService.java'
+    $domainFiltered3[0] -eq 'claim-core/src/main/java/com/huize/claim/core/ai/service/AiService.java'
 ))) | Out-Null
 
 [ordered]@{

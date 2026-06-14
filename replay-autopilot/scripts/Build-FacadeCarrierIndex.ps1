@@ -7,7 +7,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
     [string]$BaselineCommit = '',
-    [string]$Modules = @('example-api', 'example-api-open', 'example-core')
+    [string[]]$Modules = @('claim-api', 'claim-api-open', 'claim-core')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,58 +50,42 @@ foreach ($module in $Modules) {
         continue
     }
 
-    # Search for Facade interfaces
     Write-Host "Scanning $module for Facade interfaces..." -ForegroundColor Cyan
 
-    $rgPattern = '(?s)interface\s+(\w*Facade\w*)\s*(?:extends\s+\w+\s*)?\{'
+    $javaFiles = @(Get-ChildItem -LiteralPath $srcPath -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue)
+    foreach ($file in $javaFiles) {
+        $lines = Get-Content -LiteralPath $file.FullName -Encoding UTF8
+        $currentFacade = ''
+        $facadeLineNumber = 0
 
-    $rgArgs = @(
-        '--type=java',
-        '--no-heading',
-        '--line-number',
-        '-U', '5',
-        $rgPattern,
-        $srcPath
-    )
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = [string]$lines[$i]
+            if ([string]::IsNullOrWhiteSpace($currentFacade) -and $line -match '\binterface\s+(\w*Facade\w*)\b') {
+                $currentFacade = $matches[1]
+                $facadeLineNumber = $i + 1
+                continue
+            }
 
-    $rgOutput = rg @rgArgs 2>$null
-
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($rgOutput)) {
-        $lines = $rgOutput -split "`n"
-        $currentFile = $null
-        $currentLineNumber = 0
-        $currentFacade = $null
-
-        foreach ($line in $lines) {
-            if ($line -match '^([^\d]+)[:-](\d+):(.*)$') {
-                $currentFile = $matches[1]
-                $currentLineNumber = [int]$matches[2]
-                $content = $matches[3]
-
-                if ($content -match 'interface\s+(\w*Facade\w*)') {
-                    $currentFacade = $matches[1]
+            if ([string]::IsNullOrWhiteSpace($currentFacade)) { continue }
+            if ($line -match '^\s*(?:public\s+)?(?:<[^>]+>\s*)?[\w<>\[\], ?\.]+\s+(\w+)\s*\(([^)]*)\)\s*(?:throws\s+[^;]+)?;') {
+                $method = $matches[1]
+                $parameters = $matches[2]
+                $key = "$currentFacade.$method"
+                if ($carriers.Contains($key)) {
+                    $key = "$key#$($i + 1)"
                 }
-            } elseif ($currentFacade -and $currentFile) {
-                # Look for method signatures in next lines
-                if ($line -match '^\s*([^\s].*)?(\w+)\s*\(([^)]*)\)(?:\s*throws\s+[^;]+)?;') {
-                    $method = $matches[2]
-                    $parameters = $matches[3]
-
-                    $fullPath = if ($currentFile -match '^[A-Za-z]:') { $currentFile } else { Join-Path $baselineRootFull $currentFile }
-
-                    $key = "$currentFacade.$method"
-                    $carriers[$key] = [ordered]@{
-                        facade_name = $currentFacade
-                        method_name = $method
-                        parameters = $parameters
-                        file_path = $fullPath
-                        line_number = $currentLineNumber
-                        module = $module
-                        layer = 'Facade'
-                        type = 'interface'
-                    }
-                    $totalCount++
+                $carriers[$key] = [ordered]@{
+                    facade_name = $currentFacade
+                    method_name = $method
+                    parameters = $parameters
+                    file_path = $file.FullName
+                    line_number = $i + 1
+                    facade_line_number = $facadeLineNumber
+                    module = $module
+                    layer = 'Facade'
+                    type = 'interface'
                 }
+                $totalCount++
             }
         }
     }

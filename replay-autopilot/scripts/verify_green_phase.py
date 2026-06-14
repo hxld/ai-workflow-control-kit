@@ -215,6 +215,19 @@ def verify_green_phase_allowed(
     }
 
 
+def read_json_value(path: str):
+    """Read JSON emitted by Windows PowerShell, including UTF-8 BOM output."""
+    return json.loads(Path(path).read_text(encoding='utf-8-sig'))
+
+
+def normalize_string_list(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)] if str(value).strip() else []
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: verify_green_phase.py <command> [args...]", file=sys.stderr)
@@ -246,8 +259,8 @@ if __name__ == "__main__":
         impl_files_json = sys.argv[3]
         families_json = sys.argv[4]
 
-        implemented_files = json.loads(Path(impl_files_json).read_text(encoding='utf-8'))
-        touched_families = json.loads(Path(families_json).read_text(encoding='utf-8'))
+        implemented_files = normalize_string_list(read_json_value(impl_files_json))
+        touched_families = normalize_string_list(read_json_value(families_json))
 
         result = verify_green_phase_allowed(worktree, implemented_files, touched_families)
         print(json.dumps(result, indent=2))

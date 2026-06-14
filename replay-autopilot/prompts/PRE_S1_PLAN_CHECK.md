@@ -13,8 +13,8 @@ Before writing the RED test for S1, you must verify the selected carrier matches
 2. **Search codebase for existing carriers**
    - Use ripgrep to find existing services handling similar functionality:
      ```bash
-     rg -i "配置字段" --type java -g "*Service.java" example-core/
-     rg -i "免复核" --type java -g "*Service.java" example-core/
+     rg -i "配置字段" --type java -g "*Service.java" claim-core/
+     rg -i "免复核" --type java -g "*Service.java" claim-core/
      ```
    - Look for pattern matches like `ModuleConfigService` for config-related keywords
 
@@ -35,15 +35,15 @@ Before writing the RED test for S1, you must verify the selected carrier matches
 ❌ **WRONG**: Selecting the first mentioned class without verifying architectural fit
 ```
 # Wrong: selecting TaskProcessor when requirement describes configuration
-Planned Carrier: ExampleCalculatorApiTaskProcessor
+Planned Carrier: AiCalculateLossApiTaskProcessor
 Requirement Keywords: 配置字段, 免复核金额
-Expected: ExampleModuleConfigService (config-related service)
+Expected: AiClaimModuleConfigService (config-related service)
 ```
 
 ✅ **CORRECT**: Verifying carrier matches requirement patterns
 ```
 # Correct: carrier matches config-related keywords
-Planned Carrier: ExampleModuleConfigService
+Planned Carrier: AiClaimModuleConfigService
 Requirement Keywords: 配置字段, 免复核金额
 Evidence: Search for "config" returns ModuleConfigService pattern
 ```
@@ -62,9 +62,9 @@ If `verify-carrier.ps1` returns WARN and you cannot justify the carrier selectio
 | config, 配置, 字段 | ModuleConfigService, ConfigService |
 | auto, 自动, 流转 | AutoFlowService, AutoClaimFlowService |
 | examine, 审核 | ExamineService, ReviewService |
-| refund, 回调 | RefundService, ExampleTicketService |
-| claim, 记录 | ClaimService, ClaimFlowService |
-| ai, AI核赔 | ExampleService, ExampleFlowService |
+| refund, 退票 | RefundService, ReturnTicketService |
+| claim, 理赔 | ClaimService, ClaimFlowService |
+| ai, AI核赔 | AiClaimService, AiAutoClaimFlowService |
 
 ## Domain Compatibility Check (v347)
 
@@ -97,8 +97,8 @@ python scripts/validate_entry_point_mapping.py \
    - English equivalents: Apply, Claim, Calculate, Report, Review, Payment, Notify, Callback
 
 2. **Carrier Matching**: Verifies selected carrier contains workflow keywords
-   - Example: Requirement "AI核赔申请" → carrier must contain "Apply" (ExampleApply)
-   - Rejects: ExampleCalculator (wrong workflow phase)
+   - Example: Requirement "AI核赔申请" → carrier must contain "Apply" (AiApplyClaim)
+   - Rejects: AiCalculateLoss (wrong workflow phase)
 
 3. **Verification Output**:
    ```json
@@ -107,7 +107,7 @@ python scripts/validate_entry_point_mapping.py \
      "verified_carriers": [
        {
          "family_id": "core_entry",
-         "carrier_name": "ExampleApiTaskProcessor",
+         "carrier_name": "AiApplyClaimApiTaskProcessor",
          "reason": "Carrier matches requirement keyword 'Apply'"
        }
      ],
@@ -126,6 +126,6 @@ If verification fails:
 
 | Requirement Keyword | Wrong Carrier | Correct Carrier |
 |---------------------|---------------|-----------------|
-| 申请 | ExampleCalculatorTaskProcessor | ExampleApplyTaskProcessor |
-| 核赔/理算 | ExampleApplyTaskProcessor | ExampleCalculatorTaskProcessor |
-| 回调 | ExampleApplyTaskService | ExampleCallbackService |
+| 申请 | AiCalculateLossTaskProcessor | AiApplyClaimTaskProcessor |
+| 核赔/理算 | AiApplyClaimTaskProcessor | AiCalculateLossTaskProcessor |
+| 回调 | AiApplyTaskService | AiClaimCallbackService |

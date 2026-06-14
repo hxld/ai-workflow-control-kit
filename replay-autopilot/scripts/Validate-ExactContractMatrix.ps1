@@ -45,7 +45,7 @@ function Test-MetadataLiteral {
     if ($value -match '^(PASS|FAIL|DONE|PARTIAL|BLOCKED|OPEN|CLOSED|PROCEED|VALID|INVALID_REPLAY)$') { return $true }
     if ($value -match '^(phase0_status|plan_status|final_status|blocker|decision)\s*[:=]') { return $true }
     if ($value -match '(?i)(gap|blocker|stop|authorization|workflow|coverage).*(gap|blocked|stop|partial|fail)') { return $true }
-    if ($value -match '^(example-core|example-server|example-web|example-api|example-domain)$') { return $true }
+    if ($value -match '^(claim-core|claim-server|claim-web|claim-api|claim-domain)$') { return $true }
     if ($value -match '^--%$|^-s$|^-f$|^-D') { return $true }
     if ($value -match '^(Noop|Stub|Fake|Dummy|Placeholder|Mock|InMemory|TestOnly|Scaffold)$') { return $true }
     if ($value -match '^[A-Z][A-Za-z0-9_]*(?:Test|Service|Controller|Mapper|Facade|Impl|Dto|DTO|VO|Vo|Request|Response|Query)?(?:#[A-Za-z0-9_]+)?$') { return $true }

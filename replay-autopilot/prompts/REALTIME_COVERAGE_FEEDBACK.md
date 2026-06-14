@@ -70,7 +70,7 @@
 **WRONG** (creates files, no coverage credit):
 ```json
 {
-  "implemented_files": ["ExampleService.java", "ExampleServiceTest.java"],
+  "implemented_files": ["AiClaimService.java", "AiClaimServiceTest.java"],
   "tests": [
     {"phase": "GREEN", "result": "pass"}
   ],
@@ -91,7 +91,7 @@ public void test() {
 **CORRECT** (creates files with behavioral assertion):
 ```json
 {
-  "implemented_files": ["ExampleService.java", "ExampleServiceTest.java"],
+  "implemented_files": ["AiClaimService.java", "AiClaimServiceTest.java"],
   "tests": [
     {"phase": "RED", "result": "fail"},
     {"phase": "GREEN", "result": "pass"}
@@ -99,8 +99,8 @@ public void test() {
   "coverage_delta": 30,  // Behavioral assertion exists
   "side_effect_evidence": {
     "status": "CLOSED",
-    "entry_call": "exampleService.handleFlow",
-    "test_name": "ExampleServiceTest.testAutoFlow"
+    "entry_call": "aiClaimService.handleAutoFlow",
+    "test_name": "AiClaimServiceTest.testAutoFlow"
   }
 }
 ```
@@ -110,7 +110,7 @@ Test file:
 @Test
 public void testAutoFlow() {
     // CORRECT: Checks business outcome
-    AutoFlowResult result = service.handleFlow(caseId, task);
+    AutoFlowResult result = service.handleAutoFlow(caseId, task);
     assertEquals(AutoFlowStatus.READY, result.getStatus());
 }
 ```

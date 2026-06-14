@@ -1,0 +1,8 @@
+logs/
+run-logs/
+.tmp/
+*.log
+*.err.log
+*.out.log
+*.pyc
+__pycache__/

@@ -6,7 +6,7 @@ Maps requirement action phrases to exact production carriers using source grep.
 Creates REQUIREMENT_CARRIER_BINDINGS.json before planning starts.
 
 This prevents the anti-pattern where agents select wrong processors
-(e.g., ExampleCalculatorApiTaskProcessor instead of ExampleApplyClaimApiTaskProcessor).
+(e.g., AiCalculateLossApiTaskProcessor instead of AiApplyClaimApiTaskProcessor).
 """
 
 import json

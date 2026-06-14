@@ -16,12 +16,12 @@ Analyze oracle production files by path pattern:
 
 | Domain Pattern | Example Files | Priority |
 |---------------|---------------|----------|
-| `{module}/src/main/java/com/example/project/core/ai/` | ExampleFlowService, ClaimCalculationBookService | **PRIMARY** |
-| `{module}/src/main/java/com/example/project/core/examine/` | ExamineService, ExamineFlowFacade | SECONDARY |
-| `{module}/src/main/java/com/example/project/core/dock/` | ExamplePushService, ExampleTicketContext | SECONDARY |
-| `{module}/src/main/java/com/example/project/core/caseinfo/` | CaseAcceptService, CaseDetailService | SECONDARY |
-| `{module}/src/main/java/com/example/project/core/message/` | MessageHelper, TemplateBuilder | TERTIARY |
-| `{module}/src/main/java/com/example/project/domain/` | DTOs, enums | LOW |
+| `{module}/src/main/java/com/huize/claim/core/ai/` | AiAutoClaimFlowService, ClaimCalculationBookService | **PRIMARY** |
+| `{module}/src/main/java/com/huize/claim/core/examine/` | ExamineService, ExamineFlowFacade | SECONDARY |
+| `{module}/src/main/java/com/huize/claim/core/dock/` | InsureCompanyPushService, ReturnTicketContext | SECONDARY |
+| `{module}/src/main/java/com/huize/claim/core/caseinfo/` | CaseAcceptService, CaseDetailService | SECONDARY |
+| `{module}/src/main/java/com/huize/claim/core/message/` | MessageHelper, TemplateBuilder | TERTIARY |
+| `{module}/src/main/java/com/huize/claim/domain/` | DTOs, enums | LOW |
 | `{module}/src/main/webapp/` | JSP, JS | DEFER (UI) |
 
 ### Step 2: Match Requirement to Oracle Domain
@@ -30,9 +30,9 @@ From REQUIREMENT_SOURCE_SNAPSHOT.md, identify the primary feature domain:
 
 **Example Mapping**:
 - "AI核赔自动化" → ai/ domain (PRIMARY)
-- "外部对接流程" → dock/ domain (PRIMARY)
+- "保司对接流程" → dock/ domain (PRIMARY)
 - "案件流转" → caseinfo/ domain (PRIMARY)
-- "记录审核" → examine/ domain (PRIMARY)
+- "理赔审核" → examine/ domain (PRIMARY)
 - UI adjustments → web/ domain (DEFER)
 
 ### Step 3: Prioritize Expansion by Domain Relevance
@@ -45,12 +45,12 @@ From REQUIREMENT_SOURCE_SNAPSHOT.md, identify the primary feature domain:
 
 2. **SECONDARY Domain Integration Points** (Medium Priority)
    - Cover files that bridge PRIMARY domain to other domains
-   - Example: ExamineService if plan calls ExampleFlowService → ExamineService integration
-   - Example: ExamplePushService if plan triggers外部推送
+   - Example: ExamineService if plan calls AiAutoClaimFlowService → ExamineService integration
+   - Example: InsureCompanyPushService if plan triggers保司推送
 
 3. **TERTIARY Domain Support** (Low Priority)
    - Cover only if direct dependency from PRIMARY domain
-   - Example: TemplateBuilder only if plan generates example-calculation-book.ftl
+   - Example: TemplateBuilder only if plan generates claim-calculation-book.ftl
 
 4. **UI Files** (DEFER)
    - Defer to future sprint unless requirement explicitly states UI changes
@@ -91,9 +91,9 @@ high_weight_overlap = (matched_high_weight / total_high_weight_files) * 100
 
 **Example**:
 ```
-Missing PRIMARY file: ExampleFlowService.java (HIGH, 1502 additions)
+Missing PRIMARY file: AiAutoClaimFlowService.java (HIGH, 1502 additions)
 → Map to S1 (Core Auto-Flow Entry)
-→ Test: ExampleFlowServiceTest.testHandle_failsWithMissingCaseRoute
+→ Test: AiAutoClaimFlowServiceTest.testHandle_failsWithMissingCaseRoute
 → Coverage impact: +1 HIGH-weight file, +1502 additions
 ```
 
@@ -107,10 +107,10 @@ Missing PRIMARY file: ExampleFlowService.java (HIGH, 1502 additions)
 
 **Example**:
 ```
-Plan calls: ExampleFlowService.handle() → triggers外部推送
-Missing SECONDARY file: ExamplePushService.pushToExternal()
+Plan calls: AiAutoClaimFlowService.handle() → triggers保司推送
+Missing SECONDARY file: InsureCompanyPushService.pushToInsurance()
 → Add to S2 (State Changes & Side Effects)
-→ Reason:外部推送 is triggered by auto-flow completion
+→ Reason:保司推送 is triggered by auto-flow completion
 → Coverage impact: +1 HIGH-weight file
 ```
 
@@ -122,12 +122,12 @@ In PLAN_RESULT.md, oracle_expansion_plan should follow:
 ### oracle_expansion_plan
 
 PRIMARY Domain (ai/):
-- ExampleFlowService.java → S1 → testHandle_failsWithMissingCaseRoute
+- AiAutoClaimFlowService.java → S1 → testHandle_failsWithMissingCaseRoute
 - ClaimCalculationBookService.java → S2 → testGenerateCalculationBook
 
 SECONDARY Domain Integration:
 - ExamineFlowFacade.java → S3 → testAutoFlowNotification (reason: auto-flow calls examine)
-- ExamplePushService.java → S2 → testPushAutoFlowNotification (reason: state change triggers外部推送)
+- InsureCompanyPushService.java → S2 → testPushAutoFlowNotification (reason: state change triggers保司推送)
 
 DEFER (UI):
 - examine.jsp/examine-material.jsp → DEFER (UI deferred per requirement 2.3.2)

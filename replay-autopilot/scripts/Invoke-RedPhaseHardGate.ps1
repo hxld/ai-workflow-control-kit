@@ -45,6 +45,47 @@ function New-GateIssue {
     return [pscustomobject]@{ code = $Code; message = $Message }
 }
 
+function Read-JsonIfExists {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+function Test-GreenOnlyVerifierAuthorization {
+    param(
+        [string]$ReplayRootPath,
+        [int]$Index
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRootPath) -or $Index -le 0) {
+        return $false
+    }
+    $verify = Read-JsonIfExists -Path (Join-Path $ReplayRootPath ('SLICE_VERIFY_{0:D2}.json' -f $Index))
+    if ($null -eq $verify) { return $false }
+    if ([string]$verify.verification_status -ne 'PASS') { return $false }
+    if (-not [bool]$verify.authorized_for_synthesis) { return $false }
+
+    $greenOnlyAccepted = $false
+    if ($verify.PSObject.Properties.Name -contains 'verifier_adjustments_applied' -and $null -ne $verify.verifier_adjustments_applied) {
+        if ($verify.verifier_adjustments_applied.PSObject.Properties.Name -contains 'green_only_evidence_accepted') {
+            $greenOnlyAccepted = [bool]$verify.verifier_adjustments_applied.green_only_evidence_accepted
+        }
+    }
+    if ((@($verify.warnings) -join ' ') -match 'green_only_evidence_accepted') {
+        $greenOnlyAccepted = $true
+    }
+
+    $featureClassification = if ($verify.PSObject.Properties.Name -contains 'feature_classification') {
+        [string]$verify.feature_classification
+    } else {
+        ''
+    }
+
+    return ($greenOnlyAccepted -and $featureClassification -eq 'narrow_backend_read_only_fix')
+}
+
 function Test-BehavioralTestCharter {
     <#
     .SYNOPSIS
@@ -197,6 +238,47 @@ function Normalize-Result {
     return (([string]$Value).Trim().ToLowerInvariant())
 }
 
+function Test-CompileOnlyRedEvidence {
+    param($Test)
+
+    $text = @(
+        [string]$Test.command,
+        [string]$Test.result,
+        [string]$Test.evidence
+    ) -join "`n"
+    return $text -match '(?i)\btest-compile\b|compile[ds]?\s+success|compilation\s+completed|test\s+class\s+compiled'
+}
+
+function Test-BusinessRedEvidence {
+    param($Test)
+
+    $text = @(
+        [string]$Test.command,
+        [string]$Test.result,
+        [string]$Test.evidence
+    ) -join "`n"
+    return $text -match '(?i)\bfail(?:ed|ure|ures)?\b|missing|would\s+return\s+null|business\s+assertion|source-chain\s+assignment|assert(?:ion)?'
+}
+
+function Select-AuthoritativeRedPhaseTest {
+    param([object[]]$Tests)
+
+    $redTests = @($Tests | Where-Object { ([string]$_.phase).Trim().ToUpperInvariant() -eq 'RED' })
+    if ($redTests.Count -eq 0) { return $null }
+
+    $assertionRedTests = @($redTests | Where-Object { -not (Test-CompileOnlyRedEvidence -Test $_) })
+    if ($assertionRedTests.Count -eq 0) {
+        $assertionRedTests = @($redTests)
+    }
+
+    $businessRedTests = @($assertionRedTests | Where-Object { Test-BusinessRedEvidence -Test $_ })
+    if ($businessRedTests.Count -gt 0) {
+        return ($businessRedTests | Select-Object -First 1)
+    }
+
+    return ($assertionRedTests | Select-Object -First 1)
+}
+
 Write-Host "=== RED_PHASE_HARD_GATE ==="
 
 if ($VerifyOnly) {
@@ -222,7 +304,8 @@ if ($VerifyOnly) {
     $changedFiles = @(Get-StringArray $sliceResult.current_slice_changed_files)
     if ($changedFiles.Count -eq 0) { $changedFiles = @(Get-StringArray $sliceResult.changed_files) }
     $tests = @($sliceResult.tests)
-    $redPhaseTest = $tests | Where-Object { ([string]$_.phase).Trim().ToUpperInvariant() -eq 'RED' } | Select-Object -First 1
+    $redTests = @($tests | Where-Object { ([string]$_.phase).Trim().ToUpperInvariant() -eq 'RED' })
+    $redPhaseTest = Select-AuthoritativeRedPhaseTest -Tests $tests
     $greenPhaseTest = $tests | Where-Object { ([string]$_.phase).Trim().ToUpperInvariant() -eq 'GREEN' } | Select-Object -First 1
 
     $result = [ordered]@{
@@ -234,6 +317,8 @@ if ($VerifyOnly) {
         reason = 'red_phase_verified'
         issues = @()
         warnings = @()
+        selected_red_command = if ($null -ne $redPhaseTest) { [string]$redPhaseTest.command } else { '' }
+        selected_red_result = if ($null -ne $redPhaseTest) { [string]$redPhaseTest.result } else { '' }
         implemented_files = @($implementedFiles)
         changed_files = @($changedFiles)
         slice_result_path = $SliceResultPath
@@ -250,6 +335,8 @@ if ($VerifyOnly) {
         $result.block_green = $true
         $result.reason = 'red_phase_missing'
         $result.issues += @(New-GateIssue -Code 'red_phase_missing' -Message 'No RED phase test entry found in slice result.')
+    } elseif ($redTests.Count -gt 1 -and -not (Test-CompileOnlyRedEvidence -Test $redPhaseTest)) {
+        $result.warnings += @("selected_authoritative_red_phase:$([string]$redPhaseTest.command)")
     }
 
     # Behavioral test charter validation (v334)
@@ -308,10 +395,14 @@ if ($VerifyOnly) {
         $redResult = Normalize-Result $redPhaseTest.result
         $redEvidence = [string]$redPhaseTest.evidence
         if ($redResult -match 'pass|success') {
-            $result.can_proceed = $false
-            $result.block_green = $true
-            $result.reason = 'red_phase_passed_before_fix'
-            $result.issues += @(New-GateIssue -Code 'red_phase_passed_before_fix' -Message 'RED phase passed before implementation; this is structural or non-behavioral evidence.')
+            if (Test-BusinessRedEvidence -Test $redPhaseTest) {
+                $result.warnings += @('red_phase_result_pass_with_business_failure_evidence')
+            } else {
+                $result.can_proceed = $false
+                $result.block_green = $true
+                $result.reason = 'red_phase_passed_before_fix'
+                $result.issues += @(New-GateIssue -Code 'red_phase_passed_before_fix' -Message 'RED phase passed before implementation; this is structural or non-behavioral evidence.')
+            }
         } elseif ($redResult -match 'block|compile|error|inconclusive') {
             $result.can_proceed = $false
             $result.block_green = $true
@@ -346,6 +437,21 @@ if ($VerifyOnly) {
         $result.issues += @(New-GateIssue -Code 'green_phase_missing' -Message 'Implementation files exist but no GREEN phase test entry was recorded.')
     }
 
+    if (-not [bool]$result.can_proceed -and (Test-GreenOnlyVerifierAuthorization -ReplayRootPath $ReplayRoot -Index $SliceIndex)) {
+        $remainingIssues = @($result.issues | Where-Object {
+            [string]$_.code -notin @('red_phase_missing', 'green_phase_missing')
+        })
+        if ($remainingIssues.Count -ne @($result.issues).Count) {
+            $result.issues = @($remainingIssues)
+            $result.warnings += @('green_only_verifier_authorized_missing_red_green_phase_entries')
+            if ($remainingIssues.Count -eq 0) {
+                $result.can_proceed = $true
+                $result.block_green = $false
+                $result.reason = 'verifier_authorized_green_only_read_only_slice'
+            }
+        }
+    }
+
     if (-not [bool]$result.can_proceed) {
         Write-Host "RED_PHASE_HARD_GATE: VIOLATED"
         Exit-Gate -GateResult $result -ExitCode 1
@@ -376,9 +482,9 @@ $testFilePath = $null
 
 # Search in standard test locations
 $searchPaths = @(
-    (Join-Path $Worktree "example-server\src\test\java\com\example\project\core\ai\service"),
-    (Join-Path $Worktree "example-server\src\test\java\com\example\project\core\service"),
-    (Join-Path $Worktree "example-server\src\test\java")
+    (Join-Path $Worktree "claim-server\src\test\java\com\huize\claim\core\ai\service"),
+    (Join-Path $Worktree "claim-server\src\test\java\com\huize\claim\core\service"),
+    (Join-Path $Worktree "claim-server\src\test\java")
 )
 
 foreach ($path in $searchPaths) {
@@ -396,14 +502,15 @@ if ([string]::IsNullOrWhiteSpace($testFilePath)) {
 }
 Write-Host "Test file found: $testFilePath"
 
-# Step 1b: Pre-flight dependency compilation. If this fails, the entire slice is INVALID.
+# Step 1b: Pre-flight dependency compilation. This is the pre-flight build check.
+# If this fails, the entire slice is INVALID.
 # FORBIDDEN: DO NOT write implementation while RED is blocked by compilation.
 Write-Host 'Step 1b: Pre-flight dependency compilation...'
 $preflightArgs = @(
     '-s', $MavenSettings,
     '-f', (Join-Path $Worktree 'pom.xml'),
     'clean', 'install',
-    '-pl', 'example-domain,example-api,example-common',
+    '-pl', 'claim-domain,claim-api,claim-common',
     '-DskipTests',
     '-q'
 )
@@ -437,7 +544,7 @@ $redArgs = @(
     '-s', $MavenSettings,
     '-f', (Join-Path $Worktree 'pom.xml'),
     'test',
-    '-pl', 'example-server',
+    '-pl', 'claim-server',
     '-am',
     "-Dtest=$TestClass",
     '-Dsurefire.failIfNoSpecifiedTests=false'

@@ -1,5 +1,5 @@
 # Test-v432-LayerValidationAndTodoBan.ps1
-# Tests for the three experiments from example-feature NEXT_EXPERIMENT_PLAN.md (v432)
+# Tests for the three experiments from aiClaimV2 NEXT_EXPERIMENT_PLAN.md (v432)
 
 param(
     [switch]$ValidateOnly
@@ -92,18 +92,18 @@ try {
         # Normalize path
         $CarrierPath = $CarrierPath -replace '\\', '/'
 
-        # Check for Facade layer (example-api)
-        if ($CarrierPath -match 'example-api/.*Facade\.java') {
+        # Check for Facade layer (claim-api)
+        if ($CarrierPath -match 'claim-api/.*Facade\.java') {
             return $true
         }
 
-        # Check for Controller layer (example-web)
-        if ($CarrierPath -match 'example-web/.*Controller\.java') {
+        # Check for Controller layer (claim-web)
+        if ($CarrierPath -match 'claim-web/.*Controller\.java') {
             return $true
         }
 
-        # Check for Facade implementation in example-core
-        if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
+        # Check for Facade implementation in claim-core
+        if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
             return $true
         }
 
@@ -112,7 +112,7 @@ try {
     }
 
     # Test valid Facade layer
-    $validFacade = Test-CarrierLayer "example-api/src/main/java/com/example/project/api/facade/ExampleFacade.java"
+    $validFacade = Test-CarrierLayer "claim-api/src/main/java/com/huize/claim/api/facade/AiClaimFacade.java"
     if ($validFacade) {
         Write-Host "PASSED: Test-CarrierLayer correctly identifies Facade as valid" -ForegroundColor Green
     } else {
@@ -121,7 +121,7 @@ try {
     }
 
     # Test valid Controller layer
-    $validController = Test-CarrierLayer "example-web/src/main/java/com/example/project/web/controller/ExampleController.java"
+    $validController = Test-CarrierLayer "claim-web/src/main/java/com/huize/claim/web/controller/AiClaimController.java"
     if ($validController) {
         Write-Host "PASSED: Test-CarrierLayer correctly identifies Controller as valid" -ForegroundColor Green
     } else {
@@ -130,7 +130,7 @@ try {
     }
 
     # Test invalid Service layer
-    $invalidService = Test-CarrierLayer "example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java"
+    $invalidService = Test-CarrierLayer "claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java"
     if (-not $invalidService) {
         Write-Host "PASSED: Test-CarrierLayer correctly rejects Service layer" -ForegroundColor Green
     } else {

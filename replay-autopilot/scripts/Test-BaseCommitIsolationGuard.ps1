@@ -1,6 +1,6 @@
 param(
     [string]$RegistryPath = (Join-Path $PSScriptRoot '..\features\replay-feature-registry.json'),
-    [string]$ProjectRoot = "$env:AI_WORKFLOW_PROJECT_ROOT"
+    [string]$ProjectRoot = 'D:\opt\claim'
 )
 
 $ErrorActionPreference = 'Stop'

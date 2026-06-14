@@ -1,5 +1,5 @@
 param(
-    [string]$EvidenceRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$EvidenceRoot = 'D:\opt\replay-evidence',
     [string]$OutputRoot = '',
     [string]$ControlSummaryPath = '',
     [string]$GoldenLedgerPath = '',

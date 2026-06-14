@@ -240,7 +240,7 @@ if ($phase0Content -match '## Verified from Current Worktree') {
     $worktreeSection = $phase0Content.Substring($phase0Content.IndexOf('## Verified from Current Worktree'))
     if ($worktreeSection -match '(?s)## Verified from Current Worktree.*?(?=##|\Z)') {
         $sectionContent = $matches[0]
-        # Find all Java class claims like "ExampleFlowService.java exists" or "`ExampleFlowService.java` exists"
+        # Find all Java class claims like "AiAutoClaimFlowService.java exists" or "`AiAutoClaimFlowService.java` exists"
         $matches = [regex]::Matches($sectionContent, '``?([A-Za-z0-9_]+\.java)``?\s+exists')
         foreach ($m in $matches) {
             $className = $m.Groups[1].Value -replace '\.java$', ''
@@ -327,7 +327,7 @@ if ($claimedCarriers.Count -gt 0 -and (Test-Path -LiteralPath $worktreePath)) {
 
 # v392: Verify selected_real_entry carrier exists
 if (-not [string]::IsNullOrWhiteSpace($selectedRealEntry) -and (Test-Path -LiteralPath $worktreePath)) {
-    # Extract class name from selected_real_entry (e.g., "ExampleFlowService.handle(...)")
+    # Extract class name from selected_real_entry (e.g., "AiAutoClaimFlowService.handle(...)")
     if (-not [string]::IsNullOrWhiteSpace($entryCarrier)) {
         # v454: Strengthened carrier_status validation - reject any "NEW" substring regardless of context
         if ($carrierStatus -and $carrierStatus -match '(?i)NEW') {

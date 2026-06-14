@@ -34,16 +34,16 @@ try {
     $planResult = @"
 plan_status: PROCEED
 carrier_search: performed
-carrier_search_queries: rg "class ExampleModuleConfigService" --glob "*.java"; rg "class ExamineFlowFacadeImpl" --glob "*.java"
-existing_production_carriers: TExampleModuleConfig.java (example-domain) | ExampleModuleConfigService.java (example-core) | ExamineFlowFacadeImpl.java (example-core)
-selected_carrier_from_search: ExampleModuleConfigService.save (example-core)
+carrier_search_queries: rg "class AiClaimModuleConfigService" --glob "*.java"; rg "class ExamineFlowFacadeImpl" --glob "*.java"
+existing_production_carriers: TAiClaimModuleConfig.java (claim-domain) | AiClaimModuleConfigService.java (claim-core) | ExamineFlowFacadeImpl.java (claim-core)
+selected_carrier_from_search: AiClaimModuleConfigService.save (claim-core)
 new_service_proposed: false
 new_service_justification: N/A
 oracle_production_file_overlap: 50%
 selected_strategy: exact-contract-and-test-first
 implementation_model_recommendation: gpt-5.3-codex
 first_slice: S1 - AI Module Config Field Addition
-first_red_test: ExampleModuleConfigServiceTest.testSave_FreeReviewAmount
+first_red_test: AiClaimModuleConfigServiceTest.testSave_FreeReviewAmount
 "@
     $planResultPath = Join-Path $tempRoot 'PLAN_RESULT.md'
     $planResult | Out-File -FilePath $planResultPath -Encoding UTF8
@@ -52,13 +52,13 @@ first_red_test: ExampleModuleConfigServiceTest.testSave_FreeReviewAmount
     $firstSliceProof = @"
 first_slice: S1 - AI Module Config Field Addition
 target_family: core_entry
-existing_production_carrier: ExampleModuleConfigService
+existing_production_carrier: AiClaimModuleConfigService
 real_carrier_kind: existing_service
-production_boundary: TExampleModuleConfigMapper.insert
+production_boundary: TAiClaimModuleConfigMapper.insert
 proof_kind: db_persistence
 expected_production_diff: 4 files (2 domain, 1 core, 1 mapper)
-RED: ExampleModuleConfigServiceTest.testSave_withNegativeAmount_throwsException
-GREEN: Add field to TExampleModuleConfig, validation in save()
+RED: AiClaimModuleConfigServiceTest.testSave_withNegativeAmount_throwsException
+GREEN: Add field to TAiClaimModuleConfig, validation in save()
 fail_closed_condition: DB insert verifies free_review_amount column
 coverage cap: 100%
 "@
@@ -73,12 +73,12 @@ coverage cap: 100%
 
 | Slice | Requirement | Contract | RED Test | Status |
 |-------|-------------|----------|----------|--------|
-| S1 | AI Module Config Field Addition | TExampleModuleConfig.freeReviewAmount | testSave_withNegativeAmount | READY |
+| S1 | AI Module Config Field Addition | TAiClaimModuleConfig.freeReviewAmount | testSave_withNegativeAmount | READY |
 
 ## First Slice
 S1 - AI Module Config Field Addition
-Entry: ExampleModuleConfigService.save
-Carrier: ExampleModuleConfigService (existing)
+Entry: AiClaimModuleConfigService.save
+Carrier: AiClaimModuleConfigService (existing)
 Coverage Cap: 100%
 "@
     $replayPlanPath = Join-Path $tempRoot 'REPLAY_PLAN.md'
@@ -94,14 +94,14 @@ Coverage Cap: 100%
 
     $verify = Get-Content -LiteralPath $verifyPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-    # v406: The selected carrier "ExampleModuleConfigService.save" should match
-    # "ExampleModuleConfigService.java" in existing_production_carriers
-    # after normalizing to base class name "ExampleModuleConfigService"
+    # v406: The selected carrier "AiClaimModuleConfigService.save" should match
+    # "AiClaimModuleConfigService.java" in existing_production_carriers
+    # after normalizing to base class name "AiClaimModuleConfigService"
     $hasNotInResultsIssue = 'carrier_search_selected_carrier_not_in_results' -in $verify.issues
 
     if ($hasNotInResultsIssue) {
         $allIssues = $verify.issues -join '; '
-        throw "v406 carrier name normalization failed: 'ExampleModuleConfigService.save' should match 'ExampleModuleConfigService.java' after normalization. All issues: $allIssues"
+        throw "v406 carrier name normalization failed: 'AiClaimModuleConfigService.save' should match 'AiClaimModuleConfigService.java' after normalization. All issues: $allIssues"
     }
 
     Write-Host "PASS: v406 carrier name normalization allows method-level selection to match file-level results"

@@ -171,9 +171,9 @@ Write-Host "`n--- Experiment 3: Horizontal Coverage ---" -ForegroundColor Yellow
 $validSliceLines = @(
     '{',
     '  "planned_files": [',
-    '    "example-web/src/main/java/com/example/project/web/controller/ExampleController.java",',
-    '    "example-core/src/main/java/com/example/project/service/ExampleService.java",',
-    '    "example-provider/src/main/java/com/example/project/provider/ExampleMapper.java"',
+    '    "claim-web/src/main/java/com/huize/claim/web/controller/AiClaimController.java",',
+    '    "claim-core/src/main/java/com/huize/claim/service/AiClaimService.java",',
+    '    "claim-provider/src/main/java/com/huize/claim/provider/AiClaimMapper.java"',
     '  ]',
     '}'
 )
@@ -191,8 +191,8 @@ Remove-Item $validSliceFile -Force
 $invalidSliceLines = @(
     '{',
     '  "planned_files": [',
-    '    "example-core/src/main/java/com/example/project/service/ExampleService.java",',
-    '    "example-core/src/main/java/com/example/project/service/ExampleServiceImpl.java"',
+    '    "claim-core/src/main/java/com/huize/claim/service/AiClaimService.java",',
+    '    "claim-core/src/main/java/com/huize/claim/service/AiClaimServiceImpl.java"',
     '  ]',
     '}'
 )
@@ -213,7 +213,7 @@ $validTestLines = @(
     'import org.junit.Test;',
     'import static org.assertj.core.api.Assertions.assertThat;',
     '',
-    'public class ExampleServiceTest {',
+    'public class AiClaimServiceTest {',
     '    @Test',
     '    public void testProcessClaim_Success_ReturnsExpectedResult() {',
     '        String result = service.processClaim("12345");',
@@ -235,7 +235,7 @@ Remove-Item $validTestFile -Force
 $invalidTestLines = @(
     'import org.junit.Test;',
     '',
-    'public class ExampleServiceTest {',
+    'public class AiClaimServiceTest {',
     '    @Test',
     '    public void testProcessClaim_NotYetImplemented() {',
     '        fail("Process claim should return success, but due to not implemented, this assertion fails");',
@@ -259,7 +259,7 @@ $reqLines = @(
     '# Requirement: AI核赔申请',
     '',
     '当用户提交AI核赔申请成功后，系统触发核赔流程。',
-    '申请成功后，通过ExampleApplyClaimApiTaskProcessor处理申请结果。'
+    '申请成功后，通过AiApplyClaimApiTaskProcessor处理申请结果。'
 )
 $reqFile = New-TempFile -Lines $reqLines -Extension 'md'
 
@@ -268,7 +268,7 @@ $ledgerLines = @(
     '  "families": [',
     '    {',
     '      "id": "core_entry",',
-    '      "first_executable_carrier": "ExampleApplyClaimApiTaskProcessor.handleTaskResponse (verified in worktree)"',
+    '      "first_executable_carrier": "AiApplyClaimApiTaskProcessor.handleTaskResponse (verified in worktree)"',
     '    }',
     '  ]',
     '}'
@@ -276,7 +276,7 @@ $ledgerLines = @(
 $ledgerFile = New-TempFile -Lines $ledgerLines -Extension 'json'
 
 Test-Experiment `
-    -Name 'Entry Point: Valid carrier matches requirement (ExampleApplyClaim)' `
+    -Name 'Entry Point: Valid carrier matches requirement (AiApplyClaim)' `
     -ScriptPath 'validate_entry_point_mapping.py' `
     -Arguments "--requirement $reqFile --ledger $ledgerFile" `
     -ExpectedExitCode '0'
@@ -296,7 +296,7 @@ $invalidLedgerLines = @(
     '  "families": [',
     '    {',
     '      "id": "core_entry",',
-    '      "first_executable_carrier": "ExampleCalculatorApiTaskProcessor.handleTaskResponse (verified in worktree)"',
+    '      "first_executable_carrier": "AiCalculateLossApiTaskProcessor.handleTaskResponse (verified in worktree)"',
     '    }',
     '  ]',
     '}'
@@ -304,7 +304,7 @@ $invalidLedgerLines = @(
 $invalidLedgerFile = New-TempFile -Lines $invalidLedgerLines -Extension 'json'
 
 Test-Experiment `
-    -Name 'Entry Point: Invalid carrier (ExampleCalculator instead of ExampleApplyClaim, should FAIL)' `
+    -Name 'Entry Point: Invalid carrier (AiCalculateLoss instead of AiApplyClaim, should FAIL)' `
     -ScriptPath 'validate_entry_point_mapping.py' `
     -Arguments "--requirement $reqFile2 --ledger $invalidLedgerFile" `
     -ExpectedExitCode '1'

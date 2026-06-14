@@ -79,6 +79,48 @@ function Write-OracleAnalysis {
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
+function Write-PolicyRebuildOracleAnalysis {
+    param([string]$Path)
+    [ordered]@{
+        schema_version = 1
+        production_files = 2
+        high_weight_files = 2
+        files = @(
+            [ordered]@{
+                path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+                weight = 'HIGH'
+                is_test = $false
+                is_production = $true
+            },
+            [ordered]@{
+                path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+                weight = 'HIGH'
+                is_test = $false
+                is_production = $true
+            }
+        )
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
+function Add-PolicyRebuildSourceChainContract {
+    param([string]$Root)
+    [ordered]@{
+        required_source_chain = $true
+        source_chain_mode = 'task_processor_rebuild'
+        next_required_slice = [ordered]@{
+            entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+            carrier = 'RequestBuildContext.policyNum/insureNum -> RequestBuildFunction -> request -> taskData'
+            slice_type = 'exact_contract_slice'
+            test_name = 'AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
+            must_touch_files = @(
+                'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
+                'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            )
+        }
+    } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Root 'SOURCE_CHAIN_CONTRACT.json') -Encoding UTF8
+    Write-PolicyRebuildOracleAnalysis (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json')
+}
+
 function New-ValidReplayRoot {
     param([string]$Root)
     New-Item -ItemType Directory -Force -Path $Root | Out-Null
@@ -195,13 +237,19 @@ RED then GREEN
 - target_subsurface_or_carrier: core post-result entry
 - selected_carrier: RealEntry.execute
 - real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: src/main/java/sample/RealEntry.java
+- target_carrier_line_number: 42
+- expected_test_class: RealEntryContractTest
+- expected_test_method: provesRealEntryOutput
+- expected_assertions: output side effect is written, public entry delegates once, unrelated helper path is not used
+- expected_side_effects: real entry calls production behavior and emits output side effect
 - minimum_side_effect_or_blocker: real entry calls production behavior and proves output side effect
 - forbidden_substitute_check: passed
 - production_boundary: src/main/java/sample/RealEntry.java, src/main/java/sample/ProductionBehavior.java, src/main/resources/sample/real-entry.xml
 - public_entry_contract_coverage: RealEntry.execute is the public entry that calls production behavior
-- expected production diff: add minimum behavior behind existing entry
-- RED assertion: real entry fails before production change
-- GREEN minimum implementation: real entry passes without substitute carrier
+- expected_production_diff: add minimum behavior behind existing RealEntry.execute and ProductionBehavior
+- red_expectation: RealEntryContractTest.provesRealEntryOutput fails on missing output side effect
+- green_minimum_implementation: RealEntry.execute writes the output side effect through ProductionBehavior
 - proof_kind: real_entry_behavior
 - forbidden substitute proof: helper_only static_presence dto_only compile_only
 - required_sibling_surfaces: none
@@ -321,13 +369,19 @@ Write-Text (Join-Path $alternateProofRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
 - target_subsurface_or_carrier: core post-result entry
 - selected_carrier: RealEntry.execute
 - real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: src/main/java/sample/RealEntry.java
+- target_carrier_line_number: 42
+- expected_test_class: RealEntryContractTest
+- expected_test_method: provesRealEntryOutput
+- expected_assertions: output side effect is written, public entry delegates once, unrelated helper path is not used
+- expected_side_effects: real entry calls production behavior and emits output side effect
 - minimum_side_effect_or_blocker: real entry calls production behavior and proves output side effect
 - forbidden_substitute_check: passed
 - production_boundary: src/main/java/sample/RealEntry.java, src/main/java/sample/ProductionBehavior.java, src/main/resources/sample/real-entry.xml
 - public_entry_contract_coverage: RealEntry.execute is the public entry that calls production behavior
-- expected production diff: add minimum behavior behind existing entry
-- RED assertion: real entry fails before production change
-- GREEN minimum implementation: real entry passes without substitute carrier
+- expected_production_diff: add minimum behavior behind existing RealEntry.execute and ProductionBehavior
+- red_expectation: RealEntryContractTest.provesRealEntryOutput fails on missing output side effect
+- green_minimum_implementation: RealEntry.execute writes the output side effect through ProductionBehavior
 - proof_kind: real_entry_behavior
 - forbidden substitute proof: helper_only static_presence dto_only compile_only
 - required_sibling_surfaces: none
@@ -358,6 +412,24 @@ selected_carrier:
 
 real_carrier_kind:
 : production_entry_or_service
+
+target_carrier_file_path:
+: src/main/java/sample/RealEntry.java
+
+target_carrier_line_number:
+: 42
+
+expected_test_class:
+: RealEntryContractTest
+
+expected_test_method:
+: provesRealEntryOutput
+
+expected_assertions:
+: output side effect is written, public entry delegates once, unrelated helper path is not used
+
+expected_side_effects:
+: real entry calls production behavior and emits output side effect
 
 minimum_side_effect_or_blocker:
 : real entry calls production behavior and proves output side effect
@@ -412,6 +484,12 @@ Write-Text (Join-Path $conditionalBlockerPhraseRoot 'FIRST_SLICE_PROOF_PLAN.md')
 - selected_carrier: RealEntry.execute
 - target_subsurface_or_carrier: core post-result entry
 - real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: src/main/java/sample/RealEntry.java
+- target_carrier_line_number: 42
+- expected_test_class: RealEntryContractTest
+- expected_test_method: provesRealEntryOutput
+- expected_assertions: output side effect is written, public entry delegates once, unrelated helper path is not used
+- expected_side_effects: real entry calls production behavior and emits output side effect
 - minimum_side_effect_or_blocker: real entry calls production behavior; if unavailable then PLAN_BLOCKED_REAL_CARRIER
 - forbidden_substitute_check: passed
 - production_boundary: existing entry calls production behavior
@@ -427,6 +505,157 @@ Write-Text (Join-Path $conditionalBlockerPhraseRoot 'FIRST_SLICE_PROOF_PLAN.md')
 - coverage_cap_if_missing: 60
 "@
 Invoke-Contract -Root $conditionalBlockerPhraseRoot -Stage Plan -ExpectedStatus PASS
+
+$policyRebuildValidRoot = Join-Path $tempRoot 'policy-rebuild-source-chain-valid'
+New-ValidReplayRoot -Root $policyRebuildValidRoot
+Add-PolicyRebuildSourceChainContract -Root $policyRebuildValidRoot
+Write-Text (Join-Path $policyRebuildValidRoot 'PLAN_RESULT.md') @"
+# Plan Result
+
+- plan_status: PROCEED
+- selected_candidate: 1
+- selected_strategy: policy-rebuild-source-chain
+- first_slice: S1
+- first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java#testRebuildTaskData_PreservesPolicyNumAndInsureNum
+- required_files: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java
+- oracle_production_file_overlap: 100
+- oracle_high_weight_coverage: 2/2
+- carrier_search: performed
+- carrier_search_queries: rg "rebuildTaskData", rg "RequestBuildContext", rg "buildRequestCommon"
+- existing_production_carriers: AiApplyClaimApiTaskProcessor.rebuildTaskData, AiCalculateLossApiTaskProcessor.rebuildTaskData
+- selected_carrier_from_search: AiApplyClaimApiTaskProcessor.rebuildTaskData
+- new_service_proposed: false
+- new_service_justification: none
+"@
+Write-Text (Join-Path $policyRebuildValidRoot 'REPLAY_PLAN.md') @"
+# Replay Plan
+
+core_entry
+stateful_side_effect
+deploy_export_page
+wire_payload_api_contract
+config_policy_threshold
+generated_artifact_template_upload
+external_integration
+automation_test_interface
+lifecycle_cleanup_retention
+
+S1 policyNum/insureNum rebuild source-chain:
+- AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)
+- AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+- claim-server/src/test/java harness
+- mvn --% -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am -Dtest=AiApplyClaimApiTaskProcessorTest#testRebuildTaskData_PreservesPolicyNumAndInsureNum -Dsurefire.failIfNoSpecifiedTests=false test
+"@
+Write-Text (Join-Path $policyRebuildValidRoot 'IMPLEMENTATION_CONTRACT.md') @"
+# Implementation Contract
+
+- selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+- first_slice: S1
+- first_red_test: AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum
+- selected real entry: AiApplyClaimApiTaskProcessor.rebuildTaskData and AiCalculateLossApiTaskProcessor.rebuildTaskData
+- shallow green is forbidden
+"@
+Write-Text (Join-Path $policyRebuildValidRoot 'EXPECTED_DIFF_MATRIX.md') @"
+# Expected Diff Matrix
+
+| requirement | validation | closure |
+|---|---|---|
+| policyNum/insureNum source-chain rebuild | RED/GREEN deterministic RequestBuildContext test | add req.setPolicyNum(buildContext.getPolicyNum()) and req.setInsureNum(buildContext.getInsureNum()) in both processor builder lambdas |
+"@
+Write-Text (Join-Path $policyRebuildValidRoot 'TEST_CHARTER.md') @"
+# Test Charter
+
+RED then GREEN.
+
+Test file: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java
+Command: mvn --% -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am -Dtest=AiApplyClaimApiTaskProcessorTest#testRebuildTaskData_PreservesPolicyNumAndInsureNum -Dsurefire.failIfNoSpecifiedTests=false test
+
+The RED mocks AiClaimDataAssemblyHelper.buildRequestCommon, captures AiClaimDataAssemblyHelper.RequestBuildFunction, creates RequestBuildContext with policyNum and insureNum, invokes the captured builder, and asserts the request created from context preserves both fields before taskData is returned.
+"@
+Write-Text (Join-Path $policyRebuildValidRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
+# First Slice Proof Plan
+
+- first_slice: S1
+- first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java#testRebuildTaskData_PreservesPolicyNumAndInsureNum
+- selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+- highest_weight_open_gate: core_entry
+- target family: core_entry
+- target_subsurface_or_carrier: TaskProcessor rebuild source-chain
+- selected_carrier: AiApplyClaimApiTaskProcessor.rebuildTaskData and AiCalculateLossApiTaskProcessor.rebuildTaskData
+- real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+- target_carrier_line_number: 404
+- expected_test_class: AiApplyClaimApiTaskProcessorTest
+- expected_test_method: testRebuildTaskData_PreservesPolicyNumAndInsureNum
+- expected_assertions: RequestBuildContext policyNum reaches apply request, RequestBuildContext insureNum reaches apply request, RequestBuildContext policyNum reaches calculate request, RequestBuildContext insureNum reaches calculate request
+- expected_side_effects: rebuilt task data carries context-derived policyNum and insureNum
+- minimum_side_effect_or_blocker: RequestBuildContext -> AiClaimDataAssemblyHelper.RequestBuildFunction -> request -> rebuilt task data
+- forbidden_substitute_check: passed
+- production_boundary: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java
+- public_entry_contract_coverage: existing TaskProcessor private rebuild path is invoked deterministically through reflection without Spring context
+- expected_production_diff: add req.setPolicyNum(buildContext.getPolicyNum()) and req.setInsureNum(buildContext.getInsureNum()) in both processor builder lambdas
+- red_expectation: captured AiClaimDataAssemblyHelper.RequestBuildFunction applied to RequestBuildContext creates request without policyNum/insureNum on baseline
+- green_minimum_implementation: both builders copy RequestBuildContext policyNum/insureNum into request
+- proof_kind: real_entry_behavior
+- forbidden substitute proof: helper_only static_presence dto_only compile_only
+- required_sibling_surfaces: AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+- fail_closed_condition: missing RequestBuildFunction or claim-server -pl claim-server -am command stops Phase 1
+- coverage cap if not closed: 60
+"@
+Invoke-Contract -Root $policyRebuildValidRoot -Stage Plan -ExpectedStatus PASS
+
+$policyRebuildInvalidRoot = Join-Path $tempRoot 'policy-rebuild-source-chain-invalid'
+New-ValidReplayRoot -Root $policyRebuildInvalidRoot
+Add-PolicyRebuildSourceChainContract -Root $policyRebuildInvalidRoot
+Write-Text (Join-Path $policyRebuildInvalidRoot 'TEST_CHARTER.md') @"
+# Test Charter
+
+RED then GREEN.
+
+Command: mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -Dtest=AiApplyClaimApiTaskProcessorTest#testTaskData_hasPolicyNumAndInsureNumFields test
+
+Use fixed database caseId 12345L. If taskData == null, print a warning and pass. Only verify DTO getter/setter field existence and the downstream taskData.setPolicyNum(request.getPolicyNum()) line.
+"@
+Write-Text (Join-Path $policyRebuildInvalidRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
+# First Slice Proof Plan
+
+- first_slice: S1
+- first_red_test: claim-core/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java#testTaskData_hasPolicyNumAndInsureNumFields
+- selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)
+- highest_weight_open_gate: core_entry
+- target family: core_entry
+- target_subsurface_or_carrier: TaskProcessor rebuild source-chain
+- selected_carrier: AiApplyClaimApiTaskProcessor.rebuildTaskData
+- real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+- target_carrier_line_number: 404
+- expected_test_class: AiApplyClaimApiTaskProcessorTest
+- expected_test_method: testTaskData_hasPolicyNumAndInsureNumFields
+- expected_assertions: DTO getter/setter exists, field existence only, downstream setter line exists
+- expected_side_effects: none
+- minimum_side_effect_or_blocker: DTO getter/setter existence
+- forbidden_substitute_check: passed
+- production_boundary: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+- public_entry_contract_coverage: private method reflection
+- expected_production_diff: none
+- red_expectation: not applicable
+- green_minimum_implementation: taskData.setPolicyNum(request.getPolicyNum())
+- proof_kind: real_entry_behavior
+- forbidden substitute proof: helper_only static_presence dto_only compile_only
+- required_sibling_surfaces: missing
+- fail_closed_condition: none
+- coverage cap if not closed: 60
+"@
+Invoke-Contract -Root $policyRebuildInvalidRoot -Stage Plan -ExpectedStatus FAIL
+
+$missingCarrierFileRoot = Join-Path $tempRoot 'missing-carrier-file'
+New-ValidReplayRoot -Root $missingCarrierFileRoot
+New-Item -ItemType Directory -Force -Path (Join-Path $missingCarrierFileRoot 'worktree\src\main\java\sample') | Out-Null
+Invoke-Contract -Root $missingCarrierFileRoot -Stage Plan -ExpectedStatus FAIL
+$missingCarrierFileVerify = Get-Content -LiteralPath (Join-Path $missingCarrierFileRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if (((@($missingCarrierFileVerify.issues) -join ' ') -notmatch 'first_slice_proof_v457_file_not_found')) {
+    throw 'Expected missing carrier file proof issue'
+}
 
 $missingFirstSliceProofRoot = Join-Path $tempRoot 'missing-first-slice-proof'
 New-ValidReplayRoot -Root $missingFirstSliceProofRoot
@@ -485,7 +714,7 @@ Invoke-Contract -Root $substituteCarrierKindRoot -Stage Plan -ExpectedStatus FAI
 
 [ordered]@{
     status = 'PASS'
-    cases = @('plan_prompt_first_slice_schema_tokens', 'phase0_valid', 'plan_valid', 'phase0_expected_diff_deferred_to_plan', 'phase0_missing_family_contract_fails', 'plan_missing_first_red_fails', 'plan_missing_candidate_fails', 'plan_missing_carrier_search_fails', 'plan_unjustified_new_service_fails', 'plan_alternate_first_slice_proof_format_passes', 'plan_definition_list_first_slice_proof_format_passes', 'plan_conditional_blocker_phrase_passes', 'plan_missing_first_slice_proof_fails', 'plan_static_first_slice_proof_fails', 'plan_substitute_carrier_kind_fails')
+    cases = @('plan_prompt_first_slice_schema_tokens', 'phase0_valid', 'plan_valid', 'phase0_expected_diff_deferred_to_plan', 'phase0_missing_family_contract_fails', 'plan_missing_first_red_fails', 'plan_missing_candidate_fails', 'plan_missing_carrier_search_fails', 'plan_unjustified_new_service_fails', 'plan_alternate_first_slice_proof_format_passes', 'plan_definition_list_first_slice_proof_format_passes', 'plan_conditional_blocker_phrase_passes', 'plan_policy_rebuild_source_chain_valid_passes', 'plan_policy_rebuild_source_chain_invalid_fails', 'plan_missing_carrier_file_fails', 'plan_missing_first_slice_proof_fails', 'plan_static_first_slice_proof_fails', 'plan_substitute_carrier_kind_fails')
     temp_root = $tempRoot
 } | ConvertTo-Json -Depth 8
 

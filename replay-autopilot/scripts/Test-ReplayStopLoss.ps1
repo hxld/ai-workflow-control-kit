@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReplayRoot,
-    [string]$HistoryRoot = "$env:AI_WORKFLOW_REPLAY_ROOT",
+    [string]$HistoryRoot = 'D:\opt',
     [int]$TargetCoverage = 90,
     [int]$Lookback = 4,
     [int]$MinOracleImprovement = 8,
@@ -24,6 +24,25 @@ function Read-TextIfExists {
         return Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     }
     return ''
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value | ForEach-Object { [string]$_ }) }
+    return @([string]$Value)
 }
 
 function Get-MetricNumber {
@@ -91,6 +110,52 @@ function Get-GapFlagCounts {
     return $result
 }
 
+function Get-RunnerAuthorizationState {
+    param([string]$Root)
+
+    $router = Read-JsonIfExists (Join-Path $Root 'FAMILY_ROUTER_AND_CAP.json')
+    $ledgerCap = $null
+    $finalPassAllowed = $true
+    if ($null -ne $router) {
+        if ($router.PSObject.Properties.Name -contains 'coverage_cap_from_ledger' -and "$($router.coverage_cap_from_ledger)" -match '^\d+$') {
+            $ledgerCap = [int]$router.coverage_cap_from_ledger
+        }
+        if ($router.PSObject.Properties.Name -contains 'final_pass_allowed') {
+            $finalPassAllowed = [bool]$router.final_pass_allowed
+        }
+    }
+
+    $signals = New-Object System.Collections.Generic.List[string]
+    if (-not $finalPassAllowed) {
+        $signals.Add('router_final_pass_allowed=false') | Out-Null
+    }
+    if (Test-Path -LiteralPath $Root) {
+        foreach ($file in Get-ChildItem -LiteralPath $Root -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue | Sort-Object Name) {
+            $verify = Read-JsonIfExists $file.FullName
+            if ($null -eq $verify) { continue }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and -not [bool]$verify.authorized_for_next_slice) {
+                $signals.Add("authorized_for_next_slice=false:$($file.Name)") | Out-Null
+            }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and -not [bool]$verify.authorized_for_synthesis) {
+                $signals.Add("authorized_for_synthesis=false:$($file.Name)") | Out-Null
+            }
+            foreach ($blocker in Get-StringArray $verify.authorization_blockers) {
+                if (-not [string]::IsNullOrWhiteSpace($blocker)) {
+                    $signals.Add("blocker:$blocker") | Out-Null
+                }
+            }
+        }
+    }
+
+    $uniqueSignals = @($signals | Select-Object -Unique)
+    return [pscustomobject]@{
+        coverage_cap_from_ledger = $ledgerCap
+        final_pass_allowed = $finalPassAllowed
+        non_authorizing_signals = $uniqueSignals
+        has_non_authorizing_evidence = (-not $finalPassAllowed) -or $uniqueSignals.Count -gt 0
+    }
+}
+
 function Read-ReplaySnapshot {
     param([string]$Root)
 
@@ -104,6 +169,34 @@ function Read-ReplaySnapshot {
     $roundText = Read-TextIfExists $roundPath
     $proposalText = Read-TextIfExists $proposalPath
     $combined = "$summaryText`n$finalText`n$roundText`n$proposalText"
+    $runnerAuthorization = Get-RunnerAuthorizationState -Root $Root
+
+    $blindCoverage = Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind-self-assessed coverage')
+    $verificationCappedCoverage = Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage')
+    $oracleAdjustedCoverage = Get-MetricNumber $combined @('oracle_adjusted_coverage', 'oracle-adjusted coverage')
+    if ($null -ne $runnerAuthorization.coverage_cap_from_ledger) {
+        $ledgerCap = [int]$runnerAuthorization.coverage_cap_from_ledger
+        if ($null -eq $verificationCappedCoverage -or [int]$verificationCappedCoverage -gt $ledgerCap) {
+            $verificationCappedCoverage = $ledgerCap
+        }
+        if ($null -eq $blindCoverage -and [bool]$runnerAuthorization.has_non_authorizing_evidence) {
+            $blindCoverage = $ledgerCap
+        } elseif ($null -ne $blindCoverage -and [int]$blindCoverage -gt $ledgerCap) {
+            $blindCoverage = $ledgerCap
+        }
+        if ($null -ne $oracleAdjustedCoverage -and [bool]$runnerAuthorization.has_non_authorizing_evidence -and $null -ne $verificationCappedCoverage -and [int]$oracleAdjustedCoverage -gt [int]$verificationCappedCoverage) {
+            $oracleAdjustedCoverage = [int]$verificationCappedCoverage
+        }
+    }
+
+    $finalStatus = Get-FirstText $combined @(
+        '(?m)^\s*-?\s*final(?: post-hoc)? status\s*[:=]\s*`?([A-Z_]+)`?',
+        '(?m)^\s*-?\s*final_status\s*[:=]\s*`?([A-Z_]+)`?',
+        '(?m)^\s*-?\s*status\s*[:=]\s*`?([A-Z_]+)`?'
+    )
+    if ([bool]$runnerAuthorization.has_non_authorizing_evidence) {
+        $finalStatus = 'BLOCKED'
+    }
 
     $summaryItem = if (Test-Path -LiteralPath $summaryPath) { Get-Item -LiteralPath $summaryPath } else { $null }
     return [pscustomobject]@{
@@ -111,15 +204,15 @@ function Read-ReplaySnapshot {
         has_summary = [bool](Test-Path -LiteralPath $summaryPath)
         has_final_report = [bool](Test-Path -LiteralPath $finalPath)
         summary_modified = if ($summaryItem) { $summaryItem.LastWriteTime.ToString('s') } else { $null }
-        blind_self_assessed_coverage = Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind-self-assessed coverage')
-        verification_capped_coverage = Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage')
-        oracle_adjusted_coverage = Get-MetricNumber $combined @('oracle_adjusted_coverage', 'oracle-adjusted coverage')
-        final_status = Get-FirstText $combined @(
-            '(?m)^\s*-?\s*final(?: post-hoc)? status\s*[:=]\s*`?([A-Z_]+)`?',
-            '(?m)^\s*-?\s*final_status\s*[:=]\s*`?([A-Z_]+)`?',
-            '(?m)^\s*-?\s*status\s*[:=]\s*`?([A-Z_]+)`?'
-        )
+        blind_self_assessed_coverage = $blindCoverage
+        verification_capped_coverage = $verificationCappedCoverage
+        oracle_adjusted_coverage = $oracleAdjustedCoverage
+        final_status = $finalStatus
         gap_flags = Get-GapFlagCounts $combined
+        runner_coverage_cap_from_ledger = $runnerAuthorization.coverage_cap_from_ledger
+        runner_final_pass_allowed = $runnerAuthorization.final_pass_allowed
+        runner_non_authorizing_signals = @($runnerAuthorization.non_authorizing_signals)
+        runner_has_non_authorizing_evidence = [bool]$runnerAuthorization.has_non_authorizing_evidence
     }
 }
 
@@ -174,8 +267,14 @@ $reasons = New-Object System.Collections.Generic.List[string]
 $repeatedGaps = New-Object System.Collections.Generic.List[object]
 $decision = 'CONTINUE'
 
+$runnerSignals = @($current.runner_non_authorizing_signals)
+if ([bool]$current.runner_has_non_authorizing_evidence) {
+    $signalText = if ($runnerSignals.Count -gt 0) { $runnerSignals -join ',' } else { 'unknown' }
+    $reasons.Add("runner_non_authorizing_replay: $signalText") | Out-Null
+}
+
 if ($current.oracle_adjusted_coverage -ne $null -and [int]$current.oracle_adjusted_coverage -ge $TargetCoverage) {
-    $decision = 'TARGET_REACHED'
+    $decision = if ([bool]$current.runner_has_non_authorizing_evidence) { 'STOP_DEEP_REVIEW_REQUIRED' } else { 'TARGET_REACHED' }
     if ($current.verification_capped_coverage -ne $null -and [int]$current.verification_capped_coverage -le $LowCapThreshold) {
         $reasons.Add("oracle_vs_verification_mismatch: oracle=$($current.oracle_adjusted_coverage) verification_capped=$($current.verification_capped_coverage)")
         $decision = 'STOP_DEEP_REVIEW_REQUIRED'
@@ -245,7 +344,9 @@ $decisionObject = [ordered]@{
     repeated_gaps = $repeatedGapList
     evolution_result_validated = $hasValidatedEvolution
     stopped_for_evolution = $wasStoppedForEvolution
-    recommended_action = if ($shouldStop -and $reasons -match 'oracle_vs_verification_mismatch') {
+    recommended_action = if ($shouldStop -and $reasons -match 'runner_non_authorizing_replay') {
+        'Runner-owned slice/router authorization blocks final pass. Run deep review/evolution before accepting any natural-language PASS or oracle-target claim.'
+    } elseif ($shouldStop -and $reasons -match 'oracle_vs_verification_mismatch') {
         'Oracle says target reached but executable evidence says otherwise. Run deep review to resolve the mismatch before accepting oracle verdict.'
     } elseif ($shouldStop) {
         'Run deep replay review before the next evolution; convert repeated failures into <=3 falsifiable workflow experiments.'

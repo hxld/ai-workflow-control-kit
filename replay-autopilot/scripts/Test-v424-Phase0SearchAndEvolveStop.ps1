@@ -26,7 +26,7 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v424-test-" + [
 
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    $serviceDir = Join-Path $worktree 'example-core\src\main\java\com\example'
+    $serviceDir = Join-Path $worktree 'claim-core\src\main\java\com\example'
     New-Item -ItemType Directory -Force -Path $serviceDir | Out-Null
 
     Write-Text (Join-Path $serviceDir 'RealService.java') @'
@@ -55,7 +55,7 @@ public class RealService {
 ```powershell
 # Search for selected_real_entry
 rg "class RealService|void handle\(Long id\)" worktree --glob "*.java"
-# result_summary: FOUND - example-core/src/main/java/com/example/RealService.java
+# result_summary: FOUND - claim-core/src/main/java/com/example/RealService.java
 
 # Search related carriers
 rg -i "RealService" worktree --glob "*.java"

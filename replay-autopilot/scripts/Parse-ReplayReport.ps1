@@ -28,6 +28,72 @@ function Read-TextIfExists {
     return ''
 }
 
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value | ForEach-Object { [string]$_ }) }
+    return @([string]$Value)
+}
+
+function Get-RunnerAuthorizationState {
+    param([string]$Root)
+
+    $router = Read-JsonIfExists (Join-Path $Root 'FAMILY_ROUTER_AND_CAP.json')
+    $ledgerCap = $null
+    $finalPassAllowed = $true
+    if ($null -ne $router) {
+        if ($router.PSObject.Properties.Name -contains 'coverage_cap_from_ledger' -and "$($router.coverage_cap_from_ledger)" -match '^\d+$') {
+            $ledgerCap = [int]$router.coverage_cap_from_ledger
+        }
+        if ($router.PSObject.Properties.Name -contains 'final_pass_allowed') {
+            $finalPassAllowed = [bool]$router.final_pass_allowed
+        }
+    }
+
+    $signals = New-Object System.Collections.Generic.List[string]
+    if (-not $finalPassAllowed) {
+        $signals.Add('router_final_pass_allowed=false') | Out-Null
+    }
+
+    if (Test-Path -LiteralPath $Root) {
+        foreach ($file in Get-ChildItem -LiteralPath $Root -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue | Sort-Object Name) {
+            $verify = Read-JsonIfExists $file.FullName
+            if ($null -eq $verify) { continue }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and -not [bool]$verify.authorized_for_next_slice) {
+                $signals.Add("authorized_for_next_slice=false:$($file.Name)") | Out-Null
+            }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and -not [bool]$verify.authorized_for_synthesis) {
+                $signals.Add("authorized_for_synthesis=false:$($file.Name)") | Out-Null
+            }
+            foreach ($blocker in Get-StringArray $verify.authorization_blockers) {
+                if (-not [string]::IsNullOrWhiteSpace($blocker)) {
+                    $signals.Add("blocker:$blocker") | Out-Null
+                }
+            }
+        }
+    }
+
+    $uniqueSignals = @($signals | Select-Object -Unique)
+    return [pscustomobject]@{
+        coverage_cap_from_ledger = $ledgerCap
+        final_pass_allowed = $finalPassAllowed
+        non_authorizing_signals = $uniqueSignals
+        has_non_authorizing_evidence = (-not $finalPassAllowed) -or $uniqueSignals.Count -gt 0
+    }
+}
+
 function Get-FirstNumber {
     param(
         [string]$Text,
@@ -64,8 +130,12 @@ function Normalize-StatusOrNull {
     }
 
     $status = $Value.Trim().ToUpperInvariant()
-    # Backward-compatible observed variants covered by the generic rule: CAVEATS|CAVIETS|CAVETS.
+    # Backward-compatible observed variants covered by the generic rules:
+    # CAVEATS|CAVIETS|CAVETS and GREEN_PROCEED / READY_PROCEED style values.
     if ($status -match '^PROCEED_WITH_[A-Z_]+$') {
+        return 'PROCEED'
+    }
+    if ($status -match '^[A-Z_]+_PROCEED$') {
         return 'PROCEED'
     }
     $known = @(
@@ -124,6 +194,7 @@ function Get-FinalStatus {
         '(?m)^\s*-?\s*`?final_replay_status`?\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)^\s*Final replay status\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)^\s*\*{0,2}Final Status\*{0,2}\s*[:=]\s*[^A-Z_\r\n]*([A-Z_]+)',
+        '(?m)^\s*\|\s*\*{0,2}Final Status\*{0,2}\s*\|\s*\*{0,2}`?([A-Z_]+)`?\*{0,2}\s*\|',
         '(?m)^\s*-?\s*`?final post-hoc status`?\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)^\s*-?\s*`?final_status`?\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)^\s*-?\s*`?final status`?\s*[:=]\s*`?([A-Z_]+)`?'
@@ -192,6 +263,7 @@ function Parse-OneReplay {
     $phase0Status = Normalize-StatusOrNull $phase0Status
 
     $status = Get-FinalStatus -FinalText $finalText -RoundText $roundText -Phase0Status $phase0Status
+    $runnerAuthorization = Get-RunnerAuthorizationState -Root $Root
 
     $oracleUsed = Get-FirstText $roundText @(
         'oracle_used\s*[:=]\s*[^A-Za-z\r\n]*(true|false)',
@@ -206,22 +278,71 @@ function Parse-OneReplay {
         $oracleAdjustedCoverage = Get-MetricNumber $combined @('replay coverage (self-assessed)', 'Replay Coverage (Self-Assessed)', 'blind_self_assessed_coverage')
     }
     $verificationCappedCoverage = Get-MetricNumber $roundText @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage')
+    $blindCoverage = Get-MetricNumber $roundText @('blind_self_assessed_coverage', 'blind coverage')
+    $runnerCoverageEnforced = $false
+    if ($null -ne $runnerAuthorization.coverage_cap_from_ledger) {
+        $ledgerCap = [int]$runnerAuthorization.coverage_cap_from_ledger
+        if ($null -eq $verificationCappedCoverage -or [int]$verificationCappedCoverage -gt $ledgerCap) {
+            $verificationCappedCoverage = $ledgerCap
+            $runnerCoverageEnforced = $true
+        }
+        if ($null -eq $blindCoverage -and [bool]$runnerAuthorization.has_non_authorizing_evidence) {
+            $blindCoverage = $ledgerCap
+            $runnerCoverageEnforced = $true
+        } elseif ($null -ne $blindCoverage -and [int]$blindCoverage -gt $ledgerCap) {
+            $blindCoverage = $ledgerCap
+            $runnerCoverageEnforced = $true
+        }
+    }
+
     $reportedOracleAdjustedCoverage = $oracleAdjustedCoverage
     $oracleCoverageEnforced = $false
-    if ($null -ne $oracleAdjustedCoverage -and $null -ne $verificationCappedCoverage -and [int]$verificationCappedCoverage -le 0 -and [int]$oracleAdjustedCoverage -gt 0) {
+    $oracleCoverageEnforcementRule = 'none'
+    $oracleDecisionCap = $null
+    if ($null -ne $verificationCappedCoverage -and [bool]$runnerAuthorization.has_non_authorizing_evidence) {
+        $oracleDecisionCap = [int]$verificationCappedCoverage
+        $oracleCoverageEnforcementRule = 'runner_non_authorizing_cap_blocks_oracle_credit'
+    } elseif ($null -ne $verificationCappedCoverage -and [int]$verificationCappedCoverage -le 0) {
+        $oracleDecisionCap = 0
+        $oracleCoverageEnforcementRule = 'verification_capped_zero_blocks_oracle_credit'
+    }
+    if ($null -ne $oracleAdjustedCoverage -and $null -ne $oracleDecisionCap -and [int]$oracleAdjustedCoverage -gt [int]$oracleDecisionCap) {
         $oracleCoverageEnforced = $true
         $enforcementPath = Join-Path $Root 'ORACLE_COVERAGE_ENFORCEMENT.md'
         @(
             '# Oracle Coverage Enforcement',
             '',
-            '- rule: verification_capped_zero_blocks_oracle_credit',
+            "- rule: $oracleCoverageEnforcementRule",
             "- reported_oracle_adjusted_coverage: $reportedOracleAdjustedCoverage",
-            "- enforced_oracle_adjusted_coverage: 0",
+            "- enforced_oracle_adjusted_coverage: $oracleDecisionCap",
             "- verification_capped_coverage: $verificationCappedCoverage",
+            "- runner_final_pass_allowed: $($runnerAuthorization.final_pass_allowed)",
+            "- runner_non_authorizing_signals: $(@($runnerAuthorization.non_authorizing_signals) -join '; ')",
             '',
-            'Reason: oracle-adjusted coverage is replay implementation overlap, not oracle completeness. When Phase 1 has zero executable verification credit, post-hoc oracle credit is capped at zero for autopilot summaries and decisions.'
+            'Reason: oracle-adjusted coverage is replay implementation overlap, not oracle completeness. Runner-owned authorization and verification caps must control autopilot summaries and decisions.'
         ) | Set-Content -LiteralPath $enforcementPath -Encoding UTF8
-        $oracleAdjustedCoverage = 0
+        $oracleAdjustedCoverage = [int]$oracleDecisionCap
+    }
+
+    if ([bool]$runnerAuthorization.has_non_authorizing_evidence) {
+        $status = 'BLOCKED'
+    }
+
+    $productionMatch = Get-MetricNumber $combined @('production_match', 'Production Match', 'production code match', 'production match')
+    $oracleTestCoverageZero = $combined -match '(?i)(Oracle\s+Test\s+Coverage[^\r\n]*(NONE|0\s*%)|Oracle\s+has\s+(ZERO|NO)\s+test\s+coverage|oracle\s+coverage[^\r\n]*production\s+match\s+only)'
+    $replayClassification = 'full_replay'
+    $requiresEvolution = $false
+    $evolutionType = 'none'
+    if ($null -ne $productionMatch -and [int]$productionMatch -ge 100 -and $oracleTestCoverageZero -and
+        (($null -ne $oracleAdjustedCoverage -and [int]$oracleAdjustedCoverage -le 0) -or
+         ($null -ne $verificationCappedCoverage -and [int]$verificationCappedCoverage -le 0))) {
+        $replayClassification = 'production_match_only'
+        $requiresEvolution = $true
+        $evolutionType = if ($combined -match '(?i)(test infrastructure|wrong_test_surface|shallow_module|test_compilation|cannot find symbol|missing dependency|no executable evidence)') {
+            'test_infrastructure'
+        } else {
+            'behavior_test_coverage'
+        }
     }
 
     return [pscustomobject]@{
@@ -231,13 +352,22 @@ function Parse-OneReplay {
         FinalReportExists = (Test-Path -LiteralPath $finalReportPath)
         Phase0Status = $phase0Status
         OracleUsed = $oracleUsed
-        BlindCoverage = Get-MetricNumber $roundText @('blind_self_assessed_coverage', 'blind coverage')
+        BlindCoverage = $blindCoverage
         VerificationCappedCoverage = $verificationCappedCoverage
         OracleAdjustedCoverage = $oracleAdjustedCoverage
         ReportedOracleAdjustedCoverage = $reportedOracleAdjustedCoverage
         OracleCoverageEnforced = $oracleCoverageEnforced
+        OracleCoverageEnforcementRule = $oracleCoverageEnforcementRule
+        ProductionMatch = $productionMatch
+        ReplayClassification = $replayClassification
+        RequiresEvolution = $requiresEvolution
+        EvolutionType = $evolutionType
         FinalStatus = $status
         FlagCounts = $flagCounts
+        RunnerCoverageCapFromLedger = $runnerAuthorization.coverage_cap_from_ledger
+        RunnerFinalPassAllowed = $runnerAuthorization.final_pass_allowed
+        RunnerCoverageEnforced = $runnerCoverageEnforced
+        RunnerNonAuthorizingSignals = @($runnerAuthorization.non_authorizing_signals)
     }
 }
 
@@ -322,7 +452,16 @@ foreach ($result in $results) {
 - oracle_adjusted_coverage: $($result.OracleAdjustedCoverage)
 - reported_oracle_adjusted_coverage: $($result.ReportedOracleAdjustedCoverage)
 - oracle_coverage_enforced: $($result.OracleCoverageEnforced)
+- oracle_coverage_enforcement_rule: $($result.OracleCoverageEnforcementRule)
+- production_match: $($result.ProductionMatch)
+- replay_classification: $($result.ReplayClassification)
+- requires_evolution: $($result.RequiresEvolution)
+- evolution_type: $($result.EvolutionType)
 - final_status: $($result.FinalStatus)
+- runner_coverage_cap_from_ledger: $($result.RunnerCoverageCapFromLedger)
+- runner_final_pass_allowed: $($result.RunnerFinalPassAllowed)
+- runner_coverage_enforced: $($result.RunnerCoverageEnforced)
+- runner_non_authorizing_signals: $(@($result.RunnerNonAuthorizingSignals) -join '; ')
 
 ## Gap Flags
 

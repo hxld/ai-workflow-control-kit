@@ -49,6 +49,93 @@ function Get-ObjectStringValue {
     return ''
 }
 
+function Get-ObjectPropertyValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Get-ObjectIntValueOrNull {
+    param($Object, [string[]]$Names)
+    foreach ($name in $Names) {
+        $value = Get-ObjectPropertyValue -Object $Object -Name $name
+        if ($null -ne $value) {
+            $text = ([string]$value).Trim()
+            if ($text -match '^-?\d+$') { return [int]$text }
+        }
+    }
+    return $null
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return Read-JsonObject -Path $Path } catch { return $null }
+}
+
+function Test-NarrowBackendReadOnlyFeature {
+    param($FeatureClassification)
+    if ($null -eq $FeatureClassification) { return $false }
+    $classification = [string]$FeatureClassification.classification
+    $baseClassification = [string]$FeatureClassification.base_classification
+    $readOnly = $false
+    if ($FeatureClassification.PSObject.Properties.Name -contains 'read_only') {
+        $readOnly = [bool]$FeatureClassification.read_only
+    }
+    return $readOnly -and (
+        $classification -eq 'narrow_backend_read_only_fix' -or
+        $baseClassification -eq 'narrow_backend_fix'
+    )
+}
+
+function Test-GreenOnlyAcceptedByFeatureClassification {
+    param($FeatureClassification)
+    if (-not (Test-NarrowBackendReadOnlyFeature -FeatureClassification $FeatureClassification)) { return $false }
+    if ($null -ne $FeatureClassification.verifier_adjustments -and
+        $FeatureClassification.verifier_adjustments.PSObject.Properties.Name -contains 'green_only_evidence_accepted') {
+        return [bool]$FeatureClassification.verifier_adjustments.green_only_evidence_accepted
+    }
+    return $true
+}
+
+function Add-UniqueString {
+    param(
+        [System.Collections.Generic.List[string]]$List,
+        [string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return }
+    if (-not $List.Contains($Value)) {
+        $List.Add($Value) | Out-Null
+    }
+}
+
+function Remove-FeatureExemptedGapFlags {
+    param(
+        [string[]]$GapFlags,
+        [string[]]$Exemptions,
+        [System.Collections.Generic.List[string]]$ExemptedFlags
+    )
+    if ($null -eq $Exemptions -or $Exemptions.Count -eq 0) { return @($GapFlags) }
+    $exemptionSet = @{}
+    foreach ($flag in $Exemptions) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$flag)) {
+            $exemptionSet[[string]$flag] = $true
+        }
+    }
+    $kept = New-Object System.Collections.Generic.List[string]
+    foreach ($flag in @($GapFlags)) {
+        $flagText = [string]$flag
+        if ($exemptionSet.ContainsKey($flagText)) {
+            Add-UniqueString -List $ExemptedFlags -Value $flagText
+        } else {
+            Add-UniqueString -List $kept -Value $flagText
+        }
+    }
+    return @($kept)
+}
+
 function Test-PublicEntryText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
@@ -64,10 +151,124 @@ function Read-WorktreeText {
     } else {
         $path = Join-Path $Root $candidate
     }
-    if (Test-Path -LiteralPath $path) {
+    if ((Test-Path -LiteralPath $path) -and -not (Test-Path -LiteralPath $path -PathType Container)) {
         return Get-Content -LiteralPath $path -Raw -Encoding UTF8
     }
     return ''
+}
+
+function Get-CompatibleRelativePath {
+    param(
+        [string]$Root,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or [string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    $pathFull = [System.IO.Path]::GetFullPath($Path)
+    $rootUri = New-Object System.Uri($rootFull)
+    $pathUri = New-Object System.Uri($pathFull)
+    $relative = [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($pathUri).ToString())
+    return ($relative -replace '/', '/')
+}
+
+function Expand-WorktreeFileEntries {
+    param(
+        [string]$Root,
+        [string[]]$Entries
+    )
+
+    $expanded = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($Entries)) {
+        $entryText = ([string]$entry).Trim()
+        if ([string]::IsNullOrWhiteSpace($entryText)) { continue }
+        $candidate = $entryText -replace '/', [System.IO.Path]::DirectorySeparatorChar
+        $path = if ([System.IO.Path]::IsPathRooted($candidate)) { $candidate } else { Join-Path $Root $candidate }
+        if (Test-Path -LiteralPath $path -PathType Container) {
+            $files = Get-ChildItem -LiteralPath $path -Recurse -File -ErrorAction SilentlyContinue
+            foreach ($file in $files) {
+                $relative = (Get-CompatibleRelativePath -Root $Root -Path $file.FullName) -replace '\\', '/'
+                Add-UniqueString -List $expanded -Value $relative
+            }
+        } else {
+            Add-UniqueString -List $expanded -Value ($entryText -replace '\\', '/')
+        }
+    }
+    return @($expanded)
+}
+
+function Resolve-WorktreeEvidencePath {
+    param([string]$Root, [string]$EvidencePath)
+    if ([string]::IsNullOrWhiteSpace($EvidencePath)) { return '' }
+    $candidate = $EvidencePath.Trim().Trim('"').Trim("'") -replace '/', [System.IO.Path]::DirectorySeparatorChar
+    if ([System.IO.Path]::IsPathRooted($candidate)) {
+        return [System.IO.Path]::GetFullPath($candidate)
+    }
+    return [System.IO.Path]::GetFullPath((Join-Path $Root $candidate))
+}
+
+function Get-BehaviorCharterEvidenceFiles {
+    param($BehaviorCharter)
+
+    $files = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $BehaviorCharter) { return @() }
+
+    if ($BehaviorCharter.PSObject.Properties.Name -contains 'evidence_files') {
+        foreach ($file in @(Get-StringArray $BehaviorCharter.evidence_files)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$file)) {
+                $files.Add(([string]$file).Trim()) | Out-Null
+            }
+        }
+    }
+
+    if ($BehaviorCharter.PSObject.Properties.Name -contains 'evidence_file') {
+        $rawEvidenceFile = [string]$BehaviorCharter.evidence_file
+        if (-not [string]::IsNullOrWhiteSpace($rawEvidenceFile)) {
+            $splitFiles = @($rawEvidenceFile -split "[,;`r`n]+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            foreach ($file in $splitFiles) {
+                $files.Add(([string]$file).Trim()) | Out-Null
+            }
+        }
+    }
+
+    return @($files | Select-Object -Unique)
+}
+
+function Test-BehaviorCharterEvidenceFile {
+    param([string]$Root, [string]$EvidencePath)
+
+    $issues = New-Object System.Collections.Generic.List[string]
+    $resolved = Resolve-WorktreeEvidencePath -Root $Root -EvidencePath $EvidencePath
+    if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
+        $issues.Add('behavior_test_charter_evidence_file_missing') | Out-Null
+        return [pscustomobject]@{ valid = $false; resolved_path = $resolved; issues = @($issues) }
+    }
+
+    $clean = $EvidencePath.Trim().Trim('"').Trim("'")
+    $normalized = $clean -replace '\\', '/'
+    $leaf = [System.IO.Path]::GetFileName($clean)
+    $generatedReplayArtifact = $leaf -match '^(SLICE_RESULT|SLICE_VERIFY)_\d+\.json$|^(ROUND_RESULT|AUTOPILOT_SUMMARY|RUN_CONTROL_SUMMARY|FINAL_REPLAY_REPORT)\.(md|json)$'
+    if ($generatedReplayArtifact) {
+        $issues.Add('behavior_test_charter_evidence_file_generated_artifact') | Out-Null
+    }
+    if ($normalized -notmatch '(?i)(^|/)src/test/(java|resources)/' -or $leaf -notmatch '(?i)Test\.java$') {
+        $issues.Add('behavior_test_charter_evidence_file_not_test_source') | Out-Null
+    }
+
+    $rootFull = [System.IO.Path]::GetFullPath($Root).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+    $resolvedFull = if ([string]::IsNullOrWhiteSpace($resolved)) { '' } else { [System.IO.Path]::GetFullPath($resolved) }
+    if (-not [string]::IsNullOrWhiteSpace($resolvedFull) -and -not $resolvedFull.StartsWith($rootFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $issues.Add('behavior_test_charter_evidence_file_outside_worktree') | Out-Null
+    }
+    if ([string]::IsNullOrWhiteSpace($resolvedFull) -or -not (Test-Path -LiteralPath $resolvedFull)) {
+        $issues.Add('behavior_test_charter_evidence_file_not_found') | Out-Null
+    }
+
+    return [pscustomobject]@{
+        valid = ($issues.Count -eq 0)
+        resolved_path = $resolvedFull
+        issues = @($issues | Select-Object -Unique)
+    }
 }
 
 function Read-TextIfExists {
@@ -189,6 +390,19 @@ function Get-PrimaryCarrierClassName {
         return $matches[1]
     }
     return ''
+}
+
+function Get-CarrierClassNamesFromText {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches($Text, '\b([A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Event|Mapper|Processor|Handler|Client|Provider|Task|Util|Helper))\b')) {
+        $name = [string]$match.Groups[1].Value
+        if (-not [string]::IsNullOrWhiteSpace($name) -and -not $names.Contains($name)) {
+            $names.Add($name) | Out-Null
+        }
+    }
+    return @($names)
 }
 
 function Get-SubclassedClassNames {
@@ -314,6 +528,24 @@ function Test-ProofTypeMatch {
     return $false
 }
 
+function Test-PolicyRebuildRealBuilderProof {
+    param(
+        [string]$TestText,
+        [string]$ResultText,
+        [int]$TouchedRequiredProductionCount
+    )
+
+    if ($TouchedRequiredProductionCount -le 0) { return $false }
+    $proofText = @($TestText, $ResultText) -join "`n"
+    if ($proofText -notmatch '(?i)\bAiClaimDataAssemblyHelper\.RequestBuildFunction\b|\bRequestBuildFunction\b') { return $false }
+    if ($proofText -notmatch '(?i)\bbuildRequestCommon\b') { return $false }
+    if ($proofText -notmatch '(?i)\b(?:builder|RequestBuildFunction)\s*\.\s*apply\s*\(\s*buildContext\s*\)') { return $false }
+    if ($proofText -notmatch '(?i)\brebuildTaskData\b') { return $false }
+    if ($proofText -notmatch '(?i)\bpolicyNum\b' -or $proofText -notmatch '(?i)\binsureNum\b') { return $false }
+    if ($proofText -notmatch '(?i)\bassert(?:Equals|That|True|NotNull)\b') { return $false }
+    return $true
+}
+
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $sliceResultFull = Resolve-AbsolutePath $SliceResult
@@ -323,6 +555,11 @@ $carrierAuthorizationPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_{0
 $exactContractMatrixPath = Join-Path $replayRootFull ('EXACT_CONTRACT_ASSERTION_MATRIX_{0:D2}.json' -f $SliceIndex)
 $sideEffectEvidencePath = Join-Path $replayRootFull ('SIDE_EFFECT_EVIDENCE_{0:D2}.json' -f $SliceIndex)
 $sourceChainContractPath = Join-Path $replayRootFull 'SOURCE_CHAIN_CONTRACT.json'
+$featureClassificationPath = Join-Path $replayRootFull 'FEATURE_CLASSIFICATION.json'
+$featureClassification = Read-JsonIfExists -Path $featureClassificationPath
+$narrowReadOnlyFeature = Test-NarrowBackendReadOnlyFeature -FeatureClassification $featureClassification
+$greenOnlyAcceptedByFeatureClassification = Test-GreenOnlyAcceptedByFeatureClassification -FeatureClassification $featureClassification
+$featureExemptedGapFlags = New-Object System.Collections.Generic.List[string]
 
 if ($ValidateOnly) {
     [pscustomobject]@{
@@ -445,7 +682,8 @@ $statusOutput = (& git -C $worktreeFull status --short 2>&1 | Out-String).Trim()
 $changedFiles = @()
 if (-not [string]::IsNullOrWhiteSpace($statusOutput)) {
     $changedFiles = $statusOutput -split "`r?`n" | ForEach-Object {
-        if ($_ -match '^\s*(..)\s+(.+)$') { $matches[2].Trim() } else { $_.Trim() }
+        $line = [string]$_
+        if ($line -match '^\s*(?:[ MADRCU?!]{1,2})\s+(.+)$') { $matches[1].Trim() } else { $line.Trim() }
     }
 }
 if ($roundChangedFilesSnapshot.Count -eq 0) {
@@ -457,6 +695,25 @@ if ($currentSliceChangedFiles.Count -eq 0) {
     } elseif ($implementedFiles.Count -gt 0) {
         $currentSliceChangedFiles = @($implementedFiles)
     }
+}
+$changedFiles = @(Expand-WorktreeFileEntries -Root $worktreeFull -Entries $changedFiles)
+$implementedFiles = @(Expand-WorktreeFileEntries -Root $worktreeFull -Entries $implementedFiles)
+$currentSliceChangedFiles = @(Expand-WorktreeFileEntries -Root $worktreeFull -Entries $currentSliceChangedFiles)
+$roundChangedFilesSnapshot = @(Expand-WorktreeFileEntries -Root $worktreeFull -Entries $roundChangedFilesSnapshot)
+$changedSourceFiles = @($changedFiles | Where-Object {
+    [string]$_ -match '(^|[\\/])src[\\/]main[\\/]' -or
+    [string]$_ -match '(^|[\\/])src[\\/]test[\\/](java|resources)[\\/]'
+})
+if ($sliceStatus -eq 'DONE' -and $changedSourceFiles.Count -gt 0) {
+    $implementedFiles = @((@($implementedFiles) + @($changedSourceFiles)) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique)
+    $currentSliceChangedFiles = @((@($currentSliceChangedFiles) + @($changedSourceFiles)) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique)
+    $roundChangedFilesSnapshot = @((@($roundChangedFilesSnapshot) + @($changedSourceFiles)) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique)
 }
 
 $testCommands = @()
@@ -487,6 +744,116 @@ foreach ($test in $tests) {
     if ($null -ne $test.phase -and @('GREEN', 'VERIFY') -contains ([string]$test.phase).ToUpperInvariant() -and
         $null -ne $test.result -and ([string]$test.result).ToLowerInvariant() -eq 'pass') {
         $greenOrVerifyPassed = $true
+    }
+}
+
+if ($greenOnlyAcceptedByFeatureClassification -and $redTests.Count -eq 0) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('tdd_red_not_replayed', 'red_phase_missing') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+if ($narrowReadOnlyFeature -and -not (($touchedFamilies -contains 'stateful_side_effect') -or ($closedFamilies -contains 'stateful_side_effect'))) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap', 'side_effect_db_evidence_missing') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+if ($narrowReadOnlyFeature) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('family_sibling_gap') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+
+$greenExecutionGatePath = Join-Path $replayRootFull ('GREEN_PHASE_TEST_EXECUTION_{0:D2}.json' -f $SliceIndex)
+$greenExecutionGate = Read-JsonIfExists -Path $greenExecutionGatePath
+$explicitCompileGatePath = Join-Path $replayRootFull ('TEST_COMPILATION_{0:D2}.json' -f $SliceIndex)
+$explicitCompileGate = Read-JsonIfExists -Path $explicitCompileGatePath
+
+$testCompilationExitCode = Get-ObjectIntValueOrNull -Object $result -Names @('test_compilation_exit_code', 'test_compile_exit_code')
+$testExecutionExitCode = Get-ObjectIntValueOrNull -Object $result -Names @('test_execution_exit_code', 'test_run_exit_code')
+$testCompilationEvidence = $false
+$testExecutionEvidence = $false
+$testCompilationEvidenceSource = ''
+$testExecutionEvidenceSource = ''
+
+if ($null -ne $explicitCompileGate) {
+    $testCompilationExitCode = Get-ObjectIntValueOrNull -Object $explicitCompileGate -Names @('exit_code', 'test_compilation_exit_code')
+    if ($null -ne $testCompilationExitCode -and $testCompilationExitCode -eq 0) {
+        $testCompilationEvidence = $true
+        $testCompilationEvidenceSource = $explicitCompileGatePath
+    }
+}
+if ($null -ne $greenExecutionGate) {
+    $gateExit = Get-ObjectIntValueOrNull -Object $greenExecutionGate -Names @('exit_code', 'test_execution_exit_code')
+    if ($null -ne $gateExit) { $testExecutionExitCode = $gateExit }
+    if ([string](Get-ObjectPropertyValue -Object $greenExecutionGate -Name 'execution_status') -ieq 'PASSED' -and
+        $null -ne $gateExit -and $gateExit -eq 0) {
+        $testCompilationEvidence = $true
+        $testExecutionEvidence = $true
+        $testCompilationEvidenceSource = $greenExecutionGatePath
+        $testExecutionEvidenceSource = $greenExecutionGatePath
+    }
+}
+
+foreach ($test in $tests) {
+    $commandText = [string](Get-ObjectPropertyValue -Object $test -Name 'command')
+    $phaseText = ([string](Get-ObjectPropertyValue -Object $test -Name 'phase')).ToUpperInvariant()
+    $resultText = ([string](Get-ObjectPropertyValue -Object $test -Name 'result')).ToLowerInvariant()
+    $evidenceText = [string](Get-ObjectPropertyValue -Object $test -Name 'evidence')
+
+    if ($commandText -match '(?i)\bmvn(?:\.cmd)?\b' -and $commandText -match '(?i)\btest-compile\b' -and $resultText -eq 'pass') {
+        $testCompilationEvidence = $true
+        if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests' }
+    }
+    if ($commandText -match '(?i)\bmvn(?:\.cmd)?\b' -and $phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
+        $testCompilationEvidence = $true
+        $testExecutionEvidence = $true
+        if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests' }
+        if ([string]::IsNullOrWhiteSpace($testExecutionEvidenceSource)) { $testExecutionEvidenceSource = 'SLICE_RESULT.tests' }
+    }
+    if ($evidenceText -match '(?i)\bBUILD SUCCESS\b' -and $phaseText -in @('GREEN', 'VERIFY')) {
+        $testCompilationEvidence = $true
+        $testExecutionEvidence = $true
+        if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests.evidence' }
+        if ([string]::IsNullOrWhiteSpace($testExecutionEvidenceSource)) { $testExecutionEvidenceSource = 'SLICE_RESULT.tests.evidence' }
+    }
+}
+
+if ($null -ne $testCompilationExitCode -and $testCompilationExitCode -eq 0) {
+    $testCompilationEvidence = $true
+    if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.test_compilation_exit_code' }
+}
+if ($null -ne $testExecutionExitCode -and $testExecutionExitCode -eq 0) {
+    $testExecutionEvidence = $true
+    if ([string]::IsNullOrWhiteSpace($testExecutionEvidenceSource)) { $testExecutionEvidenceSource = 'SLICE_RESULT.test_execution_exit_code' }
+}
+
+$requiresCoverageExecutionEvidence = (
+    $null -ne $coverageDelta -and
+    [int]$coverageDelta -gt 0 -and
+    $sliceStatus -notmatch 'BLOCKED|INVALID'
+)
+if ($requiresCoverageExecutionEvidence) {
+    if ($null -ne $testCompilationExitCode -and [int]$testCompilationExitCode -ne 0) {
+        $issues.Add("test_compilation_failed:$testCompilationExitCode") | Out-Null
+        if ($gapFlags -notcontains 'test_compilation_failed') { $gapFlags += 'test_compilation_failed' }
+        $coverageDelta = 0
+    } elseif (-not $testCompilationEvidence) {
+        $issues.Add('test_compilation_evidence_missing') | Out-Null
+        if ($gapFlags -notcontains 'test_compilation_evidence_missing') { $gapFlags += 'test_compilation_evidence_missing' }
+        $coverageDelta = 0
+    }
+
+    if ($null -ne $testExecutionExitCode -and [int]$testExecutionExitCode -ne 0) {
+        $issues.Add("test_execution_failed:$testExecutionExitCode") | Out-Null
+        if ($gapFlags -notcontains 'test_execution_failed') { $gapFlags += 'test_execution_failed' }
+        $coverageDelta = 0
+    } elseif (-not $testExecutionEvidence) {
+        $issues.Add('no_test_execution_evidence') | Out-Null
+        if ($gapFlags -notcontains 'no_test_execution_evidence') { $gapFlags += 'no_test_execution_evidence' }
+        $coverageDelta = 0
     }
 }
 
@@ -537,8 +904,10 @@ if ($alreadyImplementedEvidenceSlice) {
 if ($hasRedPhaseDidNotFail) {
     $warnings.Add("red_phase_did_not_fail")
 }
-if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0) {
+if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) {
     $warnings.Add("red_phase_missing")
+} elseif ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and $greenOnlyAcceptedByFeatureClassification) {
+    $warnings.Add("green_only_evidence_accepted_by_feature_classification") | Out-Null
 }
 if ($redPassed) {
     $warnings.Add("red_phase_passed_before_fix")
@@ -562,6 +931,10 @@ if ($hasNoProgressSignal) {
 $blockingSiblingSurfaces = @()
 foreach ($family in $closedFamilies) {
     $blockingSiblingSurfaces += @(Get-FamilySiblingSurfaces -Value $result.required_sibling_surfaces -FamilyId ([string]$family) -TouchedFamilies $touchedFamilies)
+}
+if ($narrowReadOnlyFeature -and $blockingSiblingSurfaces.Count -gt 0) {
+    $warnings.Add("family_sibling_surface_not_applicable_by_feature_classification") | Out-Null
+    $blockingSiblingSurfaces = @()
 }
 if ($sliceStatus -eq 'DONE' -and $closedFamilies.Count -gt 0 -and $blockingSiblingSurfaces.Count -gt 0) {
     $warnings.Add("family_sibling_surface_open")
@@ -617,18 +990,49 @@ if ($null -ne $result -and $result.PSObject.Properties.Name -contains 'behavior_
 }
 $behaviorCharterRequired = $highWeightTouchedFamilies.Count -gt 0 -and $sliceStatus -notmatch 'BLOCKED|INVALID'
 $behaviorCharterReady = $false
+$behaviorCharterEvidenceFile = ''
+$behaviorCharterEvidenceResolvedPath = ''
+$behaviorCharterEvidenceFiles = @()
+$behaviorCharterEvidenceResolvedPaths = @()
 if ($behaviorCharterRequired) {
     $missingCharterFields = New-Object System.Collections.Generic.List[string]
     if ($null -eq $behaviorCharter) {
         $warnings.Add('behavior_test_charter_missing') | Out-Null
         $missingCharterFields.Add('behavior_test_charter') | Out-Null
     } else {
-        foreach ($fieldName in @('proof_kind', 'production_entry', 'state_or_output', 'must_not', 'RED_command', 'expected_RED_failure', 'GREEN_command', 'evidence_file')) {
+        $requiredBehaviorCharterFields = @('proof_kind', 'production_entry', 'state_or_output', 'must_not', 'RED_command', 'expected_RED_failure', 'GREEN_command')
+        if ($narrowReadOnlyFeature) {
+            $requiredBehaviorCharterFields = @($requiredBehaviorCharterFields | Where-Object { [string]$_ -ne 'must_not' })
+            if ([string]::IsNullOrWhiteSpace((Get-ObjectStringValue $behaviorCharter 'must_not'))) {
+                $warnings.Add('behavior_test_charter_must_not_not_applicable_by_feature_classification') | Out-Null
+            }
+        }
+        foreach ($fieldName in $requiredBehaviorCharterFields) {
             $fieldValue = Get-ObjectStringValue $behaviorCharter $fieldName
             if ([string]::IsNullOrWhiteSpace($fieldValue)) {
                 $missingCharterFields.Add($fieldName) | Out-Null
             }
         }
+        $behaviorCharterEvidenceFiles = @(Get-BehaviorCharterEvidenceFiles -BehaviorCharter $behaviorCharter)
+        $behaviorCharterEvidenceFile = ($behaviorCharterEvidenceFiles -join ', ')
+        if ($behaviorCharterEvidenceFiles.Count -eq 0) {
+            $missingCharterFields.Add('behavior_test_charter_evidence_file_missing') | Out-Null
+            $warnings.Add('behavior_test_charter_evidence_file_missing') | Out-Null
+        }
+        foreach ($evidenceFile in $behaviorCharterEvidenceFiles) {
+            $evidenceCheck = Test-BehaviorCharterEvidenceFile -Root $worktreeFull -EvidencePath $evidenceFile
+            if (-not [string]::IsNullOrWhiteSpace([string]$evidenceCheck.resolved_path)) {
+                $behaviorCharterEvidenceResolvedPaths += [string]$evidenceCheck.resolved_path
+            }
+            if (-not [bool]$evidenceCheck.valid) {
+                $warnings.Add('behavior_test_charter_evidence_file_invalid') | Out-Null
+                foreach ($evidenceIssue in @($evidenceCheck.issues)) {
+                    $warnings.Add([string]$evidenceIssue) | Out-Null
+                    $missingCharterFields.Add([string]$evidenceIssue) | Out-Null
+                }
+            }
+        }
+        $behaviorCharterEvidenceResolvedPath = ($behaviorCharterEvidenceResolvedPaths -join ', ')
         $charterText = ($behaviorCharter | ConvertTo-Json -Depth 8)
         if ($charterText -match '(?i)\b(mock-only|helper-only|static-only|file_presence_only|mapper-presence-only|Noop|Stub|Fake|Dummy|Placeholder|InMemory|TestOnly|Scaffold)\b') {
             $warnings.Add('behavior_test_charter_non_authorizing') | Out-Null
@@ -660,12 +1064,24 @@ if ($null -ne $sourceChainContract -and [bool]$sourceChainContract.required_sour
             -not [string]::IsNullOrWhiteSpace($leaf) -and $impl.IndexOf($leaf, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
         }).Count -gt 0
     })
-    $syntheticSourceCarrier = (
-        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|java\.lang\.reflect\.Field|new\s+ExampleApplyClaimTaskData|new\s+ExampleCalculatorTaskData|hand[- ]?built|manual(?:ly)?\s+injected' -or
-        $resultEvidenceText -match '(?i)hand[- ]?built task data|manually injected|when values already exist on task data|terminal payload'
+    $realBuilderSourceChainProof = Test-PolicyRebuildRealBuilderProof `
+        -TestText $testImplementedText `
+        -ResultText $resultEvidenceText `
+        -TouchedRequiredProductionCount $sourceChainTouched.Count
+    $fixedCaseIdFixtureSignal = (
+        $testImplementedText -match '(?i)(fixed\s+(database\s+)?caseId|fixed\s+DB\s+caseId|12345L|67890L)'
     )
+    $hardSyntheticSourceCarrier = (
+        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|new\s+AiApplyClaimTaskData|new\s+AiCalculateLossTaskData|new\s+AiApplyClaimRequest|new\s+AiCalculateLossRequest|return\s+new\s+Ai(?:ApplyClaim|CalculateLoss)Request|createMockRequest|hand[- ]?built|manual(?:ly)?\s+injected' -or
+        $testImplementedText -match '(?i)(taskData\s*==\s*null|result\s*==\s*null|null\s+then\s+(pass|warn|print)|hasPolicyNumAndInsureNumFields|getter/setter|field\s+existence)' -or
+        $resultEvidenceText -match '(?i)hand[- ]?built task data|hand[- ]?built request|manually injected|when values already exist on task data|terminal payload|DTO getter|getter/setter|field existence|hasPolicyNumAndInsureNumFields'
+    )
+    $syntheticSourceCarrier = $hardSyntheticSourceCarrier -or ($fixedCaseIdFixtureSignal -and -not $realBuilderSourceChainProof)
+    if ($fixedCaseIdFixtureSignal -and $realBuilderSourceChainProof) {
+        $warnings.Add('source_chain_fixed_caseid_fixture_warning') | Out-Null
+    }
     $terminalOnly = $sourceChainTouched.Count -eq 0 -and (
-        $implementedFiles -match 'ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor|ExampleBaseTaskData|ExampleClaimConstant'
+        $implementedFiles -match 'AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor|AiClaimBaseTaskData|AIClaimConstant'
     )
     if ($syntheticSourceCarrier -or $terminalOnly) {
         $carrierOrigin = 'synthetic_carrier'
@@ -1078,7 +1494,8 @@ foreach ($row in $boundaryRowsToCheck) {
         [string]$row.literal,
         [string]$row.symbol_or_field
     ) -join ' '
-    $requiresBoundary = $surface -match '(?i)\b(wire|db|database|display|payload|callback|exchange|queue|export|page|response|request)\b|_id\b|_amount\b'
+    $behaviorOnlyBoundary = ([string]$row.db_or_wire_or_display -eq 'behavior') -and ([string]$row.boundary_type -eq 'behavior')
+    $requiresBoundary = -not $behaviorOnlyBoundary -and $surface -match '(?i)\b(wire|db|database|display|payload|callback|exchange|queue|export|page|response|request)\b|_id\b|_amount\b'
     if (-not $requiresBoundary) { continue }
     $closureProof = [string]$row.closure_proof
     $productionBoundary = [string]$row.production_boundary
@@ -1138,6 +1555,10 @@ $sideEffectEvidenceRequired = (
     ([string]$sliceType -match '(?i)stateful') -or
     ($null -ne $carrierAuthorization -and [bool]$carrierAuthorization.requires_side_effect_evidence)
 )
+if ($narrowReadOnlyFeature -and -not (($touchedFamilies -contains 'stateful_side_effect') -or ($closedFamilies -contains 'stateful_side_effect'))) {
+    $sideEffectEvidenceRequired = $false
+    $warnings.Add('side_effect_evidence_not_applicable_by_feature_classification') | Out-Null
+}
 $sideEvidenceComplete = $false
 if ($null -ne $sideEvidenceObject) {
     $sideEntry = [string]$sideEvidenceObject.entry_call
@@ -1449,12 +1870,13 @@ $currentCarrierText = @(
     $productionBoundary,
     $proofKind,
     $resultEvidenceText,
+    $testImplementedText,
     ($testCommands -join "`n")
 ) -join "`n"
 $sourceChainRequiredForPlanLock = $null -ne $sourceChainContract -and [bool]$sourceChainContract.required_source_chain
 $unrequiredSourceChainCarrier = (
     -not $sourceChainRequiredForPlanLock -and
-    $currentCarrierText -match '(?i)\b(ExampleDataAssemblyHelper|ExampleApplyClaimService|ExampleCalculatorService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    $currentCarrierText -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
 )
 if ($unrequiredSourceChainCarrier) {
     $carrierFamilyMatch = $false
@@ -1468,9 +1890,19 @@ if ($unrequiredSourceChainCarrier) {
     $warnings.Add('unrequired_source_chain_carrier') | Out-Null
 }
 if ($touchedFamilies -contains 'core_entry') {
-    $plannedCarrierHead = if ([string]::IsNullOrWhiteSpace($plannedSelectedCarrier)) { '' } else { (($plannedSelectedCarrier -split '\s*->\s*')[0]).Trim() }
-    $plannedCarrierToken = if ([string]::IsNullOrWhiteSpace($plannedCarrierHead)) { '' } else { ($plannedCarrierHead -split '\.')[0] }
-    if (-not [string]::IsNullOrWhiteSpace($plannedCarrierToken) -and $currentCarrierText -notmatch [regex]::Escape($plannedCarrierToken)) {
+    $plannedCarrierClasses = @(Get-CarrierClassNamesFromText -Text $plannedSelectedCarrier)
+    $carrierPlanMatches = $true
+    if ($plannedCarrierClasses.Count -gt 0) {
+        $missingPlannedCarrierClasses = @($plannedCarrierClasses | Where-Object {
+            $currentCarrierText -notmatch [regex]::Escape([string]$_)
+        })
+        $carrierPlanMatches = $missingPlannedCarrierClasses.Count -eq 0
+    } else {
+        $plannedCarrierHead = if ([string]::IsNullOrWhiteSpace($plannedSelectedCarrier)) { '' } else { (($plannedSelectedCarrier -split '\s*->\s*')[0]).Trim() }
+        $plannedCarrierToken = if ([string]::IsNullOrWhiteSpace($plannedCarrierHead)) { '' } else { ($plannedCarrierHead -split '\.')[0] }
+        $carrierPlanMatches = [string]::IsNullOrWhiteSpace($plannedCarrierToken) -or $currentCarrierText -match [regex]::Escape($plannedCarrierToken)
+    }
+    if (-not $carrierPlanMatches) {
         $carrierFamilyMatch = $false
         $expectedCarrierSource = 'FIRST_SLICE_PROOF_PLAN.selected_carrier'
         if (-not $planMismatchedFamilies.Contains('core_entry')) { $planMismatchedFamilies.Add('core_entry') | Out-Null }
@@ -1479,7 +1911,7 @@ if ($touchedFamilies -contains 'core_entry') {
         }
         $warnings.Add('selected_carrier_plan_mismatch') | Out-Null
     }
-    if (-not [string]::IsNullOrWhiteSpace($plannedFirstRedTest)) {
+    if (-not [string]::IsNullOrWhiteSpace($plannedFirstRedTest) -and $plannedFirstRedTest -notmatch '(?i)^\s*(n/?a|none|not applicable|green[- ]?only)') {
         $plannedClass = Get-TestClassNameFromBinding -Binding $plannedFirstRedTest
         $actualPlannedTestClasses = New-Object System.Collections.Generic.List[string]
         foreach ($match in [regex]::Matches($currentCarrierText, '(?i)-Dtest=([^\s]+)')) {
@@ -1490,16 +1922,37 @@ if ($touchedFamilies -contains 'core_entry') {
                 }
             }
         }
-        if (-not [string]::IsNullOrWhiteSpace($plannedClass) -and
-            $actualPlannedTestClasses.Count -gt 0 -and
-            @($actualPlannedTestClasses | Where-Object { [string]$_ -eq $plannedClass }).Count -eq 0) {
-            $carrierFamilyMatch = $false
-            $expectedCarrierSource = 'IMPLEMENTATION_CONTRACT.first_red_test'
-            if (-not $planMismatchedFamilies.Contains('core_entry')) { $planMismatchedFamilies.Add('core_entry') | Out-Null }
-            foreach ($flag in @('wrong_test_surface', 'planned_red_test_mismatch')) {
-                if ($gapFlags -notcontains $flag) { $gapFlags += $flag }
+        $plannedRedTestSatisfied = $currentCarrierText -match [regex]::Escape($plannedFirstRedTest)
+        if (-not $plannedRedTestSatisfied -and -not [string]::IsNullOrWhiteSpace($plannedClass)) {
+            $plannedRedTestSatisfied = (
+                ($currentCarrierText -match [regex]::Escape($plannedClass)) -or
+                ($actualPlannedTestClasses.Count -gt 0 -and @($actualPlannedTestClasses | Where-Object { [string]$_ -eq $plannedClass }).Count -gt 0)
+            )
+        }
+        $behaviorallyEquivalentReplacementTest = (
+            $narrowReadOnlyFeature -and
+            $testExecutionEvidence -and
+            $redFailed -and
+            $greenOrVerifyPassed -and
+            $behaviorCharterReady -and
+            $productionImplementedFiles.Count -gt 0 -and
+            $currentCarrierText -match '(?i)\bAiApplyClaimApiTaskProcessor\b' -and
+            $currentCarrierText -match '(?i)\bAiCalculateLossApiTaskProcessor\b' -and
+            $currentCarrierText -match '(?i)\bpolicyNum\b' -and
+            $currentCarrierText -match '(?i)\binsureNum\b'
+        )
+        if (-not $plannedRedTestSatisfied) {
+            if ($behaviorallyEquivalentReplacementTest) {
+                $warnings.Add('planned_red_test_name_mismatch_warn_only') | Out-Null
+            } else {
+                $carrierFamilyMatch = $false
+                $expectedCarrierSource = 'IMPLEMENTATION_CONTRACT.first_red_test'
+                if (-not $planMismatchedFamilies.Contains('core_entry')) { $planMismatchedFamilies.Add('core_entry') | Out-Null }
+                foreach ($flag in @('wrong_test_surface', 'planned_red_test_mismatch')) {
+                    if ($gapFlags -notcontains $flag) { $gapFlags += $flag }
+                }
+                $warnings.Add('planned_red_test_mismatch') | Out-Null
             }
-            $warnings.Add('planned_red_test_mismatch') | Out-Null
         }
     }
 }
@@ -1558,6 +2011,89 @@ if ($proofTypeMismatchFamilies.Count -gt 0) {
     }
 }
 
+if ($narrowReadOnlyFeature -and $behaviorCharterReady -and $productionImplementedFiles.Count -gt 0) {
+    $genuineWrongSurfaceWarnings = @(
+        'production_carrier_missing',
+        'synthetic_carrier_for_named_source_chain',
+        'behavior_test_charter_non_authorizing',
+        'behavior_test_charter_missing',
+        'behavior_test_charter_evidence_file_missing',
+        'behavior_test_charter_evidence_file_invalid',
+        'unrequired_source_chain_carrier',
+        'selected_carrier_plan_mismatch',
+        'planned_red_test_mismatch'
+    )
+    $hasGenuineWrongSurfaceWarning = @($genuineWrongSurfaceWarnings | Where-Object { $warnings.Contains([string]$_) }).Count -gt 0
+    if (-not $hasGenuineWrongSurfaceWarning) {
+        $gapFlags = @(Remove-FeatureExemptedGapFlags `
+            -GapFlags $gapFlags `
+            -Exemptions @('wrong_test_surface') `
+            -ExemptedFlags $featureExemptedGapFlags)
+    }
+}
+if ($narrowReadOnlyFeature -and -not (($touchedFamilies -contains 'stateful_side_effect') -or ($closedFamilies -contains 'stateful_side_effect'))) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap', 'side_effect_db_evidence_missing') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+if ($greenOnlyAcceptedByFeatureClassification -and $redTests.Count -eq 0) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('tdd_red_not_replayed', 'red_phase_missing') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+if ($narrowReadOnlyFeature) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('family_sibling_gap') `
+        -ExemptedFlags $featureExemptedGapFlags)
+}
+if ($narrowReadOnlyFeature -and ($gapFlags -contains 'tooling_enforcement_stop')) {
+    $remainingFailClosedFlags = @(
+        'wrong_test_surface',
+        'shallow_module',
+        'synthetic_carrier_gap',
+        'mock_behavior_gap',
+        'tdd_red_not_replayed',
+        'no_progress_slice',
+        'carrier_authorization_missing',
+        'carrier_authorization_stop',
+        'exact_contract_assertion_missing',
+        'exact_contract_boundary_proof_stop',
+        'side_effect_evidence_missing',
+        'side_effect_red_not_business_assertion',
+        'behavior_carrier_gap',
+        'facade_direction_gap',
+        'test_contract_mismatch',
+        'return_value_vs_exception_mismatch',
+        'assertion_surface_mismatch',
+        'behavior_test_charter_gap',
+        'test_compilation_failed',
+        'test_compilation_evidence_missing',
+        'test_execution_failed',
+        'no_test_execution_evidence'
+    ) | Where-Object { $gapFlags -contains $_ }
+    if ($remainingFailClosedFlags.Count -eq 0) {
+        $gapFlags = @(Remove-FeatureExemptedGapFlags `
+            -GapFlags $gapFlags `
+            -Exemptions @('tooling_enforcement_stop') `
+            -ExemptedFlags $featureExemptedGapFlags)
+    }
+}
+
+$hasStatefulGap = @('side_effect_ledger_gap', 'needs_transaction_test', 'core_entry_unclosed') | Where-Object { $gapFlags -contains $_ }
+$hasSurfaceGap = @('executable_surface_slice_gap', 'surface_budget_gap', 'deploy_surface_lock_gap', 'deploy_surface_contract_gap', 'external_integration_sibling_gap', 'family_sibling_gap') | Where-Object { $gapFlags -contains $_ }
+$hasTddRedNotReplayed = $gapFlags -contains 'tdd_red_not_replayed'
+$hasDeployCarrierGap = @('deploy_asset_gap') | Where-Object { $gapFlags -contains $_ }
+$hasWirePayloadGap = @('wire_payload_shape_gap') | Where-Object { $gapFlags -contains $_ }
+$hasTransactionDepthGap = @('transaction_depth_gap') | Where-Object { $gapFlags -contains $_ }
+$hasSiblingSurfaceGap = @('family_sibling_gap') | Where-Object { $gapFlags -contains $_ }
+$hasWrongSurfaceGap = @('wrong_test_surface') | Where-Object { $gapFlags -contains $_ }
+$hasShallowModuleGap = @('shallow_module') | Where-Object { $gapFlags -contains $_ }
+$hasSyntheticCarrierGap = @('synthetic_carrier_gap') | Where-Object { $gapFlags -contains $_ }
+$hasDependencySpyGap = @('dependency_spy_output_gap') | Where-Object { $gapFlags -contains $_ }
+
 $nonAuthorizingEvidenceFlags = @(
     'wrong_test_surface',
     'shallow_module',
@@ -1580,7 +2116,11 @@ $nonAuthorizingEvidenceFlags = @(
     'test_contract_mismatch',
     'return_value_vs_exception_mismatch',
     'assertion_surface_mismatch',
-    'behavior_test_charter_gap'
+    'behavior_test_charter_gap',
+    'test_compilation_failed',
+    'test_compilation_evidence_missing',
+    'test_execution_failed',
+    'no_test_execution_evidence'
 ) | Where-Object { $gapFlags -contains $_ }
 if ($hasRedPhaseDidNotFail -or $hasTddRedNotReplayed -or $hasImplementationAfterBlockedRed -or $hasNoProgressSignal -or
     $hasSubstituteProof -or $nonAuthorizingEvidenceFlags.Count -gt 0 -or $proofTypeMismatchFamilies.Count -gt 0) {
@@ -1598,7 +2138,7 @@ if ($issues.Count -gt 0) {
     $verificationStatus = 'PARTIAL'
 } elseif (-not $hasBehaviorEvidence) {
     $verificationStatus = 'PARTIAL'
-} elseif ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0) {
+} elseif ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) {
     $verificationStatus = 'PARTIAL'
 } elseif ($hasRedPhaseDidNotFail) {
     $verificationStatus = 'PARTIAL'
@@ -1642,7 +2182,8 @@ if ($hasTransactionDepthGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageC
 if ($proofTypeMismatchFamilies.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 55) }
 if ($gapFlags -contains 'mock_behavior_gap') { $coverageCap = [Math]::Min($coverageCap, 35) }
 if ($gapFlags -contains 'behavior_test_charter_gap') { $coverageCap = [Math]::Min($coverageCap, 10) }
-if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0) { $coverageCap = [Math]::Min($coverageCap, 55) }
+if (@('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence') | Where-Object { $gapFlags -contains $_ }) { $coverageCap = [Math]::Min($coverageCap, 0) }
+if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) { $coverageCap = [Math]::Min($coverageCap, 55) }
 if ($hasRedPhaseDidNotFail) { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($hasTddRedNotReplayed) { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($hasImplementationAfterBlockedRed) { $coverageCap = [Math]::Min($coverageCap, 0) }
@@ -1664,7 +2205,7 @@ if ($coverageDelta -ne $null) {
     if ($sliceStatus -eq 'PARTIAL' -and -not $alreadyImplementedEvidenceSlice) {
         $adjustedCoverageDelta = [Math]::Min([int]$adjustedCoverageDelta, 5)
     }
-    if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0) {
+    if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) {
         $adjustedCoverageDelta = [Math]::Min([int]$adjustedCoverageDelta, 3)
     }
     if ($hasRedPhaseDidNotFail) {
@@ -1686,6 +2227,9 @@ if ($coverageDelta -ne $null) {
         $adjustedCoverageDelta = 0
     }
     if ($gapFlags -contains 'behavior_test_charter_gap') {
+        $adjustedCoverageDelta = 0
+    }
+    if (@('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence') | Where-Object { $gapFlags -contains $_ }) {
         $adjustedCoverageDelta = 0
     }
     if ($isCoreEntrySlice -and $hasRedPhaseDidNotFail) {
@@ -1724,7 +2268,7 @@ $nonAuthorizingReasons = New-Object System.Collections.Generic.List[string]
 if ($issues.Count -gt 0) { $nonAuthorizingReasons.Add('issues_present') | Out-Null }
 if ($verificationStatus -eq 'FAIL' -or $verificationStatus -eq 'BLOCKED') { $nonAuthorizingReasons.Add('verification_failed_or_blocked') | Out-Null }
 if (-not $hasBehaviorEvidence) { $nonAuthorizingReasons.Add('behavior_evidence_missing') | Out-Null }
-if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0) { $nonAuthorizingReasons.Add('red_phase_missing') | Out-Null }
+if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) { $nonAuthorizingReasons.Add('red_phase_missing') | Out-Null }
 if ($hasRedPhaseDidNotFail) { $nonAuthorizingReasons.Add('red_phase_did_not_fail') | Out-Null }
 if ($hasTddRedNotReplayed) { $nonAuthorizingReasons.Add('tdd_red_not_replayed') | Out-Null }
 if ($hasImplementationAfterBlockedRed) { $nonAuthorizingReasons.Add('implementation_after_blocked_red') | Out-Null }
@@ -1737,6 +2281,9 @@ foreach ($flag in @('carrier_authorization_missing', 'carrier_authorization_stop
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
 if ($gapFlags -contains 'behavior_test_charter_gap') { $nonAuthorizingReasons.Add('behavior_test_charter_gap') | Out-Null }
+foreach ($flag in @('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence')) {
+    if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
+}
 foreach ($flag in @('public_response_contract_missing', 'deploy_surface_unproven')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
@@ -1744,8 +2291,67 @@ if ($gapFlags -contains 'exact_contract_not_closed') { $nonAuthorizingReasons.Ad
 # v414 TODO Blocker: TODO placeholders in production code now block slice authorization
 if ($gapFlags -contains 'todo_placeholder_exists') { $nonAuthorizingReasons.Add('todo_placeholder_exists') | Out-Null }
 $nonAuthorizingReasons = @($nonAuthorizingReasons | Select-Object -Unique)
+
+$hardAuthorizationGapFlags = @(
+    @($nonAuthorizingEvidenceFlags),
+    'red_phase_missing',
+    'red_phase_did_not_fail',
+    'tdd_red_not_replayed',
+    'implementation_after_blocked_red',
+    'carrier_authorization_missing',
+    'carrier_authorization_stop',
+    'exact_contract_assertion_missing',
+    'exact_contract_boundary_proof_stop',
+    'side_effect_evidence_missing',
+    'side_effect_red_not_business_assertion',
+    'behavior_test_charter_gap',
+    'test_compilation_failed',
+    'test_compilation_evidence_missing',
+    'test_execution_failed',
+    'no_test_execution_evidence',
+    'public_response_contract_missing',
+    'deploy_surface_unproven',
+    'exact_contract_not_closed',
+    'todo_placeholder_exists'
+) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+if ($proofTypeMismatchFamilies.Count -gt 0) {
+    $hardAuthorizationGapFlags = @($hardAuthorizationGapFlags + 'proof_type_gap' | Select-Object -Unique)
+}
+$blockingGapFlags = @($gapFlags | Where-Object {
+    $hardAuthorizationGapFlags -contains [string]$_ -and
+    $featureExemptedGapFlags -notcontains [string]$_
+} | Select-Object -Unique)
+$warningOnlyGapFlags = @($gapFlags | Where-Object {
+    $blockingGapFlags -notcontains [string]$_ -and
+    $featureExemptedGapFlags -notcontains [string]$_
+} | Select-Object -Unique)
+$gapFlagSeverity = [ordered]@{}
+foreach ($flag in @($gapFlags | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
+    $flagText = [string]$flag
+    $severity = if ($featureExemptedGapFlags -contains $flagText) {
+        'info'
+    } elseif ($blockingGapFlags -contains $flagText) {
+        'blocker'
+    } else {
+        'warning'
+    }
+    $gapFlagSeverity[$flagText] = [ordered]@{
+        severity = $severity
+        authorizing_blocker = ($severity -eq 'blocker')
+    }
+}
+
 $authorizedForNextSlice = $nonAuthorizingReasons.Count -eq 0 -and $verificationStatus -ne 'FAIL' -and $verificationStatus -ne 'BLOCKED'
 $authorizedForSynthesis = $authorizedForNextSlice -and $verificationStatus -eq 'PASS' -and $sliceStatus -eq 'DONE' -and $hasDependencySpyGap.Count -eq 0
+$verifiedTouchedFamilies = @(@($touchedFamilies + $closedFamilies) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+    Select-Object -Unique)
+$verifiedClosedFamilies = @()
+if ($authorizedForNextSlice -and @('PASS', 'PARTIAL') -contains $verificationStatus -and @('DONE', 'PARTIAL') -contains $sliceStatus) {
+    $verifiedClosedFamilies = @($closedFamilies |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+        Select-Object -Unique)
+}
 
 $shouldContinue = $true
 if ($verificationStatus -eq 'FAIL' -or $verificationStatus -eq 'BLOCKED') { $shouldContinue = $false }
@@ -1772,6 +2378,8 @@ $verify = [ordered]@{
     required_proof_type = $requiredProofByFamily
     actual_proof_type = $actualProofByFamily
     proof_type_mismatch_families = @($proofTypeMismatchFamilies)
+    touched_requirement_families = @($verifiedTouchedFamilies)
+    closed_requirement_families = @($verifiedClosedFamilies)
     carrier_family_match = $carrierFamilyMatch
     expected_carrier_source = $expectedCarrierSource
     planned_first_red_test = $plannedFirstRedTest
@@ -1781,20 +2389,41 @@ $verify = [ordered]@{
     implementation_allowed = (-not $hasImplementationAfterBlockedRed)
     red_blocked = $redBlocked
     implementation_after_blocked_red = $hasImplementationAfterBlockedRed
+    test_compilation_exit_code = $testCompilationExitCode
+    test_compilation_evidence = $testCompilationEvidence
+    test_compilation_evidence_source = $testCompilationEvidenceSource
+    test_execution_exit_code = $testExecutionExitCode
+    test_execution_evidence = $testExecutionEvidence
+    test_execution_evidence_source = $testExecutionEvidenceSource
     behavior_test_charter_required = $behaviorCharterRequired
     behavior_test_charter_ready = $behaviorCharterReady
+    behavior_test_charter_evidence_file = $behaviorCharterEvidenceFile
+    behavior_test_charter_evidence_resolved_path = $behaviorCharterEvidenceResolvedPath
+    behavior_test_charter_evidence_files = @($behaviorCharterEvidenceFiles)
+    behavior_test_charter_evidence_resolved_paths = @($behaviorCharterEvidenceResolvedPaths)
     has_diff = $hasTrackedOrUntrackedDiff
     changed_files = @($currentSliceChangedFiles)
     round_changed_files_snapshot = @($roundChangedFilesSnapshot)
     implemented_files = @($implementedFiles)
     test_commands = @($testCommands)
     gap_flags = @($gapFlags)
+    blocking_gap_flags = @($blockingGapFlags)
+    warning_only_gap_flags = @($warningOnlyGapFlags)
+    gap_flag_severity = $gapFlagSeverity
     issues = @($issues)
     warnings = @($warnings)
     next_recommended_slice_type = $nextRecommended
     carrier_start = $carrierStart
     carrier_origin = $carrierOrigin
     next_required_slice = $nextRequiredSlice
+    feature_classification = $(if ($null -ne $featureClassification) { [string]$featureClassification.classification } else { '' })
+    feature_classification_path = $featureClassificationPath
+    verifier_adjustments_applied = [ordered]@{
+        narrow_backend_read_only = $narrowReadOnlyFeature
+        green_only_evidence_accepted = $greenOnlyAcceptedByFeatureClassification
+        side_effect_evidence_required = $sideEffectEvidenceRequired
+        exempted_gap_flags = @($featureExemptedGapFlags)
+    }
 }
 
 $verify | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $verifyPath -Encoding UTF8

@@ -15,7 +15,7 @@ Test Scenarios:
 5. Verify that Maven path resolution works correctly
 
 .REQUIREMENTS
-- <PROJECT_ROOT> must exist with .memory/build-test-profile.yaml
+- D:\opt\claim must exist with .memory/build-test-profile.yaml
 - Test worktree must exist
 
 .EXPECTED_RESULTS
@@ -29,9 +29,9 @@ Test Scenarios:
 $ErrorActionPreference = 'Stop'
 
 # Test configuration
-$ReplayRoot = (Split-Path $PSScriptRoot -Parent)
-$Worktree = "$env:AI_WORKFLOW_PROJECT_ROOT"
-$ProjectRoot = "$env:AI_WORKFLOW_PROJECT_ROOT"
+$ReplayRoot = 'D:\opt\replay-autopilot'
+$Worktree = 'D:\opt\claim'
+$ProjectRoot = 'D:\opt\claim'
 
 Write-Host "========================================"
 Write-Host "Test v283: Maven Exit Code Capture"

@@ -27,10 +27,42 @@ $canProceed = $true
 $issues = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()
 
+function Read-JsonIfExists {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    try { return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $null }
+}
+
+function Test-NarrowBackendReadOnlyFeature {
+    param($FeatureClassification)
+    if ($null -eq $FeatureClassification) { return $false }
+    $classification = [string]$FeatureClassification.classification
+    $baseClassification = [string]$FeatureClassification.base_classification
+    $readOnly = $false
+    if ($FeatureClassification.PSObject.Properties.Name -contains 'read_only') {
+        $readOnly = [bool]$FeatureClassification.read_only
+    }
+    return $readOnly -and (
+        $classification -eq 'narrow_backend_read_only_fix' -or
+        $baseClassification -eq 'narrow_backend_fix'
+    )
+}
+
+function New-CodepointString {
+    param([int[]]$Codepoints)
+    return -join ($Codepoints | ForEach-Object { [char]$_ })
+}
+
+$featureClassification = Read-JsonIfExists (Join-Path $SliceDir 'FEATURE_CLASSIFICATION.json')
+$narrowReadOnlyFeature = Test-NarrowBackendReadOnlyFeature -FeatureClassification $featureClassification
+
 # Write header
 Write-Host "=== v348 Slice Quality Gate ===" -ForegroundColor Cyan
 Write-Host "SliceDir: $SliceDir"
 Write-Host "Worktree: $Worktree"
+if ($null -ne $featureClassification) {
+    Write-Host "Feature classification: $($featureClassification.classification)"
+}
 Write-Host ""
 
 # === Check 1: Side Effect Ledger ===
@@ -38,8 +70,11 @@ Write-Host ""
 Write-Host "[Check 1] Side Effect Ledger..." -ForegroundColor Yellow
 
 $sideEffectLedger = Join-Path $SliceDir "side-effect-ledger.md"
-if (-not (Test-Path -LiteralPath $sideEffectLedger)) {
-    Write-Host "  ❌ FAIL: side-effect-ledger.md not found" -ForegroundColor Red
+if ($narrowReadOnlyFeature) {
+    Write-Host "  SKIP: side-effect ledger not required for narrow backend read-only fix" -ForegroundColor Cyan
+    $warnings.Add("side_effect_ledger_not_applicable_by_feature_classification")
+} elseif (-not (Test-Path -LiteralPath $sideEffectLedger)) {
+    Write-Host "  [FAIL] side-effect-ledger.md not found" -ForegroundColor Red
     $issues.Add("side_effect_ledger_missing")
     $canProceed = $false
 } else {
@@ -49,17 +84,17 @@ if (-not (Test-Path -LiteralPath $sideEffectLedger)) {
     $verifiedEffects = [regex]::Matches($ledgerContent, "VERIFIED:\s*(\w+)").Count
 
     if ($verifiedEffects -eq 0) {
-        Write-Host "  ❌ FAIL: No VERIFIED side effects found" -ForegroundColor Red
+        Write-Host "  [FAIL] No VERIFIED side effects found" -ForegroundColor Red
         $issues.Add("no_verified_side_effects")
         $canProceed = $false
     } else {
-        Write-Host "  ✓ PASS: $verifiedEffects verified side effects" -ForegroundColor Green
+        Write-Host "  [PASS] $verifiedEffects verified side effects" -ForegroundColor Green
     }
 
     # Check for TODO placeholders
     $todoCount = [regex]::Matches($ledgerContent, "TODO").Count
     if ($todoCount -gt 0) {
-        Write-Host "  ⚠ WARN: $todoCount TODO markers found in ledger" -ForegroundColor Yellow
+        Write-Host "  [WARN] $todoCount TODO markers found in ledger" -ForegroundColor Yellow
         $warnings.Add("todo_in_ledger")
     }
 }
@@ -69,8 +104,11 @@ if (-not (Test-Path -LiteralPath $sideEffectLedger)) {
 Write-Host "[Check 2] DB State Verification..." -ForegroundColor Yellow
 
 $dbStateVerification = Join-Path $SliceDir "db-state-verification.json"
-if (-not (Test-Path -LiteralPath $dbStateVerification)) {
-    Write-Host "  ❌ FAIL: db-state-verification.json not found" -ForegroundColor Red
+if ($narrowReadOnlyFeature) {
+    Write-Host "  SKIP: DB state verification not required for narrow backend read-only fix" -ForegroundColor Cyan
+    $warnings.Add("db_state_not_applicable_by_feature_classification")
+} elseif (-not (Test-Path -LiteralPath $dbStateVerification)) {
+    Write-Host "  [FAIL] db-state-verification.json not found" -ForegroundColor Red
     $issues.Add("db_state_verification_missing")
     $canProceed = $false
 } else {
@@ -78,11 +116,11 @@ if (-not (Test-Path -LiteralPath $dbStateVerification)) {
         $dbVerif = Get-Content $dbStateVerification -Raw -Encoding UTF8 | ConvertFrom-Json
 
         if ($null -eq $dbVerif.assertions -or $dbVerif.assertions.Count -eq 0) {
-            Write-Host "  ❌ FAIL: No DB state assertions found" -ForegroundColor Red
+            Write-Host "  [FAIL] No DB state assertions found" -ForegroundColor Red
             $issues.Add("no_db_assertions")
             $canProceed = $false
         } else {
-            Write-Host "  ✓ PASS: $($dbVerif.assertions.Count) DB state assertions" -ForegroundColor Green
+            Write-Host "  [PASS] $($dbVerif.assertions.Count) DB state assertions" -ForegroundColor Green
         }
 
         # Check for expected tables
@@ -96,13 +134,13 @@ if (-not (Test-Path -LiteralPath $dbStateVerification)) {
         }
 
         if ($foundTables -lt 2) {
-            Write-Host "  ⚠ WARN: Only $foundTables/5 expected tables verified" -ForegroundColor Yellow
+            Write-Host "  [WARN] Only $foundTables/5 expected tables verified" -ForegroundColor Yellow
             $warnings.Add("limited_table_coverage")
         } else {
-            Write-Host "  ✓ INFO: $foundTables/5 expected tables verified" -ForegroundColor Cyan
+            Write-Host "  [INFO] $foundTables/5 expected tables verified" -ForegroundColor Cyan
         }
     } catch {
-        Write-Host "  ❌ FAIL: Invalid db-state-verification.json" -ForegroundColor Red
+        Write-Host "  [FAIL] Invalid db-state-verification.json" -ForegroundColor Red
         $issues.Add("db_verification_invalid")
         $canProceed = $false
     }
@@ -126,22 +164,22 @@ if (Test-Path -LiteralPath $testEvidence) {
             }
 
             if (Test-Path -LiteralPath $testPath) {
-                Write-Host "  ✓ PASS: Test file exists at $testFile" -ForegroundColor Green
+                Write-Host "  [PASS] Test file exists at $testFile" -ForegroundColor Green
             } else {
-                Write-Host "  ❌ FAIL: Test file not found: $testFile" -ForegroundColor Red
+                Write-Host "  [FAIL] Test file not found: $testFile" -ForegroundColor Red
                 $issues.Add("test_file_not_found")
                 $canProceed = $false
             }
         } else {
-            Write-Host "  ⚠ WARN: No test_file specified in evidence" -ForegroundColor Yellow
+            Write-Host "  [WARN] No test_file specified in evidence" -ForegroundColor Yellow
             $warnings.Add("test_file_unspecified")
         }
     } catch {
-        Write-Host "  ⚠ WARN: Invalid test evidence JSON" -ForegroundColor Yellow
+        Write-Host "  [WARN] Invalid test evidence JSON" -ForegroundColor Yellow
         $warnings.Add("test_evidence_invalid")
     }
 } else {
-    Write-Host "  ⚠ WARN: No test evidence file found" -ForegroundColor Yellow
+    Write-Host "  [WARN] No test evidence file found" -ForegroundColor Yellow
     $warnings.Add("test_evidence_missing")
 }
 
@@ -150,13 +188,13 @@ if (Test-Path -LiteralPath $testEvidence) {
 Write-Host "[Check 4] Placeholder Detection..." -ForegroundColor Yellow
 
 $placeholderPatterns = @(
-    "TODO.*实际.*实现",
-    "TODO.*数据库",
-    "TODO.*插入",
+    ("TODO.*" + [regex]::Escape((New-CodepointString -Codepoints @(0x5B9E, 0x9645))) + ".*" + [regex]::Escape((New-CodepointString -Codepoints @(0x5B9E, 0x73B0)))),
+    ("TODO.*" + [regex]::Escape((New-CodepointString -Codepoints @(0x6570, 0x636E, 0x5E93)))),
+    ("TODO.*" + [regex]::Escape((New-CodepointString -Codepoints @(0x63D2, 0x5165)))),
     "placeholder",
-    "占位",
-    "待实现",
-    "fail\(""            # fail("...")
+    ([regex]::Escape((New-CodepointString -Codepoints @(0x5360, 0x4F4D)))),
+    ([regex]::Escape((New-CodepointString -Codepoints @(0x5F85, 0x5B9E, 0x73B0)))),
+    'fail\("'            # fail("...")
     "return false;?\s*//.*TODO",
     "return true;?\s*//.*TODO"
 )
@@ -176,18 +214,18 @@ foreach ($file in $javaFiles) {
             if ($matches.Count -gt 0) {
                 $foundPlaceholders += $matches.Count
                 $relPath = $file.FullName.Substring($Worktree.Length + 1)
-                Write-Host "  ⚠ Found placeholder in: $relPath" -ForegroundColor DarkYellow
+                Write-Host "  [WARN] Found placeholder in: $relPath" -ForegroundColor DarkYellow
             }
         }
     }
 }
 
 if ($foundPlaceholders -gt 0) {
-    Write-Host "  ❌ FAIL: $foundPlaceholders placeholders found" -ForegroundColor Red
+    Write-Host "  [FAIL] $foundPlaceholders placeholders found" -ForegroundColor Red
     $issues.Add("placeholders_found")
     $canProceed = $false
 } else {
-    Write-Host "  ✓ PASS: No placeholders detected" -ForegroundColor Green
+    Write-Host "  [PASS] No placeholders detected" -ForegroundColor Green
 }
 
 # === Check 5: Behavioral Assertion Check ===
@@ -233,10 +271,10 @@ if (Test-Path -LiteralPath $testEvidence) {
 }
 
 if (-not $foundBehavioral) {
-    Write-Host "  ⚠ WARN: No behavioral assertions found" -ForegroundColor Yellow
+    Write-Host "  [WARN] No behavioral assertions found" -ForegroundColor Yellow
     $warnings.Add("no_behavioral_assertions")
 } else {
-    Write-Host "  ✓ PASS: Behavioral assertions found" -ForegroundColor Green
+    Write-Host "  [PASS] Behavioral assertions found" -ForegroundColor Green
 }
 
 # === Check 6: Coverage Penalty Calculation (Experiment 2) ===
@@ -265,30 +303,30 @@ if (Test-Path -LiteralPath $penaltyScript) {
                 $credit = $penaltyResult.implementation_credit_percent
 
                 if ($totalPenalty -gt 0) {
-                    Write-Host "  ⚠ INFO: Coverage penalty: $totalPenalty% (Credit: $credit%)" -ForegroundColor Yellow
+                    Write-Host "  [INFO] Coverage penalty: $totalPenalty% (Credit: $credit%)" -ForegroundColor Yellow
                     $warnings.Add("coverage_penalty_applied:$totalPenalty%")
 
                     if ($totalPenalty -gt 50) {
-                        Write-Host "  ❌ FAIL: Penalty exceeds 50%" -ForegroundColor Red
+                        Write-Host "  [FAIL] Penalty exceeds 50%" -ForegroundColor Red
                         $issues.Add("coverage_penalty_exceeds_threshold")
                         $canProceed = $false
                     } else {
-                        Write-Host "  ✓ INFO: Penalty within threshold" -ForegroundColor Green
+                        Write-Host "  [INFO] Penalty within threshold" -ForegroundColor Green
                     }
                 } else {
-                    Write-Host "  ✓ PASS: No penalty applied" -ForegroundColor Green
+                    Write-Host "  [PASS] No penalty applied" -ForegroundColor Green
                 }
             }
         } catch {
-            Write-Host "  ⚠ WARN: Penalty calculation failed" -ForegroundColor Yellow
+            Write-Host "  [WARN] Penalty calculation failed" -ForegroundColor Yellow
             $warnings.Add("penalty_calculation_failed")
         }
     } else {
-        Write-Host "  ⚠ WARN: No slice result file found" -ForegroundColor Yellow
+        Write-Host "  [WARN] No slice result file found" -ForegroundColor Yellow
         $warnings.Add("no_slice_result_for_penalty")
     }
 } else {
-    Write-Host "  ⚠ WARN: Penalty script not found" -ForegroundColor Yellow
+    Write-Host "  [WARN] Penalty script not found" -ForegroundColor Yellow
     $warnings.Add("penalty_script_missing")
 }
 

@@ -16,7 +16,8 @@ Hard rules:
 5. Create `{{REPLAY_ROOT}}\FINAL_REPLAY_REPORT.md`. Do not write the final report to the worktree root.
 6. `oracle_adjusted_coverage` is the overlap between the Phase 1 replay implementation and the oracle. It is not oracle completeness.
 7. If Phase 1 has `verification_capped_coverage: 0`, no authorized slice, no production diff, or no executable behavior evidence, then `oracle_adjusted_coverage` must be `0` even if the oracle implementation is complete.
-8. If you inspect oracle by changing git state, restore the replay worktree to its pre-Phase2 HEAD before finishing. If restoration is impossible, disclose it explicitly in the report.
+8. If oracle test coverage is 0/NONE and production code match is 100%, classify the result as `production_match_only`, not `full_replay`. This classification still requires `requires_evolution: true` unless the replay has independent executable behavior tests.
+9. If you inspect oracle by changing git state, restore the replay worktree to its pre-Phase2 HEAD before finishing. If restoration is impossible, disclose it explicitly in the report.
 
 Required analysis:
 - 8-gate effectiveness matrix:
@@ -41,6 +42,12 @@ Required analysis:
 Output:
 - Keep the reported Phase 1 coverage unchanged.
 - Report `oracle_adjusted_coverage` using replay evidence only.
+- Write machine-readable classification lines in `FINAL_REPLAY_REPORT.md`:
+  - `production_match: <0-100>`
+  - `oracle_coverage: <0-100 or NONE>`
+  - `replay_classification: production_match_only | full_replay`
+  - `requires_evolution: true | false`
+  - `evolution_type: test_infrastructure | behavior_test_coverage | none`
 - State whether the next round needs workflow evolution.
 - Evolution points must map to the 8 gates. If a point is only feature-specific, scoring-specific, or oracle-specific, mark it as `not_absorbed`.
 

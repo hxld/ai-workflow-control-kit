@@ -8,7 +8,7 @@
 
 ## P0: TEST FILE REQUIREMENT (CRITICAL BLOCKER)
 
-Before the RED phase begins, the test file must exist.
+RED 阶段开始前，测试文件必须存在。
 
 ### 自动生成测试文件（如不存在）
 
@@ -20,21 +20,21 @@ Before the RED phase begins, the test file must exist.
 
 2. **测试文件骨架格式**
    ```java
-   package com.example.project.service;
+   package com.huize.claim.service;
 
    import org.junit.Test;
    import static org.junit.Assert.*;
 
    /**
-    * Auto-generated test skeleton for ExampleFlowService
+    * Auto-generated test skeleton for AiAutoClaimFlowService
     */
-   public class ExampleFlowServiceTest {
+   public class AiAutoClaimFlowServiceTest {
 
        @Test
        public void testProcessAutoClaimFlow_ThrowsClassNotFoundException() {
-           // RED: This test should fail because ExampleFlowService doesn't exist
-           ExampleFlowService service = new ExampleFlowService();
-           fail("RED phase: ExampleFlowService.processAutoClaimFlow not implemented");
+           // RED: This test should fail because AiAutoClaimFlowService doesn't exist
+           AiAutoClaimFlowService service = new AiAutoClaimFlowService();
+           fail("RED phase: AiAutoClaimFlowService.processAutoClaimFlow not implemented");
        }
    }
    ```
@@ -77,7 +77,7 @@ verify(mapper).insert(argThat(entity -> entity.getCaseId().equals(caseId)));
 
 ✅ **DB State Verification**:
 ```java
-TExampleModuleConfig saved = mapper.selectByPrimaryKey(configId);
+TAiClaimModuleConfig saved = mapper.selectByPrimaryKey(configId);
 assertThat(saved.getFreeReviewAmount()).isEqualTo(new BigDecimal("1000"));
 ```
 
@@ -172,7 +172,7 @@ public void testServiceDoesNotExist() { ... }
 
 1. **Side Effect Ledger**: `side-effect-ledger.md` 必须存在且包含至少 1 个 VERIFIED 条目
 2. **DB State Verification**: `db-state-verification.json` 必须存在且包含断言
-3. **Test File Existence**: 测试文件必须存在于 `example-server/src/test/`
+3. **Test File Existence**: 测试文件必须存在于 `claim-server/src/test/`
 4. **Placeholder Detection**: 不允许 TODO、placeholder、占位符
 5. **Behavioral Assertion**: 测试必须包含业务断言（不只是 assertNotNull）
 

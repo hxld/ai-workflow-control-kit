@@ -64,7 +64,7 @@ try {
     Assert-True ((Test-Path -LiteralPath (Join-Path $bridgeRoot 'events.jsonl'))) "events.jsonl should exist"
     $initialAgentPrompt = Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_AGENT_PROMPT.md') -Raw -Encoding UTF8
     Assert-True ($initialAgentPrompt -match 'Protected Write Boundary') "CLAUDE_AGENT_PROMPT.md should include protected write boundary"
-    Assert-True ($initialAgentPrompt -match 'Protected git roots are READ-ONLY') "CLAUDE_AGENT_PROMPT.md should list protected git roots"
+    Assert-True ($initialAgentPrompt -match [regex]::Escape('D:\opt\claim')) "CLAUDE_AGENT_PROMPT.md should list the default protected git root"
 
     # Test 2: Force init clears stale logs so a reused bridge root cannot mislead monitors.
     $staleLogDir = Join-Path $bridgeRoot 'logs\cycle-0001\claude'
@@ -96,7 +96,7 @@ try {
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_RESULT.md') -Value @'
 # Claude Result
 
-Replay root: <REPLAY_EVIDENCE_ROOT>\sample
+Replay root: D:\opt\replay-evidence\sample
 Phase0: PASS
 Plan: PASS
 Phase1: DONE

@@ -4,8 +4,7 @@
     [ValidateSet('Phase0', 'Plan')]
     [string]$Stage = 'Phase0',
     [switch]$ValidateOnly,
-    [string]$Worktree = '',
-    [switch]$SkipCarrierAndOracleChecks
+    [string]$Worktree = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,9 +67,75 @@ function Normalize-Phase0Status {
         $match = [regex]::Match($Phase0Text, $statusLabelPattern)
         if ($match.Success) { $normalized = $match.Groups[1].Value.Trim() }
     }
-    # Backward-compatible observed variants covered by the generic rule: CAVEATS|CAVIETS|CAVETS.
+    # Backward-compatible observed variants covered by the generic rules:
+    # CAVEATS|CAVIETS|CAVETS and GREEN_PROCEED / READY_PROCEED style values.
     if ($normalized -match '^PROCEED_WITH_[A-Z_]+$') { return 'PROCEED' }
+    if ($normalized -match '^[A-Z_]+_PROCEED$') { return 'PROCEED' }
     return $normalized
+}
+
+function Convert-SelectedRealEntryToText {
+    param([object]$Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [string]) { return ([string]$Value).Trim() }
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($item in @($Value)) {
+        if ($null -eq $item) { continue }
+        if ($item -is [string]) {
+            if (-not [string]::IsNullOrWhiteSpace($item)) { $entries.Add(([string]$item).Trim()) | Out-Null }
+            continue
+        }
+
+        $carrierClass = [string]$item.carrier_class
+        if ([string]::IsNullOrWhiteSpace($carrierClass)) { $carrierClass = [string]$item.processor }
+        $method = [string]$item.method
+        if (-not [string]::IsNullOrWhiteSpace($carrierClass) -and -not [string]::IsNullOrWhiteSpace($method)) {
+            $classLeaf = ($carrierClass -split '\.')[-1]
+            $entries.Add("$classLeaf.$method") | Out-Null
+            continue
+        }
+
+        $carrier = [string]$item.carrier
+        if (-not [string]::IsNullOrWhiteSpace($carrier)) {
+            $entries.Add($carrier.Trim()) | Out-Null
+            continue
+        }
+
+        $candidate = [string]$item.selected_real_entry
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            $entries.Add($candidate.Trim()) | Out-Null
+        }
+    }
+    return (@($entries.ToArray()) -join ', ')
+}
+
+function Test-PolicySpringHarnessResidue {
+    param([string]$Text)
+
+    $inNegativeList = $false
+    foreach ($line in ($Text -split "\r?\n")) {
+        $trimmed = $line.Trim()
+        $negativeSection = $trimmed -match '(?i)^(?:#{1,6}\s*)?(?:\*\*)?\s*(avoid|forbidden|forbidden paths|do\s+not\s+use|do\s+not|must\s+not|not\s+allowed|no[-\s]?spring|non[-\s]?spring|禁止|不得|不要)\b'
+        if ($negativeSection) {
+            $inNegativeList = $true
+        } elseif ($trimmed -match '^(?:#{1,6}\s+|\*\*[^*]+:\*\*)' -and $trimmed -notmatch '(?i)(avoid|forbidden|do\s+not|must\s+not|not\s+allowed|禁止|不得|不要)') {
+            $inNegativeList = $false
+        }
+
+        if ($line -notmatch '(?i)(AbstractTestClass|@SpringBootTest|SpringJUnit4ClassRunner|@ContextConfiguration|@Resource|\bSpring\s+context\b)') {
+            continue
+        }
+        if ($inNegativeList) {
+            continue
+        }
+        if ($line -match '(?i)(no[-\s]?spring|\bno\s+@|\bno\s+AbstractTestClass\b|\bno\s+Spring\s+context\b|do\s+not|don''t|without|not\s+use|must\s+not|forbid|forbidden|禁止|不得|不要|不使用)') {
+            continue
+        }
+        return $true
+    }
+
+    return $false
 }
 
 function Add-MissingFileIssue {
@@ -109,6 +174,119 @@ function Add-MissingAnyTokenIssue {
         }
     }
     $Issues.Add($Issue) | Out-Null
+}
+
+function Add-RegexIssueWithEvidence {
+    param(
+        [System.Collections.Generic.List[string]]$Issues,
+        [System.Collections.Generic.List[object]]$Evidence,
+        [string]$Issue,
+        [string]$Pattern,
+        [object[]]$Artifacts
+    )
+
+    $matched = $false
+    foreach ($artifact in @($Artifacts)) {
+        if ($null -eq $artifact -or [string]::IsNullOrWhiteSpace([string]$artifact.text)) {
+            continue
+        }
+
+        $text = [string]$artifact.text
+        $match = [regex]::Match($text, $Pattern)
+        if (-not $match.Success) {
+            continue
+        }
+
+        $matched = $true
+        $start = [Math]::Max(0, $match.Index - 80)
+        $length = [Math]::Min(260, $text.Length - $start)
+        $snippet = $text.Substring($start, $length) -replace '\s+', ' '
+        $Evidence.Add([ordered]@{
+            issue = $Issue
+            artifact = [string]$artifact.name
+            pattern = $Pattern
+            snippet = $snippet.Trim()
+        }) | Out-Null
+    }
+
+    if ($matched) {
+        $Issues.Add($Issue) | Out-Null
+    }
+}
+
+function Add-LineRegexIssueWithEvidence {
+    param(
+        [System.Collections.Generic.List[string]]$Issues,
+        [System.Collections.Generic.List[object]]$Evidence,
+        [string]$Issue,
+        [string]$Pattern,
+        [object[]]$Artifacts
+    )
+
+    $matched = $false
+    foreach ($artifact in @($Artifacts)) {
+        if ($null -eq $artifact -or [string]::IsNullOrWhiteSpace([string]$artifact.text)) {
+            continue
+        }
+
+        $lineNumber = 0
+        foreach ($line in ([string]$artifact.text -split "\r?\n")) {
+            $lineNumber++
+            if ($line -notmatch $Pattern) { continue }
+            $matched = $true
+            $Evidence.Add([ordered]@{
+                issue = $Issue
+                artifact = [string]$artifact.name
+                line = $lineNumber
+                pattern = $Pattern
+                snippet = $line.Trim()
+            }) | Out-Null
+        }
+    }
+
+    if ($matched) {
+        $Issues.Add($Issue) | Out-Null
+    }
+}
+
+function Add-FixedCaseIdIssueWithEvidence {
+    param(
+        [System.Collections.Generic.List[string]]$Issues,
+        [System.Collections.Generic.List[object]]$Evidence,
+        [object[]]$Artifacts
+    )
+
+    $pattern = '(?i)(fixed\s+(database\s+)?caseId|fixed\s+DB\s+caseId|real\s+database\s+caseId|external\s+test\s+data|\b(?:caseId|mockContext|ctx)\b[^\r\n]{0,80}\b(?:12345L|67890L)\b|\bLong\s+caseId\s*=\s*(?:12345L|67890L)\b)'
+    $negativeContextPattern = '(?i)\b(not|no|without|avoid(?:ing)?|forbid(?:den)?|禁止|不使用|非)\b[^\r\n]{0,80}\b(fixed\s+(database\s+)?caseId|fixed\s+DB\s+caseId|real\s+database\s+caseId|external\s+test\s+data)\b|symbolic\s+fixture[^\r\n]{0,80}\bnot\s+fixed\s+database\s+caseId\b'
+    $matched = $false
+
+    foreach ($artifact in @($Artifacts)) {
+        if ($null -eq $artifact -or [string]::IsNullOrWhiteSpace([string]$artifact.text)) {
+            continue
+        }
+
+        $lineNumber = 0
+        foreach ($line in ([string]$artifact.text -split "\r?\n")) {
+            $lineNumber++
+            if ($line -notmatch $pattern) { continue }
+            if ($line -match $negativeContextPattern -and $line -notmatch '(?i)\b(?:caseId|mockContext|ctx)\b[^\r\n]{0,80}\b(?:12345L|67890L)\b|\bLong\s+caseId\s*=\s*(?:12345L|67890L)\b') {
+                continue
+            }
+
+            $matched = $true
+            $Evidence.Add([ordered]@{
+                issue = 'policy_rebuild_plan_invalid:fixed_db_caseid'
+                artifact = [string]$artifact.name
+                line = $lineNumber
+                pattern = $pattern
+                snippet = $line.Trim()
+            }) | Out-Null
+        }
+    }
+
+    if ($matched) {
+        $Issues.Add('policy_rebuild_plan_invalid:fixed_db_caseid') | Out-Null
+    }
 }
 
 # v443: Layer-First Pre-Validation - Detect layer from carrier path or class name
@@ -221,6 +399,7 @@ if ($ValidateOnly) {
 
 $issues = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
+$issueEvidence = New-Object System.Collections.Generic.List[object]
 
 # Default required families; override with FAMILY_CONTRACT.json if present
 $defaultRequiredFamilies = @(
@@ -277,6 +456,7 @@ if ($Stage -eq 'Phase0') {
         '(?mi)^##\s*Phase\s*0\s*Status\s*\r?\n\s*(?:\r?\n)?\s*\*{0,2}Status\*{0,2}\s*[:=]\s*`?([A-Z_]+)`?',
         '(?mi)^##\s*Phase\s*0\s*Status\s*[:=]*\s*[^A-Z_\r\n]*([A-Z_]+)',
         '(?mi)^##\s*Phase\s+0\s+Result\s*[:=]\s*`?([A-Z_]+)`?',
+        '(?mi)^##\s*Status\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)\*\*phase0_status\*\*\s*[:=]\s*[`*]*([A-Z_]+)',
         '(?mi)^##\s*Phase\s*0\s*Status\s*\r?\n\s*\*{0,2}\s*([A-Z_]+)',
         '(?m)^\s*-?\s*status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*'
@@ -343,7 +523,7 @@ if ($Stage -eq 'Phase0') {
     }
     # Fallback to FAMILY_CONTRACT.json for selected_real_entry
     if ([string]::IsNullOrWhiteSpace($selectedRealEntry) -and $null -ne $familyJson) {
-        $selectedRealEntry = [string]$familyJson.selected_real_entry
+        $selectedRealEntry = Convert-SelectedRealEntryToText $familyJson.selected_real_entry
     }
     if ([string]::IsNullOrWhiteSpace($firstExecutableSlice) -and $null -ne $familyJson) {
         $firstExecutableSlice = [string]$familyJson.first_executable_slice
@@ -437,7 +617,7 @@ if ($Stage -eq 'Phase0') {
         $issues.Add("family_missing:$family") | Out-Null
     }
     if ($null -ne $familyContract) {
-        $fcSelectedEntry = [string]$familyContract.selected_real_entry
+        $fcSelectedEntry = Convert-SelectedRealEntryToText $familyContract.selected_real_entry
         if ([string]::IsNullOrWhiteSpace($fcSelectedEntry) -or $fcSelectedEntry -match $placeholderPattern) {
             $issues.Add('family_contract_selected_real_entry_missing') | Out-Null
         }
@@ -511,6 +691,7 @@ if ($Stage -eq 'Phase0') {
     }
 
     $planText = Read-TextIfExists (Join-Path $replayRootFull 'PLAN_RESULT.md')
+    $planJsonText = Read-TextIfExists (Join-Path $replayRootFull 'PLAN_RESULT.json')
     $replayPlanText = Read-TextIfExists (Join-Path $replayRootFull 'REPLAY_PLAN.md')
     $implementationContractText = Read-TextIfExists (Join-Path $replayRootFull 'IMPLEMENTATION_CONTRACT.md')
     $expectedDiffText = Read-TextIfExists (Join-Path $replayRootFull 'EXPECTED_DIFF_MATRIX.md')
@@ -535,6 +716,7 @@ if ($Stage -eq 'Phase0') {
         '(?m)\bplan_status\b[^\nA-Z_]*([A-Z_]{3,})',
         '(?m)^\s*-?\s*status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
         '(?mi)^##\s*Plan\s*Status\s*[:=]*\s*[^A-Z_\r\n]*([A-Z_]+)',
+        '(?mi)\*\*Plan\s+Status\*\*\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
         '(?m)\*\*plan_status\*\*[^A-Z]*(PROCEED|BLOCKED|INVALID_PLAN)',
         '(?m)\*\*plan_status\*\*\s*[:=]\s*[`*]*([A-Z_]+)',
         '(?mi)^##\s*Plan\s*Status\s*\r?\n\s*\*{0,2}\s*([A-Z_]+)'
@@ -775,7 +957,159 @@ if ($Stage -eq 'Phase0') {
     # v270: Production Carrier Search Gate. Existing workflow gates already
     # require real carriers; this makes the Plan stage prove the search before
     # a slice can create or target a new service.
-    $combinedPlanArtifacts = "$planText`n$replayPlanText`n$implementationContractText`n$expectedDiffText`n$firstSliceProofText"
+    $combinedPlanArtifacts = "$planText`n$planJsonText`n$replayPlanText`n$implementationContractText`n$expectedDiffText`n$firstSliceProofText"
+
+    # v477: policyNum/insureNum rebuild source-chain plan gate. This bug class
+    # is easy to fake by checking downstream TaskData setters or DTO accessors.
+    # Plan-stage evidence must name the upstream RequestBuildFunction contract,
+    # the deterministic RequestBuildContext test, the claim-server harness, and
+    # the two production processor diffs before Phase 1 is authorized.
+    $sourceChainContractText = Read-TextIfExists (Join-Path $replayRootFull 'SOURCE_CHAIN_CONTRACT.json')
+    $sourceAwarePlanText = "$combinedPlanArtifacts`n$testCharterText`n$sourceChainContractText"
+    $sourceAwareArtifacts = @(
+        [pscustomobject]@{ name = 'PLAN_RESULT.md'; text = $planText },
+        [pscustomobject]@{ name = 'PLAN_RESULT.json'; text = $planJsonText },
+        [pscustomobject]@{ name = 'REPLAY_PLAN.md'; text = $replayPlanText },
+        [pscustomobject]@{ name = 'IMPLEMENTATION_CONTRACT.md'; text = $implementationContractText },
+        [pscustomobject]@{ name = 'EXPECTED_DIFF_MATRIX.md'; text = $expectedDiffText },
+        [pscustomobject]@{ name = 'SIDE_EFFECT_LEDGER.md'; text = $sideEffectText },
+        [pscustomobject]@{ name = 'TEST_CHARTER.md'; text = $testCharterText },
+        [pscustomobject]@{ name = 'FIRST_SLICE_PROOF_PLAN.md'; text = $firstSliceProofText },
+        [pscustomobject]@{ name = 'SOURCE_CHAIN_CONTRACT.json'; text = $sourceChainContractText }
+    )
+    $sourceChainRequired = $sourceChainContractText -match '(?i)"required_source_chain"\s*:\s*true'
+    $planMachineContract = $null
+    if (-not [string]::IsNullOrWhiteSpace($planJsonText)) {
+        try { $planMachineContract = $planJsonText | ConvertFrom-Json } catch { $planMachineContract = $null }
+    }
+    $isPolicyRebuildSourceChainPlan = (
+        ($sourceChainRequired -or $sourceAwarePlanText -match '(?i)(rebuildTaskData|TaskProcessor)') -and
+        $sourceAwarePlanText -match '(?i)(policyNum|policy_num)' -and
+        $sourceAwarePlanText -match '(?i)(insureNum|insure_num)'
+    )
+    if ($isPolicyRebuildSourceChainPlan) {
+        $warnings.Add('policy_rebuild_source_chain_plan_gate_active') | Out-Null
+
+        $policyOracleHasProductionAdditions = $false
+        $policyOracleAnalysisPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
+        if (Test-Path -LiteralPath $policyOracleAnalysisPath -PathType Leaf) {
+            try {
+                $policyOracleAnalysis = Get-Content -LiteralPath $policyOracleAnalysisPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($file in @($policyOracleAnalysis.files)) {
+                    $additionsText = [string]$file.additions
+                    if ([bool]$file.is_production -and $additionsText -match '^\d+$' -and [int]$additionsText -gt 0) {
+                        $policyOracleHasProductionAdditions = $true
+                        break
+                    }
+                }
+            } catch { }
+        }
+
+        foreach ($requiredToken in @(
+                'AiClaimDataAssemblyHelper.buildRequestCommon',
+                'AiClaimDataAssemblyHelper.RequestBuildFunction',
+                'RequestBuildContext'
+            )) {
+            if ($sourceAwarePlanText.IndexOf($requiredToken, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+                $issues.Add("policy_rebuild_plan_missing:$requiredToken") | Out-Null
+            }
+        }
+
+        $machineTestModule = ''
+        $machineTestCommand = ''
+        $machineExpectedTestClass = ''
+        if ($null -ne $planMachineContract) {
+            $machineExpectedTestClass = [string]$planMachineContract.expected_test_class
+            if ($null -ne $planMachineContract.test_infrastructure_check) {
+                $machineTestModule = [string]$planMachineContract.test_infrastructure_check.test_module_for_target
+                $machineTestCommand = [string]$planMachineContract.test_infrastructure_check.compilation_dry_run_command
+            }
+        }
+        $machineHarnessUsesClaimServer = (
+            $machineTestModule -eq 'claim-server' -and
+            $machineTestCommand -match '(?i)-pl\s+claim-server\b' -and
+            $machineTestCommand -match '(?i)\s-am\b' -and
+            ($machineExpectedTestClass -match '(?i)claim-server[/\\]src[/\\]test|^[A-Za-z0-9_]+$')
+        )
+        if (($sourceAwarePlanText -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java') -and -not $machineHarnessUsesClaimServer) {
+            $issues.Add('policy_rebuild_plan_missing:claim_server_test_harness') | Out-Null
+        }
+        if (-not $machineHarnessUsesClaimServer -and $sourceAwarePlanText -match '(?i)claim-core[/\\]src[/\\]test|-pl\s+claim-core\b|claim-core\s+-Dtest') {
+            $issues.Add('policy_rebuild_plan_invalid:test_harness_claim_core') | Out-Null
+        }
+        if ($sourceAwarePlanText -notmatch '(?i)-pl\s+claim-server\b' -or $sourceAwarePlanText -notmatch '(?i)\s-am\b') {
+            $issues.Add('policy_rebuild_plan_invalid:maven_missing_claim_server_am') | Out-Null
+        }
+        Add-FixedCaseIdIssueWithEvidence `
+            -Issues $issues `
+            -Evidence $issueEvidence `
+            -Artifacts $sourceAwareArtifacts
+        Add-RegexIssueWithEvidence `
+            -Issues $issues `
+            -Evidence $issueEvidence `
+            -Issue 'policy_rebuild_plan_invalid:null_taskdata_pass_path' `
+            -Pattern '(?i)(taskData\s*==\s*null|result\s*==\s*null|null\s+then\s+(pass|warn|print)|returns?\s+null.*pass)' `
+            -Artifacts $sourceAwareArtifacts
+        $hasPolicyAssignmentDiff = $sourceAwarePlanText -match '(?i)req\.setPolicyNum\s*\(\s*buildContext\.getPolicyNum\s*\(\s*\)\s*\)'
+        $hasInsureAssignmentDiff = $sourceAwarePlanText -match '(?i)req\.setInsureNum\s*\(\s*buildContext\.getInsureNum\s*\(\s*\)\s*\)'
+        $hasDownstreamOnlyPolicySignal = (
+            $sourceAwarePlanText -match '(?i)taskData\.setPolicyNum\s*\(\s*request\.getPolicyNum\s*\(\s*\)\s*\)' -and
+            -not ($hasPolicyAssignmentDiff -and $hasInsureAssignmentDiff)
+        )
+        $hasPolicyDtoOnlySignal = (
+            $sourceAwarePlanText -match '(?i)(DTO\s+getter|getter/setter|accessor\s+methods|hasPolicyNumAndInsureNumFields|field\s+existence|DTO\s+field|Request\s+DTO\s+field|compile-time\s+validation\s+only)' -or
+            $sourceAwarePlanText -match '(?i)(DTO|Request\s+DTO|compile-time\s+validation\s+only|Tests\s*-\s*None)[^\r\n]{0,160}\bFIELD_ADD\b|\bFIELD_ADD\b[^\r\n]{0,160}(DTO|Request\s+DTO|compile-time\s+validation\s+only|Tests\s*-\s*None)' -or
+            $sourceAwarePlanText -match '(?im)^\s*"?first_slice"?\s*[:=]\s*"?[^\r\n]*(Contract\s+Definition|DTO|field\s+additions)' -or
+            $sourceAwarePlanText -match '(?im)^\s*"?target_carrier_file_path"?\s*[:=]\s*"?claim-domain[/\\][^\r\n]*[/\\]dto[/\\][^\r\n]*Request\.java' -or
+            $sourceAwarePlanText -match '(?is)##\s*Slice\s+1\s*:\s*[^\r\n]*(DTO|field\s+additions?|Request\s+DTO\s+field|FIELD_ADD|compile-time\s+validation\s+only)' -or
+            $sourceAwarePlanText -match '(?is)##\s*Slice\s+1\b.{0,1200}(Request\s+DTO\s+field|DTO\s+field|compile-time\s+validation\s+only|Tests\s*-\s*None)' -or
+            $hasDownstreamOnlyPolicySignal
+        )
+        if ($hasPolicyDtoOnlySignal -and -not ($hasPolicyAssignmentDiff -and $hasInsureAssignmentDiff)) {
+            $issues.Add('policy_rebuild_plan_invalid:dto_or_downstream_only') | Out-Null
+        }
+        if ($policyOracleHasProductionAdditions) {
+            $hasNoProductionChangeSignal = (
+                $sourceAwarePlanText -match '(?i)(baseline\s+already\s+contains\s+the\s+complete\s+implementation|complete\s+implementation\s+already\s+present|production\s+verified\s+present|Total\s+Production\s+Changes\s*:\s*0|Production\s+Code\s*:\s*No\s+changes|0\s+lines\s*\([^)]*verified\s+present|only\s+test\s+changes|test-only\s+completion\s*:\s*(?!not\s+applicable)(?![^\r\n]*production\s+code\s+changes\s+required))' -or
+                $sourceAwarePlanText -match '(?is)\bNO_CHANGE\b.{0,120}\bVERIFIED_PRESENT\b|\bVERIFIED_PRESENT\b.{0,120}\bNO_CHANGE\b'
+            )
+            if ($hasNoProductionChangeSignal) {
+                $issues.Add('policy_rebuild_plan_invalid:no_production_change_against_oracle_additions') | Out-Null
+            }
+            if ($sourceAwarePlanText -match '(?im)^\s*"?core_closure_required"?\s*[:=]\s*"?false\b') {
+                $issues.Add('policy_rebuild_plan_invalid:core_closure_false_against_oracle') | Out-Null
+            }
+            if ($sourceAwarePlanText -match '(?im)^\s*"?highest_weight_open_gate"?\s*[:=]\s*"?wire_payload_api_contract\b') {
+                $issues.Add('policy_rebuild_plan_invalid:highest_weight_gate_not_core_entry') | Out-Null
+            }
+        }
+        if (Test-PolicySpringHarnessResidue -Text $sourceAwarePlanText) {
+            $issues.Add('policy_rebuild_plan_invalid:spring_context_harness') | Out-Null
+        }
+
+        $hasApplySibling = $sourceAwarePlanText -match '(?i)AiApplyClaimApiTaskProcessor\.rebuildTaskData'
+        $hasCalculateSibling = $sourceAwarePlanText -match '(?i)AiCalculateLossApiTaskProcessor\.rebuildTaskData'
+        if (-not ($hasApplySibling -and $hasCalculateSibling)) {
+            $issues.Add('policy_rebuild_plan_missing:apply_and_calculate_siblings') | Out-Null
+        }
+
+        if (-not ($hasPolicyAssignmentDiff -and $hasInsureAssignmentDiff)) {
+            $issues.Add('policy_rebuild_plan_missing:upstream_request_assignment_diff') | Out-Null
+            $missingAssignments = New-Object System.Collections.Generic.List[string]
+            if (-not $hasPolicyAssignmentDiff) {
+                $missingAssignments.Add('req.setPolicyNum(buildContext.getPolicyNum())') | Out-Null
+            }
+            if (-not $hasInsureAssignmentDiff) {
+                $missingAssignments.Add('req.setInsureNum(buildContext.getInsureNum())') | Out-Null
+            }
+            $issueEvidence.Add([ordered]@{
+                issue = 'policy_rebuild_plan_missing:upstream_request_assignment_diff'
+                artifact = 'plan_artifacts'
+                pattern = 'exact upstream RequestBuildFunction assignment literals'
+                snippet = 'Missing exact literal(s): ' + (@($missingAssignments.ToArray()) -join '; ')
+            }) | Out-Null
+        }
+    }
     $carrierPlaceholderPattern = '(?i)^(TBD|unknown|N/A|placeholder|TODO|none)$'
     # v337: Add colon pattern for table cell format "| key: value | |"
     $carrierSearchStatus = Get-FirstText $planText @(
@@ -796,7 +1130,7 @@ if ($Stage -eq 'Phase0') {
     # Matches both key-value format and table format like:
     # ### Existing Production Carriers Found
     # | Carrier | Location | Method/Signature | Purpose |
-    # | ExampleFlowService | ... | ... | ... |
+    # | AiAutoClaimFlowService | ... | ... | ... |
     $existingProductionCarriers = Get-FirstText $combinedPlanArtifacts @(
         '(?m)^\s*-?\s*\*{0,2}\s*existing_production_carriers\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*existing_production_carriers\s*[:=]\s*([^\r\n]+?)\s*$',
@@ -890,7 +1224,7 @@ if ($Stage -eq 'Phase0') {
         $issues.Add('carrier_search_new_service_unjustified') | Out-Null
     }
     # v406: Normalize carrier name for matching - strip method names like ".save", ".update" etc.
-    # This handles cases like "ExampleModuleConfigService.save" matching "ExampleModuleConfigService.java"
+    # This handles cases like "AiClaimModuleConfigService.save" matching "AiClaimModuleConfigService.java"
     $carrierBaseNameForMatch = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
         if ($selectedCarrierFromSearch -match '^([A-Za-z0-9_$]+)') {
             $matches[1]
@@ -908,7 +1242,7 @@ if ($Stage -eq 'Phase0') {
     }
 
     # v381: Carrier Existence Verification - selected carrier must exist in codebase
-    # This prevents synthetic carriers like ExampleFlowService from being selected
+    # This prevents synthetic carriers like AiAutoClaimFlowService from being selected
     # v382: Enhanced with retry logic and Get-ChildItem fallback for robustness
     # v391: Skip existence check for new services (new_service_proposed=true)
     $carrierNameForExistenceCheck = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
@@ -934,7 +1268,7 @@ if ($Stage -eq 'Phase0') {
     # New services are expected NOT to exist in the codebase yet
     $shouldCheckCarrierExistence = -not $newServiceIsTrue
 
-    if (-not $SkipCarrierAndOracleChecks -and -not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
+    if (-not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
         $worktreePathForCarrierCheck = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
 
         # v395: Check if carrier exists in oracle diff before searching codebase
@@ -966,7 +1300,8 @@ if ($Stage -eq 'Phase0') {
                 # Try common project root locations
                 $replayRootParent = Split-Path $replayRootFull -Parent
                 $projectRootCandidates = @(
-                    "$env:AI_WORKFLOW_PROJECT_ROOT"
+                    'D:\opt\claim',
+                    'C:\projects\claim'
                 )
                 # Add inferred parent if valid
                 if (-not [string]::IsNullOrWhiteSpace($replayRootParent)) {
@@ -1045,51 +1380,49 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    if (-not $SkipCarrierAndOracleChecks) {
-        # v352: Integrate carrier search verification to validate carrier exists in codebase
-        # Only run if carrier search fields are present (no missing field issues yet)
-        $carrierFieldIssues = @($issues | Where-Object { $_ -like 'carrier_search*' })
-        $worktreePath = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
-        $oracleCommitPath = Join-Path $replayRootFull 'ORACLE_COMMIT.txt'
-        $oracleCommit = if (Test-Path -LiteralPath $oracleCommitPath) { (Get-Content -LiteralPath $oracleCommitPath -Raw -Encoding UTF8).Trim() } else { '' }
-        $oracleDiffPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
+    # v352: Integrate carrier search verification to validate carrier exists in codebase
+    # Only run if carrier search fields are present (no missing field issues yet)
+    $carrierFieldIssues = @($issues | Where-Object { $_ -like 'carrier_search*' })
+    $worktreePath = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
+    $oracleCommitPath = Join-Path $replayRootFull 'ORACLE_COMMIT.txt'
+    $oracleCommit = if (Test-Path -LiteralPath $oracleCommitPath) { (Get-Content -LiteralPath $oracleCommitPath -Raw -Encoding UTF8).Trim() } else { '' }
+    $oracleDiffPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
 
-        if ($carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
-            $carrierVerifyScript = Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1'
-            if (Test-Path -LiteralPath $carrierVerifyScript) {
-                $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_RESULT.md'
-                if (-not (Test-Path -LiteralPath $planResultPathForCarrier)) {
-                    $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_CANDIDATE_1.md'
+    if ($carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
+        $carrierVerifyScript = Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1'
+        if (Test-Path -LiteralPath $carrierVerifyScript) {
+            $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_RESULT.md'
+            if (-not (Test-Path -LiteralPath $planResultPathForCarrier)) {
+                $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_CANDIDATE_1.md'
+            }
+
+            if (Test-Path -LiteralPath $planResultPathForCarrier) {
+                $carrierVerifyStdout = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stdout.log'
+                $carrierVerifyStderr = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stderr.log'
+                $carrierVerifyExit = & powershell -NoProfile -ExecutionPolicy Bypass -File $carrierVerifyScript -PlanResultPath $planResultPathForCarrier -Worktree $worktreePath -OracleCommit $oracleCommit -OracleDiffPath $oracleDiffPath > $carrierVerifyStdout 2> $carrierVerifyStderr
+                $carrierVerifyExitCode = $LASTEXITCODE
+
+                $carrierVerifyResultPath = if ($planResultPathForCarrier -match '\.(json|md)$') {
+                    $planResultPathForCarrier -replace '\.(json|md)$', '_CARRIER_SEARCH_VERIFY.json'
+                } else {
+                    "$planResultPathForCarrier`_CARRIER_SEARCH_VERIFY.json"
                 }
 
-                if (Test-Path -LiteralPath $planResultPathForCarrier) {
-                    $carrierVerifyStdout = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stdout.log'
-                    $carrierVerifyStderr = Join-Path $replayRootFull 'CARRIER_SEARCH_VERIFY.stderr.log'
-                    $carrierVerifyExit = & powershell -NoProfile -ExecutionPolicy Bypass -File $carrierVerifyScript -PlanResultPath $planResultPathForCarrier -Worktree $worktreePath -OracleCommit $oracleCommit -OracleDiffPath $oracleDiffPath > $carrierVerifyStdout 2> $carrierVerifyStderr
-                    $carrierVerifyExitCode = $LASTEXITCODE
-
-                    $carrierVerifyResultPath = if ($planResultPathForCarrier -match '\.(json|md)$') {
-                        $planResultPathForCarrier -replace '\.(json|md)$', '_CARRIER_SEARCH_VERIFY.json'
-                    } else {
-                        "$planResultPathForCarrier`_CARRIER_SEARCH_VERIFY.json"
-                    }
-
-                    if ($carrierVerifyExitCode -ne 0 -and (Test-Path -LiteralPath $carrierVerifyResultPath)) {
-                        # Parse verification result to extract issues
-                        try {
-                            $carrierVerifyResult = Get-Content -LiteralPath $carrierVerifyResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                            if ($carrierVerifyResult.status -eq 'FAIL') {
-                                foreach ($issue in $carrierVerifyResult.issues) {
-                                    $issues.Add("carrier_search_verify:$($issue.code)") | Out-Null
-                                }
-                            } elseif ($carrierVerifyResult.status -eq 'WARN') {
-                                foreach ($warning in $carrierVerifyResult.warnings) {
-                                    $warnings.Add("carrier_search_verify:$($warning.code)") | Out-Null
-                                }
+                if ($carrierVerifyExitCode -ne 0 -and (Test-Path -LiteralPath $carrierVerifyResultPath)) {
+                    # Parse verification result to extract issues
+                    try {
+                        $carrierVerifyResult = Get-Content -LiteralPath $carrierVerifyResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                        if ($carrierVerifyResult.status -eq 'FAIL') {
+                            foreach ($issue in $carrierVerifyResult.issues) {
+                                $issues.Add("carrier_search_verify:$($issue.code)") | Out-Null
                             }
-                        } catch {
-                            $warnings.Add("carrier_search_verify:parse_error:$($_.Exception.Message)") | Out-Null
+                        } elseif ($carrierVerifyResult.status -eq 'WARN') {
+                            foreach ($warning in $carrierVerifyResult.warnings) {
+                                $warnings.Add("carrier_search_verify:$($warning.code)") | Out-Null
+                            }
                         }
+                    } catch {
+                        $warnings.Add("carrier_search_verify:parse_error:$($_.Exception.Message)") | Out-Null
                     }
                 }
             }
@@ -1279,9 +1612,24 @@ if ($Stage -eq 'Phase0') {
     # v457: Validate target_carrier_file_path is a valid .java path
     $carrierFilePathValue = Get-KeyValueField -Text $firstSliceProofText -Field 'target_carrier_file_path'
     if (-not [string]::IsNullOrWhiteSpace($carrierFilePathValue)) {
-        $cleanPath = $carrierFilePathValue.Trim('`').Trim('*').Trim()
-        if ($cleanPath -notmatch '\.java$') {
-            $issues.Add("first_slice_proof_v457_invalid_file_path:$cleanLineNumber") | Out-Null
+        $carrierFilePathCandidates = @(
+            $carrierFilePathValue -split '\s*(?:;|,|\|)\s*' |
+                ForEach-Object { ([string]$_).Trim('`').Trim('*').Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        )
+        foreach ($cleanPath in $carrierFilePathCandidates) {
+            if ($cleanPath -notmatch '\.java$') {
+                $issues.Add("first_slice_proof_v457_invalid_file_path:$cleanPath") | Out-Null
+            } elseif (-not [string]::IsNullOrWhiteSpace($worktreePath) -and (Test-Path -LiteralPath $worktreePath)) {
+                $carrierPathFull = if ([System.IO.Path]::IsPathRooted($cleanPath)) {
+                    [System.IO.Path]::GetFullPath($cleanPath)
+                } else {
+                    [System.IO.Path]::GetFullPath((Join-Path $worktreePath $cleanPath))
+                }
+                if (-not (Test-Path -LiteralPath $carrierPathFull -PathType Leaf)) {
+                    $issues.Add("first_slice_proof_v457_file_not_found:$cleanPath") | Out-Null
+                }
+            }
         }
     }
 
@@ -1410,8 +1758,8 @@ if ($Stage -eq 'Phase0') {
             }
             # v459/v461/v464: Layer validation - core_entry family requires Facade/Controller entry point
             # v461: Extract actual carrier name (before first '(') to avoid false positives
-            # Example: "ExampleApplyClaimApiTaskProcessor (EXISTING -> calls NEW ExampleFlowService)"
-            # should extract "ExampleApplyClaimApiTaskProcessor" not match on "ExampleFlowService"
+            # Example: "AiApplyClaimApiTaskProcessor (EXISTING -> calls NEW AiAutoClaimFlowService)"
+            # should extract "AiApplyClaimApiTaskProcessor" not match on "AiAutoClaimFlowService"
             # v464: Allow Service layer carriers if plan documents an existing Facade/Controller entry point
             # Example: NEW Service called from existing Facade/TaskProcessor is valid
             $actualCarrier = $selectedCarrierValueForFirstSlice.Split('(')[0].Trim()
@@ -1457,15 +1805,15 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v289: Test harness placement gate. In this workspace, example-core
+    # v289: Test harness placement gate. In this claim replay workspace, claim-core
     # does not carry the test dependencies needed for JUnit/Mockito/Spring Test.
-    # Planning a RED directly under example-core creates an environment-blocked round,
+    # Planning a RED directly under claim-core creates an environment-blocked round,
     # not a business RED.
     $firstRedTestMatch = [regex]::Match($firstSliceProofText, '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?first_red_test\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$')
     if ($firstRedTestMatch.Success) {
         $firstRedValue = $firstRedTestMatch.Groups[1].Value.Trim()
-        if ($firstRedValue -match '(?i)(example-core[/\\]src[/\\]test|-pl\s+example-core|example-core\s+-Dtest)') {
-            $issues.Add('first_slice_proof_invalid:test_harness_example_core') | Out-Null
+        if ($firstRedValue -match '(?i)(claim-core[/\\]src[/\\]test|-pl\s+claim-core|claim-core\s+-Dtest)') {
+            $issues.Add('first_slice_proof_invalid:test_harness_claim_core') | Out-Null
         }
         if ($firstRedValue -match '(?i)(dependency\s*:|add\s+JUnit|鏂板.*(JUnit|Mockito|Spring Test))') {
             $issues.Add('first_slice_proof_invalid:test_dependency_change') | Out-Null
@@ -1493,14 +1841,14 @@ if ($Stage -eq 'Phase0') {
         #         # Construct full test file path
         #         # Try various locations:
         #         # 1. Direct path if already qualified
-        #         # 2. Under example-server/src/test/java/
+        #         # 2. Under claim-server/src/test/java/
         #         # 3. Under src/test/java/
         #         # 4. Search in worktree
         #
         #         $testFilePaths = @(
         #             if ($testFileName -match '[/\\]') { Join-Path $worktreePath $testFileName } else { $null }
-        #             Join-Path $worktreePath "example-server\src\test\java\com\example\project\core\ai\service\$testFileName"
-        #             Join-Path $worktreePath "example-server\src\test\java\$testFileName"
+        #             Join-Path $worktreePath "claim-server\src\test\java\com\huize\claim\core\ai\service\$testFileName"
+        #             Join-Path $worktreePath "claim-server\src\test\java\$testFileName"
         #             Join-Path $worktreePath "src\test\java\$testFileName"
         #         ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         #
@@ -1658,6 +2006,11 @@ if ($Stage -eq 'Phase0') {
         # the PowerShell hash literal and disabled this verifier.
         $domainDirectoryMap = @{
             'ai' = 'ai'
+            'ai-claim' = 'ai'
+            'ai-claim-auto' = 'ai'
+            'aiclaim' = 'ai'
+            'aiclaimv2' = 'ai'
+            'auto-claim' = 'ai'
             'ocr' = 'ocr'
             'calculate' = 'calculate'
             'calculation' = 'calculate'
@@ -1678,7 +2031,7 @@ if ($Stage -eq 'Phase0') {
             if ($domainDirectoryMap.ContainsKey($domainKey)) {
                 $domainDirectoryPatterns += $domainDirectoryMap[$domainKey]
             }
-            if ($domainKey -match 'ai') { $domainDirectoryPatterns += 'ai' }
+            if ($domainKey -match 'ai|claim|auto') { $domainDirectoryPatterns += 'ai' }
             if ($domainKey -match 'ocr') { $domainDirectoryPatterns += 'ocr' }
             if ($domainKey -match 'risk') { $domainDirectoryPatterns += 'risk' }
             if ($domainKey -match 'push') { $domainDirectoryPatterns += 'push' }
@@ -1718,8 +2071,8 @@ if ($Stage -eq 'Phase0') {
         # v380: Fix oracle_out_of_scope_files filtering bug (now works on domain-filtered files)
         # Previous logic used substring match (-like "*$_*") which incorrectly excluded
         # files that contained the exclusion pattern as a substring (e.g., "Facade"
-        # in exclusion list would match "ExampleAutoClaimFlowFacade" even though it's not
-        # "ExamplePushFacade"). Now use exact match on filename without extension.
+        # in exclusion list would match "AiAutoClaimFlowFacade" even though it's not
+        # "InsureCompanyPushFacade"). Now use exact match on filename without extension.
         $filteredOracleProdFiles = @($domainFilteredOracleFiles | Where-Object {
             $oracleFile = $_
             $fileName = [System.IO.Path]::GetFileName($oracleFile)
@@ -2214,19 +2567,45 @@ if ($planStatusCheckDeferred -and $Stage -eq 'Plan') {
 }
 
 $verificationStatus = if ($issues.Count -gt 0) { 'FAIL' } else { 'PASS' }
+$oracleOverlapPercentValue = $null
+if ($null -ne $overlapPercent) {
+    $oracleOverlapPercentValue = $overlapPercent
+}
+$oracleOverlapMatchedValue = $null
+if ($null -ne $matchedCount) {
+    $oracleOverlapMatchedValue = $matchedCount
+}
+$oracleOverlapTotalProductionValue = $null
+if ($null -ne $domainFilteredOracleFiles) {
+    $oracleOverlapTotalProductionValue = @($domainFilteredOracleFiles).Count
+}
+$oracleHighWeightMatchedValue = $null
+if ($null -ne $highWeightMatched) {
+    $oracleHighWeightMatchedValue = $highWeightMatched
+}
+$oracleHighWeightTotalValue = $null
+if ($null -ne $filteredHighWeightFiles) {
+    $oracleHighWeightTotalValue = @($filteredHighWeightFiles).Count
+}
+$oracleMissingProductionFilesValue = @($missingProdFiles)
+$oracleMissingHighWeightFilesValue = @($missingHighWeightFiles)
+$issuesValue = @($issues.ToArray())
+$issueEvidenceValue = @($issueEvidence.ToArray())
+$warningsValue = @($warnings.ToArray())
 $verify = [ordered]@{
     stage = $Stage
     replay_root = $replayRootFull
     verification_status = $verificationStatus
-    oracle_overlap_percent = if ($null -ne $overlapPercent) { $overlapPercent } else { $null }
-    oracle_overlap_matched = if ($null -ne $matchedCount) { $matchedCount } else { $null }
-    oracle_overlap_total_production = if ($null -ne $domainFilteredOracleFiles) { $domainFilteredOracleFiles.Count } else { $null }
-    oracle_high_weight_matched = if ($null -ne $highWeightMatched) { $highWeightMatched } else { $null }
-    oracle_high_weight_total = if ($null -ne $filteredHighWeightFiles) { $filteredHighWeightFiles.Count } else { $null }
-    oracle_missing_production_files = @($missingProdFiles)
-    oracle_missing_high_weight_files = @($missingHighWeightFiles)
-    issues = @($issues)
-    warnings = @($warnings)
+    oracle_overlap_percent = $oracleOverlapPercentValue
+    oracle_overlap_matched = $oracleOverlapMatchedValue
+    oracle_overlap_total_production = $oracleOverlapTotalProductionValue
+    oracle_high_weight_matched = $oracleHighWeightMatchedValue
+    oracle_high_weight_total = $oracleHighWeightTotalValue
+    oracle_missing_production_files = $oracleMissingProductionFilesValue
+    oracle_missing_high_weight_files = $oracleMissingHighWeightFilesValue
+    issues = $issuesValue
+    issue_evidence = $issueEvidenceValue
+    warnings = $warningsValue
 }
 
 $verify | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $verifyPath -Encoding UTF8

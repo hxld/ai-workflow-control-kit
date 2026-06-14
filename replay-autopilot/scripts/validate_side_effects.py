@@ -188,7 +188,8 @@ For each expected side effect, test MUST have verification:
 Example:
     AtomicReference<CompensateInfo> captured = new AtomicReference<>();
     doAnswer(invocation -> {
-        captured.set(invocation.getArgument(0));
+        Object[] args = invocation.getArguments();
+        captured.set((CompensateInfo) args[0]);
         return 1;
     }).when(compensateInfoMapper).insert(any());
 

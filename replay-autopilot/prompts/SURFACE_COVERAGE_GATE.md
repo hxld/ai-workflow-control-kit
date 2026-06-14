@@ -7,7 +7,7 @@ When `slice_number == 1`:
 ### Must Target
 
 - **core_entry family** (weight 100) if present in requirement ledger
-- Example: `ExampleFlowService`, `ClaimCalculationBookService`
+- Example: `AiAutoClaimFlowService`, `ClaimCalculationBookService`
 
 ### Must Verify
 
@@ -36,7 +36,7 @@ After each slice execution, run `slice_verify.py`:
 
 ```
 BLOCKED: helper_only_surface_gap
-S1 must target core_entry (ExampleFlowService), not validator (FreeReviewAmountValidator)
+S1 must target core_entry (AiAutoClaimFlowService), not validator (FreeReviewAmountValidator)
 ```
 
 ```
@@ -62,7 +62,7 @@ Slice must verify at least 1 side effect (DB write, state change, external call)
 
 The v291 round failed because:
 - S1 targeted `FreeReviewAmountValidator` (validator, weight 87)
-- S1 should have targeted `ExampleFlowService` (core_entry, weight 100)
+- S1 should have targeted `AiAutoClaimFlowService` (core_entry, weight 100)
 - No side effects were verified
 - 0% oracle coverage despite 225 lines written
 

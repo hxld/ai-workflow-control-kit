@@ -36,14 +36,14 @@ $patternMap = @{
     "review" = @("ExamineService", "ReviewService")
 
     # Refund/return ticket keywords
-    "refund" = @("RefundService", "RefundFacade", "ExampleTicketService")
-    "return" = @("ExampleTicketService", "RefundService")
+    "refund" = @("RefundService", "RefundFacade", "ReturnTicketService")
+    "return" = @("ReturnTicketService", "RefundService")
 
     # Claim-related keywords
-    "claim" = @("ClaimService", "ClaimFlowService", "ExampleService")
+    "claim" = @("ClaimService", "ClaimFlowService", "AiClaimService")
 
     # AI-related keywords
-    "ai" = @("ExampleService", "ExampleFlowService", "AiReviewService")
+    "ai" = @("AiClaimService", "AiAutoClaimFlowService", "AiReviewService")
 }
 
 # Normalize worktree path
@@ -66,7 +66,7 @@ foreach ($kw in $keywords) {
 # If search path provided, do actual codebase search
 if ($SearchPath -and (Test-Path -LiteralPath $SearchPath)) {
     # Use ripgrep if available, otherwise fallback
-    $rgPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\rg.cmd'
+    $rgPath = "D:\opt\replay-autopilot\tools\rg.cmd"
     if (Test-Path -LiteralPath $rgPath) {
         foreach ($kw in $keywords | Select-Object -First 3) {
             try {

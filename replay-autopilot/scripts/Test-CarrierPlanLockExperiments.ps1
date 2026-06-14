@@ -24,10 +24,10 @@ $wrongCarrier = [ordered]@{
     slice_index = 1
     forced_requirement_family = 'core_entry'
     forced_slice_type = 'exact_contract_slice'
-    forced_sibling_surface = 'CaseRoute.policyNo / Insure.recordNo -> RequestBuildContext -> ExampleBaseRequest -> ExampleBaseTaskData -> InputData.policy_num/InputData.insure_num'
+    forced_sibling_surface = 'CaseRoute.policyNo / Insure.insureNo -> RequestBuildContext -> AiClaimBaseRequest -> AiClaimBaseTaskData -> InputData.policy_num/InputData.insure_num'
     authorization = 'ALLOW'
-    real_entry = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
-    selected_carrier = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
+    real_entry = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
+    selected_carrier = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
     downstream_side_effect_or_output = 'captured InputData.policy_num equals CaseRoute.policyNo'
     requires_side_effect_evidence = $true
     requires_exact_contract_assertions = $true
@@ -42,10 +42,10 @@ $wrongSideEffect = [ordered]@{
     slice_index = 1
     forced_requirement_family = 'core_entry'
     required_for_this_slice = $true
-    entry_call = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
+    entry_call = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
     expected_writes_or_outputs = @('captured InputData.policy_num equals CaseRoute.policyNo')
     must_not_writes = @()
-    test_name = 'AiPolicyNumSourceChainTest.shouldFillFromBackendSources'
+    test_name = 'AiPolicyNumSourceChainTest.shouldFillPolicyAndInsureFromBackendSources'
     red_result = 'BLOCKED'
     green_result = 'NOT_RUN'
     status = 'PLANNED'
@@ -61,7 +61,7 @@ $stale = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScr
     -SliceIndex 1 `
     -ForcedRequirementFamily core_entry `
     -ForcedSliceType exact_contract_slice `
-    -ForcedSiblingSurface 'CaseRoute.policyNo / Insure.recordNo -> RequestBuildContext -> ExampleBaseRequest -> ExampleBaseTaskData -> InputData.policy_num/InputData.insure_num' |
+    -ForcedSiblingSurface 'CaseRoute.policyNo / Insure.insureNo -> RequestBuildContext -> AiClaimBaseRequest -> AiClaimBaseTaskData -> InputData.policy_num/InputData.insure_num' |
     ConvertFrom-Json
 if ([string]$stale.decision -ne 'STOP') {
     throw "Expected stale wrong carrier to STOP, got $($stale.decision)"

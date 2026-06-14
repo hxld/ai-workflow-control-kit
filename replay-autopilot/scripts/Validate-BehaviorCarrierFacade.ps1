@@ -65,7 +65,7 @@ $facadeDirectionPatterns = @(
 )
 
 # Facade-class-level patterns: only match actual Facade class names, not Service/Handler/etc.
-# Allows prefixed names like ExamplePushFacade, ExampleReceiveFacadeImpl
+# Allows prefixed names like InsureCompanyPushFacade, InsureCompanyReceiveFacadeImpl
 $facadeClassDirectionPatterns = @(
     @('Receive', '(?i)\b[A-Za-z]*Receive[A-Za-z]*Facade(?:Impl)?\b'),
     @('Push',    '(?i)\b[A-Za-z]*Push[A-Za-z]*Facade(?:Impl)?\b'),
@@ -245,7 +245,7 @@ foreach ($sliceAuth in @(Get-ChildItem -LiteralPath $root -Filter 'CARRIER_AUTHO
                     selected_carrier = $selectedCarrier
                     issue = 'facade_direction_facade_class_missing'
                     evidence = "Carrier '$selectedCarrier' is a directional Facade but no opposite-direction Facade CLASS found in evidence. Broad keywords ($($broadDirections -join ', ')) present but no Facade class names ($($facadeClassNames -join ', ')) for direction(s): $($oppositeDirectionNames -join ', '). Non-Facade matches (PushService etc.) do not satisfy Facade evidence."
-                    required = "Search the opposite-direction Facade CLASS in codebase (e.g. ExamplePushFacade for ExampleReceiveFacade); record class name and method/signature comparison in EXPLORATION_REPORT.md; justify selection with Facade-level comparison"
+                    required = "Search the opposite-direction Facade CLASS in codebase (e.g. InsureCompanyPushFacade for InsureCompanyReceiveFacade); record class name and method/signature comparison in EXPLORATION_REPORT.md; justify selection with Facade-level comparison"
                 })
             } else {
                 $oppositeFacadeClassNames = @()

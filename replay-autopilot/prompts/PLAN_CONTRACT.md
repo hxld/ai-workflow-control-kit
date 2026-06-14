@@ -61,8 +61,8 @@ If SERVICE_LAYER_ALLOWLIST.json exists in replay root, it contains allowed Servi
   "schema_version": 1,
   "source": "oracle_post_hoc_analysis",
   "patterns": [
-    "ExampleFlowService",
-    "ExampleApiTaskProcessor",
+    "AiAutoClaimFlowService",
+    "AiApplyClaimApiTaskProcessor",
     "*TaskProcessor",
     "*FlowService"
   ],

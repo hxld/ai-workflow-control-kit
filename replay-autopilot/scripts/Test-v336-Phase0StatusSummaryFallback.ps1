@@ -86,13 +86,30 @@ first_slice_type: core_path
     Assert-True ($issuesText -notmatch 'phase0_status_not_proceed') 'Phase0 status must resolve to PROCEED'
     Write-Host "PASS" -ForegroundColor Green
 
-    Write-Host "`n[Test 2] Repair prompt must interpolate completion path instead of literal variable..."
+    Write-Host "`n[Test 2] Verifier must parse repair-style ## Status heading..."
+    @'
+# Phase 0 Result
+
+## Status: PROCEED
+
+selected_real_entry: SampleFacade.handle()
+first_executable_slice: S1 public entry behavior
+first_slice_type: core_path
+'@ | Set-Content -LiteralPath (Join-Path $tempRoot 'PHASE0_RESULT.md') -Encoding UTF8
+    $verifyOutput2 = & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyPath -ReplayRoot $tempRoot -Stage Phase0 2>&1
+    if ($LASTEXITCODE -ne 0) { $verifyOutput2 | Write-Host }
+    $verify2 = Get-Content -LiteralPath (Join-Path $tempRoot 'PHASE0_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $issuesText2 = (($verify2.issues | ForEach-Object { [string]$_ }) -join "`n")
+    Assert-True ($issuesText2 -notmatch 'phase0_status_not_proceed') 'Repair-style ## Status heading must resolve to PROCEED'
+    Write-Host "PASS" -ForegroundColor Green
+
+    Write-Host "`n[Test 3] Repair prompt must interpolate completion path instead of literal variable..."
     $runLoopText = Get-Content -LiteralPath $runLoopPath -Raw -Encoding UTF8
     Assert-True (-not $runLoopText.Contains('`$phase0RepairResult')) 'repair prompt must not contain escaped literal $phase0RepairResult'
     Assert-True ($runLoopText.Contains('   $phase0RepairResult')) 'repair prompt must contain interpolated completion-path variable'
     Write-Host "PASS" -ForegroundColor Green
 
-    Write-Host "`n[Test 3] Repair prompt hard rules must avoid PowerShell backtick escapes in double-quoted here-string..."
+    Write-Host "`n[Test 4] Repair prompt hard rules must avoid PowerShell backtick escapes in double-quoted here-string..."
     $repairBlock = [regex]::Match($runLoopText, '(?s)\$phase0RepairText = @"(.*?)"@').Groups[1].Value
     Assert-True (-not $repairBlock.Contains('`phase0_status')) 'repair prompt must not include backtick-quoted phase0_status'
     Assert-True (-not $repairBlock.Contains('`FAMILY_CONTRACT.json')) 'repair prompt must not include backtick-quoted FAMILY_CONTRACT.json'
@@ -101,11 +118,12 @@ first_slice_type: core_path
 
     [ordered]@{
         status = 'PASS'
-        assertions = 7
+        assertions = 8
         cases = @(
             'bold_phase0_status_under_summary_resolves_to_proceed',
             'summary_heading_not_captured_as_status',
             'phase0_status_not_proceed_not_emitted',
+            'repair_style_status_heading_resolves_to_proceed',
             'repair_prompt_no_literal_completion_variable',
             'repair_prompt_contains_interpolated_completion_path',
             'repair_prompt_avoids_backtick_phase0_status_escape',

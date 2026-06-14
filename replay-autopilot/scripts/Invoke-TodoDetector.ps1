@@ -15,6 +15,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$pythonResolver = Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'
+if (Test-Path -LiteralPath $pythonResolver) {
+    . $pythonResolver
+} else {
+    throw "Python launcher resolver missing: $pythonResolver"
+}
+
 # Ensure we're in the work directory
 Push-Location $WorkDir
 
@@ -35,11 +42,11 @@ try {
     if ($Paths) {
         $pythonArgs += $Paths
     } else {
-        # Default: check example-core implementation directory
+        # Default: check claim-core implementation directory
         $implDirs = @(
-            "example-core\src\main\java",
-            "example-domain\src\main\java",
-            "example-provider\src\main\java"
+            "claim-core\src\main\java",
+            "claim-domain\src\main\java",
+            "claim-provider\src\main\java"
         )
 
         foreach ($dir in $implDirs) {
@@ -56,7 +63,8 @@ try {
         }
     }
 
-    $result = & python3 @pythonArgs 2>&1
+    $python = Resolve-PythonLauncher
+    $result = & $python.Command @($python.Arguments + $pythonArgs) 2>&1
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 0) {

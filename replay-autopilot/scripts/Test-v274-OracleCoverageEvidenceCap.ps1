@@ -50,6 +50,10 @@ Assert-True ($phase2Prompt -match 'not oracle completeness') `
     'Phase2 prompt must define oracle coverage as replay overlap, not oracle completeness'
 Assert-True ($phase2Prompt -match 'verification_capped_coverage: 0.*oracle_adjusted_coverage.*0') `
     'Phase2 prompt must force oracle_adjusted_coverage to zero when verification capped coverage is zero'
+Assert-True ($phase2Prompt -match 'production_match_only') `
+    'Phase2 prompt must require production_match_only classification for oracle-zero-test production matches'
+Assert-True ($parser -match 'production_match_only') `
+    'Parse-ReplayReport must preserve production_match_only classification in AUTOPILOT_SUMMARY'
 Assert-True ($runner -match 'WORKTREE_HEAD_AUDIT\.json') `
     'Run-ReplayLoop must capture worktree head audit evidence'
 Assert-True ($deepReviewPrompt -match 'WORKTREE_HEAD_AUDIT\.json') `
@@ -59,7 +63,7 @@ Assert-True ($deepReviewPrompt -match 'Do not infer the replay''s initial baseli
 
 [ordered]@{
     status = 'PASS'
-    assertions = 11
+    assertions = 13
     cases = @(
         'runner_oracle_credit_cap',
         'runner_enforcement_artifact',
@@ -69,6 +73,8 @@ Assert-True ($deepReviewPrompt -match 'Do not infer the replay''s initial baseli
         'parser_decision_heading_guard',
         'phase2_overlap_definition',
         'phase2_zero_cap_rule',
+        'phase2_production_match_only_rule',
+        'parser_production_match_only_summary',
         'runner_worktree_head_audit',
         'deep_review_head_audit_allowed',
         'deep_review_final_head_inference_forbidden'

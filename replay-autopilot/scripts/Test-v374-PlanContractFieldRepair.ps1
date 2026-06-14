@@ -27,7 +27,7 @@ $cases.Add((Assert-True -Name 'plan_result_includes_first_slice' -Condition (
 
 # Test 2: Verify PLAN_RESULT.md section includes first_red_test
 $cases.Add((Assert-True -Name 'plan_result_includes_first_red_test' -Condition (
-    $runnerScript -match 'first_red_test: <test class\.method, e\.g\., "ExampleFlowServiceTest'
+    $runnerScript -match 'first_red_test: <test class\.method, e\.g\., "AiAutoClaimFlowServiceTest'
 ))) | Out-Null
 
 # Test 3: Verify FIRST_SLICE_PROOF_PLAN.md section includes first_slice

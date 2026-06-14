@@ -13,6 +13,66 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-SliceIndexFromPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return 0 }
+    $leaf = Split-Path -Leaf $Path
+    if ($leaf -match 'SLICE_RESULT_(\d+)\.json') {
+        return [int]$Matches[1]
+    }
+    return 0
+}
+
+function Test-SideEffectNotApplicable {
+    param(
+        [string]$ReplayRoot,
+        [string]$SliceResultPath
+    )
+
+    $feature = Read-JsonIfExists -Path (Join-Path $ReplayRoot 'FEATURE_CLASSIFICATION.json')
+    $readOnly = $false
+    $statefulRequired = $true
+    $nonApplicableFamilies = @()
+    if ($null -ne $feature) {
+        if ($feature.PSObject.Properties.Name -contains 'read_only') {
+            $readOnly = [bool]$feature.read_only
+        }
+        if ($null -ne $feature.verifier_adjustments) {
+            if ($feature.verifier_adjustments.PSObject.Properties.Name -contains 'stateful_side_effect_required') {
+                $statefulRequired = [bool]$feature.verifier_adjustments.stateful_side_effect_required
+            }
+            if ($feature.verifier_adjustments.PSObject.Properties.Name -contains 'non_applicable_families') {
+                $nonApplicableFamilies = @($feature.verifier_adjustments.non_applicable_families | ForEach-Object { [string]$_ })
+            }
+        }
+    }
+
+    $sliceIndex = Get-SliceIndexFromPath -Path $SliceResultPath
+    $sliceVerify = if ($sliceIndex -gt 0) { Read-JsonIfExists -Path (Join-Path $ReplayRoot ('SLICE_VERIFY_{0:D2}.json' -f $sliceIndex)) } else { $null }
+    $verifyWaived = $false
+    if ($null -ne $sliceVerify) {
+        $warnings = @($sliceVerify.warnings | ForEach-Object { [string]$_ })
+        $verifyWaived = $warnings -contains 'side_effect_evidence_not_applicable_by_feature_classification'
+        if ($sliceVerify.PSObject.Properties.Name -contains 'verifier_adjustments_applied' -and $null -ne $sliceVerify.verifier_adjustments_applied) {
+            if ($sliceVerify.verifier_adjustments_applied.PSObject.Properties.Name -contains 'side_effect_evidence_required') {
+                $verifyWaived = $verifyWaived -or (-not [bool]$sliceVerify.verifier_adjustments_applied.side_effect_evidence_required)
+            }
+        }
+    }
+
+    return ($readOnly -and (-not $statefulRequired -or $nonApplicableFamilies -contains 'stateful_side_effect' -or $verifyWaived))
+}
+
 function Test-SideEffectLedger {
     <#
     .SYNOPSIS
@@ -30,6 +90,16 @@ function Test-SideEffectLedger {
     )
 
     $ledgerPath = Join-Path $ReplayRoot 'SIDE_EFFECT_LEDGER.md'
+
+    if (Test-SideEffectNotApplicable -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath) {
+        Write-Host "INFO: Side-effect ledger skipped for read-only feature classification." -ForegroundColor Cyan
+        return @{
+            IsValid = $true
+            Reason = 'side_effect_not_applicable_by_feature_classification'
+            HasSideEffects = $false
+            Skipped = $true
+        }
+    }
 
     # Check if SIDE_EFFECT_LEDGER.md exists
     if (-not (Test-Path -LiteralPath $ledgerPath)) {
@@ -103,6 +173,10 @@ function Invoke-SideEffectVerificationGate {
     $ledgerValid = Test-SideEffectLedger -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath
 
     $result.has_side_effects = $ledgerValid.HasSideEffects
+    if ($ledgerValid.Skipped) {
+        $result.skipped = $true
+        $result.skip_reason = $ledgerValid.Reason
+    }
 
     if (-not $ledgerValid.IsValid) {
         $result.can_proceed = $false

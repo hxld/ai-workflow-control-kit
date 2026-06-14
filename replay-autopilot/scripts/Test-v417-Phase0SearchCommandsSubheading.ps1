@@ -24,14 +24,14 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v417-test-" + [
 
 try {
     $worktree = Join-Path $testRoot 'worktree'
-    $serviceDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\service'
+    $serviceDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\service'
     New-Item -ItemType Directory -Force -Path $serviceDir | Out-Null
 
-    Write-Text (Join-Path $serviceDir 'ExampleModuleConfigService.java') @'
-package com.example.project.core.ai.service;
+    Write-Text (Join-Path $serviceDir 'AiClaimModuleConfigService.java') @'
+package com.huize.claim.core.ai.service;
 
-public class ExampleModuleConfigService {
-    public void save(ExampleModuleConfigDto example-featureModuleConfigDto) {
+public class AiClaimModuleConfigService {
+    public void save(AiClaimModuleConfigDto aiClaimModuleConfigDto) {
     }
 }
 '@
@@ -40,30 +40,30 @@ public class ExampleModuleConfigService {
 # Phase 0 Result
 
 - phase0_status: PROCEED
-- selected_real_entry: ExampleModuleConfigService.save(ExampleModuleConfigDto)
-- carrier_class: com.example.project.core.ai.service.ExampleModuleConfigService
+- selected_real_entry: AiClaimModuleConfigService.save(AiClaimModuleConfigDto)
+- carrier_class: com.huize.claim.core.ai.service.AiClaimModuleConfigService
 - carrier_status: EXISTING
 
 ## Verified from Current Worktree
 
-- `ExampleModuleConfigService.java` exists
+- `AiClaimModuleConfigService.java` exists
 
 ## Search Commands Used
 
 ### Command 1: verify selected entry ```bash
-rg "public void save\(ExampleModuleConfigDto example-featureModuleConfigDto\)" worktree --glob "*.java"
+rg "public void save\(AiClaimModuleConfigDto aiClaimModuleConfigDto\)" worktree --glob "*.java"
 ```
-- result_summary: 1 match at example-core/src/main/java/com/example/project/core/ai/service/ExampleModuleConfigService.java:4
+- result_summary: 1 match at claim-core/src/main/java/com/huize/claim/core/ai/service/AiClaimModuleConfigService.java:4
 
 ### Command 2: verify carrier class ```bash
-rg "class ExampleModuleConfigService" worktree --glob "*.java"
+rg "class AiClaimModuleConfigService" worktree --glob "*.java"
 ```
-- result_summary: 1 match at example-core/src/main/java/com/example/project/core/ai/service/ExampleModuleConfigService.java:3
+- result_summary: 1 match at claim-core/src/main/java/com/huize/claim/core/ai/service/AiClaimModuleConfigService.java:3
 
 ### Command 3: search related config carriers ```bash
-rg -i "ExampleModuleConfig" worktree --glob "*.java"
+rg -i "AiClaimModuleConfig" worktree --glob "*.java"
 ```
-- result_summary: 1 file found; selected ExampleModuleConfigService.save and excluded no baseline carriers.
+- result_summary: 1 file found; selected AiClaimModuleConfigService.save and excluded no baseline carriers.
 
 ## Next Actions
 

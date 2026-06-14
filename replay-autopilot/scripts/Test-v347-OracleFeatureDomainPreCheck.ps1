@@ -9,8 +9,8 @@
 
 $ErrorActionPreference = 'Stop'
 
-$FixtureDir = Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts\tests\fixtures'
-$ScriptPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'scripts\Invoke-OracleFeatureDomainCheck.ps1'
+$FixtureDir = "D:\opt\replay-autopilot\scripts\tests\fixtures"
+$ScriptPath = "D:\opt\replay-autopilot\scripts\Invoke-OracleFeatureDomainCheck.ps1"
 
 function Test-ScriptExists {
     $testName = "Invoke-OracleFeatureDomainCheck.ps1 exists"

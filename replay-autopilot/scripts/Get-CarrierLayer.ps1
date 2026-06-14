@@ -10,13 +10,13 @@
     The carrier class name to validate.
 
 .PARAMETER BaselineRoot
-    Path to the baseline repository root (default: <PROJECT_ROOT>).
+    Path to the baseline repository root (default: D:\opt\claim).
 
 .PARAMETER Worktree
     Path to the worktree (optional, overrides BaselineRoot).
 
 .EXAMPLE
-    .\Get-CarrierLayer.ps1 -Carrier "ExampleApplyClaimApiTaskProcessor" -BaselineRoot "$env:AI_WORKFLOW_PROJECT_ROOT"
+    .\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "D:\opt\claim"
 
 .OUTPUTS
     System.Collections.Hashtable with layer, file, and reason fields.
@@ -27,7 +27,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Carrier,
 
-    [string]$BaselineRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
+    [string]$BaselineRoot = "D:\opt\claim",
 
     [string]$Worktree
 )
@@ -94,9 +94,9 @@ if ([string]::IsNullOrWhiteSpace($matchingFile)) {
 }
 
 # Determine layer from file path
-$layer = if ($matchingFile -match "(\\|/)example-api(\\|/)|Facade\b") {
+$layer = if ($matchingFile -match "(\\|/)claim-api(\\|/)|Facade\b") {
     "Facade"
-} elseif ($matchingFile -match "(\\|/)example-web(\\|/)|Controller\b") {
+} elseif ($matchingFile -match "(\\|/)claim-web(\\|/)|Controller\b") {
     "Controller"
 } elseif ($matchingFile -match "(\\|/)provider(\\|/)|Mapper\b|Dao\b") {
     "Provider"

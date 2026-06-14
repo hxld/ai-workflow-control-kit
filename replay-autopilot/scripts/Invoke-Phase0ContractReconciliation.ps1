@@ -36,6 +36,12 @@ $ledgerPath = Join-Path $ReplayRoot "REQUIREMENT_FAMILY_LEDGER.json"
 $contractPath = Join-Path $ReplayRoot "FAMILY_CONTRACT.json"
 $scriptPath = Join-Path $PSScriptRoot "reconcile_phase0_artifacts.py"
 $outputPath = Join-Path $ReplayRoot "RECONCILIATION_RESULT.json"
+$pythonResolver = Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'
+if (Test-Path -LiteralPath $pythonResolver) {
+    . $pythonResolver
+} else {
+    throw "Python launcher resolver missing: $pythonResolver"
+}
 
 # Check if artifacts exist
 if (-not (Test-Path -LiteralPath $ledgerPath)) {
@@ -59,7 +65,8 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
 # $ErrorActionPreference abort before we can inspect $LASTEXITCODE.
 $oldErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-$output = & python3 $scriptPath $ledgerPath $contractPath --output $outputPath 2>&1
+$python = Resolve-PythonLauncher
+$output = & $python.Command @($python.Arguments + @($scriptPath, $ledgerPath, $contractPath, '--output', $outputPath)) 2>&1
 $pythonExitCode = $LASTEXITCODE
 $ErrorActionPreference = $oldErrorActionPreference
 

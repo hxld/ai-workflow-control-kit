@@ -209,7 +209,7 @@ confirmed
     @"
 # Phase 0 Result
 
-- selected_real_entry: ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)
+- selected_real_entry: InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)
 - phase0_status: PROCEED
 
 ## First Executable Slice
@@ -251,7 +251,7 @@ confirmed
     @"
 # Phase 0 Result
 
-- selected_real_entry: ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)
+- selected_real_entry: InsureCompanyReceiveFacade.receiveReturnTicket(ReturnTicketParam)
 - phase0_status: PROCEED
 
 ## First Executable Slice

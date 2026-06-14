@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ReplayRoot,
-    [string]$HistoryRoot = "$env:AI_WORKFLOW_REPLAY_ROOT",
+    [string]$HistoryRoot = 'D:\opt',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$Executor = 'claude',
     [ValidateSet('codex', 'claude', 'manual', '')]
@@ -133,7 +133,7 @@ if ($NoExecute -or $Executor -eq 'manual') {
 }
 
 $logDir = Join-Path $replayRootFull 'logs\deep-review'
-$workDir = if (Test-Path -LiteralPath "$env:AI_WORKFLOW_PROJECT_ROOT") { "$env:AI_WORKFLOW_PROJECT_ROOT" } else { $replayRootFull }
+$workDir = if (Test-Path -LiteralPath 'D:\opt\claim') { 'D:\opt\claim' } else { $replayRootFull }
 $invokeArgs = @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',

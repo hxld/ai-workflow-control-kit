@@ -1,5 +1,5 @@
 param(
-    [string]$EvidenceRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$EvidenceRoot = 'D:\opt\replay-evidence',
     [string]$ReplayRoot = '',
     [string]$OutputRoot = '',
     [int]$MaxRoots = 40,
@@ -161,6 +161,9 @@ function Get-VerificationIssues {
     $verificationFiles = @(
         'PHASE0_CONTRACT_VERIFY.json',
         'PHASE0_CARRIER_EVIDENCE_VERIFY.json',
+        'PLAN_TEST_COMPILE_EVIDENCE_POLICY_GATE.json',
+        'PLAN_SCHEMA_FAILFAST.json',
+        'PLAN_VERDICT.json',
         'PLAN_CONTRACT_VERIFY.json',
         'EVOLUTION_RESULT_VERIFY.json',
         'DRY_RUN_GATE.json'
@@ -172,6 +175,16 @@ function Get-VerificationIssues {
         if ($null -eq $json) { continue }
 
         Add-String -List $issues -Value "${name}:status:$($json.verification_status)"
+        if (-not [string]::IsNullOrWhiteSpace([string]$json.status)) {
+            Add-String -List $issues -Value "${name}:status:$($json.status)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$json.fingerprint)) {
+            Add-String -List $issues -Value "${name}:fingerprint:$($json.fingerprint)"
+            Add-String -List $issues -Value ([string]$json.fingerprint)
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$json.reason)) {
+            Add-String -List $issues -Value "${name}:reason:$($json.reason)"
+        }
         foreach ($issue in @($json.issues)) {
             if (-not [string]::IsNullOrWhiteSpace([string]$issue)) {
                 Add-String -List $issues -Value "${name}:issue:$issue"
@@ -194,6 +207,20 @@ function Get-VerificationIssues {
                 Add-String -List $issues -Value ([string]$gap)
             }
         }
+        if ($null -ne $json.checks) {
+            foreach ($issue in @($json.checks.test_infrastructure_issues)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$issue)) {
+                    Add-String -List $issues -Value "${name}:test_infrastructure_issue:$issue"
+                    Add-String -List $issues -Value ([string]$issue)
+                }
+            }
+            foreach ($issue in @($json.checks.side_effect_issues)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$issue)) {
+                    Add-String -List $issues -Value "${name}:side_effect_issue:$issue"
+                    Add-String -List $issues -Value ([string]$issue)
+                }
+            }
+        }
     }
 
     return @($issues.ToArray())
@@ -209,6 +236,7 @@ function Get-FingerprintsFromText {
     $fingerprints = New-Object System.Collections.Generic.List[string]
 
     $patterns = [ordered]@{
+        'policy_rebuild_claim_core_harness' = 'policy_rebuild_(?:test_module_must_be_claim_server|expected_test_class_must_use_claim_server_harness|compile_dry_run_must_use_claim_server_am_test_compile|plan_invalid:test_harness_claim_core)|(?s)(?=.*(?:policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor))(?=.*(?:test_module_for_target["''\s:=]+claim-core|-pl\s+claim-core\s+-am\s+test-compile))'
         'wrong_test_surface' = 'wrong_test_surface|wrong test surface|helper/static green|static-only|mock-only|test surface'
         'core_entry_unclosed' = 'core_entry_unclosed|core entry|real entry.*missing|entry.*not closed'
         'side_effect_ledger_gap' = 'side_effect_ledger_gap|side effect|DB side effect|state.*progress|transaction'
@@ -219,6 +247,8 @@ function Get-FingerprintsFromText {
         'phase0_carrier_evidence_gap' = 'phase0_carrier_search_commands_missing|phase0_selected_real_entry_missing|phase0_selected_real_entry_invalid_format|phase0_selected_real_entry_not_found|phase0_selected_real_entry_not_baseline_existing|phase0_carrier_claim_hallucinated'
         'plan_format_drift' = 'first_slice_proof_(?:missing|invalid|schema)|schema_missing|format drift|BLOCKED_PLAN_MISMATCH|plan_contract_verification_failed|plan_status_not_proceed'
         'phase0_format_drift' = 'phase0_status.*not found|STOP_PHASE0_PARSE_FAILURE|phase0 parse|exploration_missing|selected_real_entry_missing|requirement literal inventory'
+        'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|command_guard_violation|protected main project root|forbidden replay command|protected root'
+        'executor_credit_required' = 'executor_credit_required|402\s+Credit|required account credit|credit required|positive balance|required for this model|insufficient credits|not enough credits'
         'executor_resource_or_crash' = '429|rate limit|usage_limit|timeout|API 400|executor_failed_without_result|executor crash'
         'evolution_validation_fail' = 'FAIL_AFTER_REPAIR|EVOLUTION_RESULT_VERIFY|knowledge_repo_commit_or_push_blocked|validation.*fail'
         'low_verification_cap' = 'verification_capped_coverage:\s*(?:0|[1-9]|[1-3][0-9]|4[0-5])\b'
@@ -248,6 +278,39 @@ function Get-FingerprintsFromText {
     return @($fingerprints.ToArray())
 }
 
+function Get-ExecutorFailureEvidenceText {
+    param([string]$Root)
+    $logsRoot = Join-Path $Root 'logs'
+    if (-not (Test-Path -LiteralPath $logsRoot)) { return '' }
+
+    $evidence = New-Object System.Collections.Generic.List[string]
+    $metaFiles = @(Get-ChildItem -LiteralPath $logsRoot -Recurse -File -Filter '*.exec.json' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 20)
+    foreach ($metaFile in $metaFiles) {
+        $meta = Read-JsonIfExists $metaFile.FullName
+        if ($null -eq $meta) { continue }
+        $category = [string]$meta.failure_category
+        $executorExitCode = [string]$meta.executor_exit_code
+        $stdoutLog = [string]$meta.stdout_log
+        $stderrLog = [string]$meta.stderr_log
+        if (-not [string]::IsNullOrWhiteSpace($category) -or -not [string]::IsNullOrWhiteSpace($executorExitCode)) {
+            $evidence.Add(("executor_meta: {0}; failure_category={1}; executor_exit_code={2}" -f $metaFile.FullName, $category, $executorExitCode)) | Out-Null
+        }
+        foreach ($logPath in @($stdoutLog, $stderrLog)) {
+            if ([string]::IsNullOrWhiteSpace($logPath) -or -not (Test-Path -LiteralPath $logPath)) { continue }
+            $text = Read-TextIfExists $logPath
+            if ($text -match '(?i)\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits|usage limit|rate.?limit|too.?many.?requests|authentication|unauthorized') {
+                $excerpt = $text.Trim()
+                if ($excerpt.Length -gt 1200) { $excerpt = $excerpt.Substring(0, 1200) }
+                $evidence.Add(("executor_log: {0}`n{1}" -f $logPath, $excerpt)) | Out-Null
+            }
+        }
+    }
+
+    return (@($evidence.ToArray()) -join "`n")
+}
+
 function Read-ControlReplay {
     param(
         [string]$EvidenceRootFull,
@@ -265,7 +328,8 @@ function Read-ControlReplay {
     $blockerText = Read-TextIfExists (Join-Path $Root 'AUTOPILOT_BLOCKER.md')
     $verificationIssues = Get-VerificationIssues -Root $Root
     $verificationIssueText = @($verificationIssues) -join "`n"
-    $combined = "$summaryText`n$decisionText`n$roundText`n$finalText`n$stopLossText`n$deepReviewText`n$evolutionVerifyText`n$blockerText`n$verificationIssueText"
+    $executorFailureText = Get-ExecutorFailureEvidenceText -Root $Root
+    $combined = "$summaryText`n$decisionText`n$roundText`n$finalText`n$stopLossText`n$deepReviewText`n$evolutionVerifyText`n$blockerText`n$verificationIssueText`n$executorFailureText"
     $executorAudit = Read-JsonIfExists (Join-Path $Root 'EXECUTOR_AUDIT.json')
     $item = Get-Item -LiteralPath $Root
 
@@ -402,7 +466,10 @@ function New-ControlDecision {
     }
 
     if ($kind -ne 'STOPLINE') {
-        if (@($Latest.fingerprints) -contains 'executor_resource_or_crash') {
+        if (@($Latest.fingerprints) -contains 'executor_credit_required') {
+            $kind = 'STOPLINE'
+            $reasons.Add('executor_credit_required_restore_balance_before_replay') | Out-Null
+        } elseif (@($Latest.fingerprints) -contains 'executor_resource_or_crash') {
             $kind = 'UPGRADE'
             $reasons.Add('executor_retry_or_fallback_needed') | Out-Null
         } elseif ($reasons.Count -gt 0 -or $Latest.stop_loss_decision -eq 'STOP_DEEP_REVIEW_REQUIRED') {
@@ -412,7 +479,13 @@ function New-ControlDecision {
 
     $next = switch ($kind) {
         'CONTINUE' { 'Run the next bounded replay round.' }
-        'STOPLINE' { 'Stop unattended replay and preserve evidence before accepting more runs.' }
+        'STOPLINE' {
+            if (@($Latest.fingerprints) -contains 'executor_credit_required') {
+                'Restore Claude/executor credit or intentionally change executor policy; do not run another replay from this resource-only failure.'
+            } else {
+                'Stop unattended replay and preserve evidence before accepting more runs.'
+            }
+        }
         'UPGRADE' { 'Upgrade runner reliability or fallback handling before the next replay.' }
         'EVOLVE' { 'Run deep review / external practice / golden sample evolution before more blind replay.' }
         default { 'Inspect RUN_CONTROL_SUMMARY and AUTOPILOT_DECISION.' }

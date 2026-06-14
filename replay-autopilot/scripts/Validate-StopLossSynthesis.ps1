@@ -39,13 +39,17 @@ function Get-MetricFromText {
 $root = Resolve-AbsolutePath $ReplayRoot
 $roundText = Read-TextIfExists (Join-Path $root 'ROUND_RESULT.md')
 $finalText = Read-TextIfExists (Join-Path $root 'FINAL_REPLAY_REPORT.md')
+$summaryText = Read-TextIfExists (Join-Path $root 'AUTOPILOT_SUMMARY.md')
 $router = Read-JsonIfExists (Join-Path $root 'FAMILY_ROUTER_AND_CAP.json')
 $stopLoss = Read-JsonIfExists (Join-Path $root 'STOP_LOSS_DECISION.json')
 $ledger = Read-JsonIfExists (Join-Path $root 'REQUIREMENT_FAMILY_LEDGER.json')
 
 $blind = Get-MetricFromText -Text $roundText -Name 'blind_self_assessed_coverage'
 $capped = Get-MetricFromText -Text $roundText -Name 'verification_capped_coverage'
-$oracle = Get-MetricFromText -Text $finalText -Name 'oracle_adjusted_coverage'
+$oracle = Get-MetricFromText -Text $summaryText -Name 'oracle_adjusted_coverage'
+if ($oracle -eq $null) {
+    $oracle = Get-MetricFromText -Text $finalText -Name 'oracle_adjusted_coverage'
+}
 
 $openFamilies = @()
 if ($null -ne $ledger -and $null -ne $ledger.families) {
@@ -54,6 +58,9 @@ if ($null -ne $ledger -and $null -ne $ledger.families) {
 $finalPassAllowed = $false
 if ($null -ne $router -and $router.PSObject.Properties.Name -contains 'final_pass_allowed') {
     $finalPassAllowed = [bool]$router.final_pass_allowed
+}
+if (-not $finalPassAllowed -and $oracle -ne $null -and $capped -ne $null -and [int]$oracle -gt [int]$capped) {
+    $oracle = [int]$capped
 }
 
 $issues = New-Object System.Collections.Generic.List[string]

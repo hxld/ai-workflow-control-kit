@@ -53,8 +53,18 @@ function New-SliceResultObject {
         red_expectation = 'RED should fail before the implementation exists'
         implemented_files = @('src/main/java/SampleCarrier.java')
         tests = $Tests
-        closed_assertions = @('sample assertion closed')
+        closed_assertions = @('assert sample state row count is updated through SampleCarrier.execute')
         must_not_assertions = @('sample must-not assertion')
+        behavior_test_charter = [ordered]@{
+            proof_kind = 'real_entry_behavior'
+            production_entry = 'SampleCarrier.execute'
+            state_or_output = 'sample state write and sample output'
+            must_not = 'no unrelated write'
+            RED_command = 'mvn -Dtest=SampleCarrierTest test'
+            expected_RED_failure = 'business assertion fails before production behavior is present'
+            GREEN_command = 'mvn -Dtest=SampleCarrierTest test'
+            evidence_file = 'src/test/java/SampleCarrierTest.java'
+        }
         remaining_gaps = @()
         gap_flags = $GapFlags
         touched_requirement_families = $TouchedFamilies
@@ -85,6 +95,7 @@ function Invoke-VerifierCase {
         [object]$CarrierAuthorizationObject = $null,
         [object]$ExactContractMatrixObject = $null,
         [object]$SideEffectEvidenceObject = $null,
+        [object]$SourceChainContractObject = $null,
         [string]$PlanLockText = '',
         [string]$RequirementText = '',
         [switch]$NoCarrierAuthorization,
@@ -179,7 +190,7 @@ function Invoke-VerifierCase {
                 slice_index = 1
                 required_for_this_slice = $true
                 entry_call = 'SampleCarrier.execute'
-                expected_writes_or_outputs = @('sample state write', 'sample log output')
+                expected_writes_or_outputs = @('assert sample state row count is updated', 'assert sample output is emitted')
                 must_not_writes = @('no unrelated write')
                 test_name = 'SampleCarrierTest'
                 red_result = 'BUSINESS_ASSERTION_FAILED'
@@ -188,6 +199,9 @@ function Invoke-VerifierCase {
             }
         }
         Write-JsonFile -Object $sideObject -Path (Join-Path $caseRoot 'SIDE_EFFECT_EVIDENCE_01.json')
+    }
+    if ($null -ne $SourceChainContractObject) {
+        Write-JsonFile -Object $SourceChainContractObject -Path (Join-Path $caseRoot 'SOURCE_CHAIN_CONTRACT.json')
     }
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $script:verifier `
@@ -323,14 +337,32 @@ class DependencySpyTest {
     }
 }
 "@
-& git -C $script:worktree add README.md src/main/java/SampleCarrier.java src/main/java/SampleProcessor.java src/main/java/DependencyEvent.java src/test/java/SampleProcessorTest.java src/test/java/SampleCarrierTest.java src/test/java/DependencySpyTest.java | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
+Set-Content -LiteralPath (Join-Path $script:worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessorTest.java') -Encoding UTF8 -Value @"
+class AiApplyClaimApiTaskProcessorTest {
+    void testTaskData_hasPolicyNumAndInsureNumFields() {
+        Long testCaseId = 12345L;
+        Object result = null;
+        if (result != null) {
+            // DTO getter/setter field existence only.
+        }
+        // thenAnswer direct request bypass:
+        // return new AiApplyClaimRequest();
+        // createMockRequest("P", "I");
+    }
+}
+"@
+Set-Content -LiteralPath (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') -Encoding UTF8 -Value 'class AiApplyClaimApiTaskProcessor {}'
+Set-Content -LiteralPath (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiCalculateLossApiTaskProcessor.java') -Encoding UTF8 -Value 'class AiCalculateLossApiTaskProcessor {}'
+& git -C $script:worktree add README.md src/main/java/SampleCarrier.java src/main/java/SampleProcessor.java src/main/java/DependencyEvent.java src/test/java/SampleProcessorTest.java src/test/java/SampleCarrierTest.java src/test/java/DependencySpyTest.java claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java | Out-Null
 & git -C $script:worktree -c user.name='Replay Test' -c user.email='replay-test@example.local' commit -m 'init' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "git commit failed for $script:worktree" }
 
-$redFail = [ordered]@{ command = 'test-red'; phase = 'RED'; result = 'fail'; evidence = 'expected assertion failed' }
-$redBlocked = [ordered]@{ command = 'test-red'; phase = 'RED'; result = 'blocked'; evidence = 'red command was blocked and did not prove failure' }
-$greenPass = [ordered]@{ command = 'test-green'; phase = 'GREEN'; result = 'pass'; evidence = 'green passed' }
-$verifyPass = [ordered]@{ command = 'test-verify'; phase = 'VERIFY'; result = 'pass'; evidence = 'verification passed' }
+$redFail = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'RED'; result = 'fail'; evidence = 'Tests run: 1, Failures: 1; business assertion failed as expected' }
+$redBlocked = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'RED'; result = 'blocked'; evidence = 'red command was blocked and did not prove failure' }
+$greenPass = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'GREEN'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
+$verifyPass = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'VERIFY'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
 
 $plannedClassDotBindingCase = New-SliceResultObject `
     -Status 'DONE' `
@@ -1002,7 +1034,7 @@ $syntheticCarrierCase = New-SliceResultObject `
     -TouchedFamilies @('stateful_side_effect') `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 10
-$syntheticCarrierCase.implemented_files = @('example-core/src/main/java/example/AutoFlowNoop.java', 'example-server/src/test/java/example/AutoFlowNoopTest.java')
+$syntheticCarrierCase.implemented_files = @('claim-core/src/main/java/example/AutoFlowNoop.java', 'claim-server/src/test/java/example/AutoFlowNoopTest.java')
 $syntheticCarrierCase.target_subsurface_or_carrier = 'AutoFlowNoop.orchestrate'
 $syntheticCarrierCase.production_boundary = 'real entry -> AutoFlowNoop substitute carrier'
 $syntheticCarrierCase.closed_assertions = @('asserted transaction rollback, commit order, task update, state transition, and progress log')
@@ -1014,6 +1046,79 @@ Invoke-VerifierCase `
     -MaxAdjustedDelta 3 `
     -ExpectedWarnings @('synthetic_production_carrier') `
     -ExpectedGapFlags @('synthetic_carrier_gap', 'wrong_test_surface', 'shallow_module')
+
+$policySourceChainContract = [ordered]@{
+    required_source_chain = $true
+    next_required_slice = [ordered]@{
+        entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+        carrier = 'RequestBuildContext.policyNum/insureNum -> RequestBuildFunction -> request -> taskData'
+        slice_type = 'exact_contract_slice'
+        test_name = 'AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
+        must_touch_files = @(
+            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
+            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+        )
+    }
+}
+$policySourceChainDtoOnlyCase = New-SliceResultObject `
+    -Status 'DONE' `
+    -SliceType 'exact_contract_slice' `
+    -ProofKind 'real_entry_behavior' `
+    -Tests @($redFail, $greenPass) `
+    -TouchedFamilies @('core_entry') `
+    -ClosedFamilies @('core_entry') `
+    -CoverageDelta 100
+$policySourceChainDtoOnlyCase.implemented_files = @('claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java')
+$policySourceChainDtoOnlyCase.target_subsurface_or_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)'
+$policySourceChainDtoOnlyCase.production_boundary = 'TaskProcessor rebuild source-chain'
+$policySourceChainDtoOnlyCase.closed_assertions = @(
+    'DTO getter/setter field existence',
+    'hasPolicyNumAndInsureNumFields',
+    'taskData.setPolicyNum(request.getPolicyNum()) line exists'
+)
+Invoke-VerifierCase `
+    -Name 'policy_rebuild_source_chain_dto_only_is_synthetic' `
+    -SliceResultObject $policySourceChainDtoOnlyCase `
+    -SourceChainContractObject $policySourceChainContract `
+    -ExpectedStatus 'PARTIAL' `
+    -MaxCoverageCap 35 `
+    -MaxAdjustedDelta 0 `
+    -ExpectedShouldContinue $false `
+    -ExpectedAuthorizedNextSlice $false `
+    -ExpectedAuthorizedSynthesis $false `
+    -ExpectedWarnings @('synthetic_carrier_for_named_source_chain', 'production_carrier_missing', 'existing_production_carrier_missing') `
+    -ExpectedGapFlags @('wrong_test_surface', 'synthetic_carrier_gap', 'shallow_module', 'source_chain_unclosed') `
+    -ExpectedAuthorizationBlockers @('behavior_evidence_missing', 'wrong_test_surface', 'shallow_module', 'synthetic_carrier')
+
+$createdOnlyCoverageCase = New-SliceResultObject `
+    -Status 'DONE' `
+    -SliceType 'exact_contract_slice' `
+    -ProofKind 'real_entry_behavior' `
+    -Tests @(
+        [ordered]@{ command = 'Created AiApplyClaimApiTaskProcessorTest with scenarios'; phase = 'RED'; result = 'pass'; evidence = 'test file created only' },
+        [ordered]@{ command = 'Applied GREEN fix and checked git diff'; phase = 'GREEN'; result = 'pass'; evidence = 'Git diff shows expected production lines' }
+    ) `
+    -TouchedFamilies @('core_entry') `
+    -ClosedFamilies @('core_entry') `
+    -CoverageDelta 100
+$createdOnlyCoverageCase.implemented_files = @(
+    'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
+    'claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java'
+)
+$createdOnlyCoverageCase.target_subsurface_or_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)'
+$createdOnlyCoverageCase.production_boundary = 'TaskProcessor rebuild source-chain'
+$createdOnlyCoverageCase.closed_assertions = @('production diff exists but tests were not executed')
+Invoke-VerifierCase `
+    -Name 'coverage_claim_without_maven_execution_is_fail_closed' `
+    -SliceResultObject $createdOnlyCoverageCase `
+    -ExpectedStatus 'FAIL' `
+    -MaxCoverageCap 0 `
+    -MaxAdjustedDelta 0 `
+    -ExpectedShouldContinue $false `
+    -ExpectedAuthorizedNextSlice $false `
+    -ExpectedAuthorizedSynthesis $false `
+    -ExpectedGapFlags @('test_compilation_evidence_missing', 'no_test_execution_evidence') `
+    -ExpectedAuthorizationBlockers @('issues_present', 'behavior_evidence_missing', 'test_compilation_evidence_missing', 'no_test_execution_evidence')
 
 Invoke-VerifierCase `
     -Name 'stateful_gap_is_partial' `
@@ -1058,10 +1163,10 @@ Invoke-VerifierCase `
     -ExpectedAuthorizedNextSlice $true `
     -ExpectedAuthorizedSynthesis $true
 
-$newStatefulDir = Join-Path $script:worktree 'example-core\src\main\java\com\example\ai'
+$newStatefulDir = Join-Path $script:worktree 'claim-core\src\main\java\com\example\ai'
 New-Item -ItemType Directory -Force -Path $newStatefulDir | Out-Null
-Set-Content -LiteralPath (Join-Path $newStatefulDir 'ExampleFlowService.java') -Encoding UTF8 -Value @"
-class ExampleFlowService {
+Set-Content -LiteralPath (Join-Path $newStatefulDir 'AiAutoClaimFlowService.java') -Encoding UTF8 -Value @"
+class AiAutoClaimFlowService {
     private CompensateInfoMapper compensateInfoMapper;
     private CompensateDetailMapper compensateDetailMapper;
     private CaseFlowStatusService caseFlowStatusService;
@@ -1090,10 +1195,10 @@ $statefulNewDomainCarrierCase = New-SliceResultObject `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 12
 $statefulNewDomainCarrierCase.implemented_files = @(
-    'example-core/src/main/java/com/example/ai/ExampleFlowService.java',
-    'example-server/src/test/java/com/example/ai/ExampleFlowServiceTest.java'
+    'claim-core/src/main/java/com/example/ai/AiAutoClaimFlowService.java',
+    'claim-server/src/test/java/com/example/ai/AiAutoClaimFlowServiceTest.java'
 )
-$statefulNewDomainCarrierCase.production_boundary = 'real entry -> ExampleFlowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
+$statefulNewDomainCarrierCase.production_boundary = 'real entry -> AiAutoClaimFlowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
 $statefulNewDomainCarrierCase.closed_assertions = @(
     'writes compensate info/detail mapper rows',
     'updates status 35',
@@ -1104,7 +1209,7 @@ $statefulNewDomainCarrierCase.closed_assertions = @(
 )
 $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
     status = 'CLOSED'
-    entry_call = 'ExampleFlowService#handle'
+    entry_call = 'AiAutoClaimFlowService#handle'
     expected_writes_or_outputs = @(
         'valid path writes t_compensate_info and t_compensate_detail',
         'valid path updates status 35 and inserts case progress',
@@ -1112,7 +1217,7 @@ $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
         'failure paths write only AI log'
     )
     must_not_writes = @('no case progress on precondition failure')
-    test_name = 'ExampleFlowServiceTest'
+    test_name = 'AiAutoClaimFlowServiceTest'
     red_result = 'BUSINESS_ASSERTION_FAILED'
     green_result = 'PASS'
 }
@@ -1155,6 +1260,8 @@ $summary = [ordered]@{
         'test_only_closure_is_wrong_surface',
         'new_only_core_carrier_is_shallow',
         'synthetic_production_carrier_is_wrong_surface',
+        'policy_rebuild_source_chain_dto_only_is_synthetic',
+        'coverage_claim_without_maven_execution_is_fail_closed',
         'stateful_gap_is_partial',
         'stateful_closed_without_transaction_depth_is_partial',
         'stateful_transaction_real_slice_can_pass',

@@ -163,7 +163,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: todo_detector.py [--v419_density] <file_or_directory...>")
         print("  Check specific files: todo_detector.py File1.java File2.java")
-        print("  Check directory: todo_detector.py example-core/src/main/java/...")
+        print("  Check directory: todo_detector.py claim-core/src/main/java/...")
         print("  v419 density check: todo_detector.py --v419_density File1.java File2.java")
         sys.exit(1)
 

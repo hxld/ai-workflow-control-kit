@@ -68,7 +68,7 @@ function New-ReplayRoot {
 
 function Write-MinimalTaskService {
     param([string]$Worktree)
-    $path = Join-Path $Worktree 'example-core/src/main/java/com/example/TaskService.java'
+    $path = Join-Path $Worktree 'claim-core/src/main/java/com/example/TaskService.java'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
     $source = @'
 package com.example;
@@ -99,7 +99,7 @@ public class TaskService {
 }
 '@
     Set-Content -LiteralPath $path -Encoding UTF8 -Value $source
-    git -C $Worktree add example-core/src/main/java/com/example/TaskService.java
+    git -C $Worktree add claim-core/src/main/java/com/example/TaskService.java
     git -C $Worktree commit -q -m baseline
 }
 
@@ -112,14 +112,14 @@ function New-SliceResult {
         slice_type = 'stateful_success_slice'
         slice_status = 'DONE'
         coverage_delta = 20
-        target_subsurface_or_carrier = 'example-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
+        target_subsurface_or_carrier = 'claim-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
         required_sibling_surfaces = @()
-        production_boundary = 'example-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
+        production_boundary = 'claim-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
         proof_kind = 'stateful_side_effect'
         real_carrier_kind = 'production_entry_or_service'
         forbidden_substitute_check = 'passed'
         red_expectation = 'suppression should avoid writes'
-        implemented_files = @('example-core/src/main/java/com/example/TaskService.java')
+        implemented_files = @('claim-core/src/main/java/com/example/TaskService.java')
         tests = @(
             [ordered]@{ command = 'mvn test'; phase = 'RED'; result = 'fail'; evidence = 'business assertion failed' },
             [ordered]@{ command = 'mvn test'; phase = 'GREEN'; result = 'pass'; evidence = 'pass' }
@@ -153,7 +153,7 @@ $stateful = New-ReplayRoot -Name 'stateful-pre-guard' -RequirementText $stateful
 Write-MinimalTaskService -Worktree $stateful.worktree
 Write-Json (Join-Path $stateful.root 'CARRIER_AUTHORIZATION_01.json') ([ordered]@{
     authorization = 'ALLOW'
-    selected_carrier = 'example-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
+    selected_carrier = 'claim-core/src/main/java/com/example/TaskService.java#waitExamineTask(CaseRoute)'
     downstream_side_effect_or_output = 'stateful side effect'
     requires_side_effect_evidence = $true
     requires_exact_contract_assertions = $false

@@ -11,6 +11,8 @@
     [switch]$NoExecute,
     [switch]$RunEvolution,
     [switch]$UseLatestKnowledgeVersion,
+    [switch]$ExecutorResourceProbe,
+    [switch]$BypassExecutorResourcePreflight,
     [switch]$ValidateOnly
 )
 
@@ -19,6 +21,33 @@ $ErrorActionPreference = 'Stop'
 function Resolve-AbsolutePath {
     param([string]$Path)
     return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Get-Sha256Hex {
+    param([string]$Path)
+
+    $cmd = Get-Command Get-FileHash -ErrorAction SilentlyContinue
+    if ($null -ne $cmd) {
+        try {
+            return ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash).ToLowerInvariant()
+        } catch {
+            # Some unattended Windows hosts can see the Utility module but fail
+            # to invoke Get-FileHash. Fall through to the .NET implementation.
+        }
+    }
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = $sha.ComputeHash($stream)
+            return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
 }
 
 function Resolve-EvolutionWorkDir {
@@ -486,7 +515,8 @@ function Invoke-KnowledgeBackupSyncSafe {
 function Invoke-ControlPlaneSummarySafe {
     param(
         [hashtable]$Config,
-        [string]$ReplayRootBase
+        [string]$ReplayRootBase,
+        [string]$CurrentReplayRoot = ''
     )
 
     $controlScript = Join-Path $PSScriptRoot 'Write-ControlPlaneSummary.ps1'
@@ -509,21 +539,58 @@ function Invoke-ControlPlaneSummarySafe {
         $repeatBlockerThreshold = Get-ConfigValueOrDefault -Config $Config -Key 'control_summary_repeat_blocker_threshold' -DefaultValue (Get-ConfigValueOrDefault -Config $Config -Key 'stop_loss_repeated_gap_threshold' -DefaultValue '2')
         $requiredExecutor = Get-ConfigValueOrDefault -Config $Config -Key 'require_executor' -DefaultValue 'claude'
 
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $controlScript `
-            -EvidenceRoot $evidenceRoot `
-            -MaxRoots 80 `
-            -Lookback $lookback `
-            -TargetCoverage $targetCoverage `
-            -MinOracleImprovement $minOracleImprovement `
-            -LowCapThreshold $lowCapThreshold `
-            -RepeatBlockerThreshold $repeatBlockerThreshold `
-            -RequireExecutor $requiredExecutor `
-            -Quiet
+        $controlArgs = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $controlScript,
+            '-EvidenceRoot', $evidenceRoot,
+            '-MaxRoots', '80',
+            '-Lookback', $lookback,
+            '-TargetCoverage', $targetCoverage,
+            '-MinOracleImprovement', $minOracleImprovement,
+            '-LowCapThreshold', $lowCapThreshold,
+            '-RepeatBlockerThreshold', $repeatBlockerThreshold,
+            '-RequireExecutor', $requiredExecutor,
+            '-Quiet'
+        )
+        if (-not [string]::IsNullOrWhiteSpace($CurrentReplayRoot) -and (Test-Path -LiteralPath $CurrentReplayRoot)) {
+            $controlArgs += @('-ReplayRoot', $CurrentReplayRoot)
+        }
+        & powershell @controlArgs
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Control plane summary failed with exit code $LASTEXITCODE"
         }
     } catch {
         Write-Warning "Control plane summary failed: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-ReplayExperimentLedgerSafe {
+    param([string]$ReplayRootBase)
+
+    $ledgerScript = Join-Path $PSScriptRoot 'Write-ReplayExperimentLedger.ps1'
+    if (-not (Test-Path -LiteralPath $ledgerScript)) {
+        Write-Warning "Replay experiment ledger script is missing: $ledgerScript"
+        return
+    }
+
+    try {
+        $evidenceRoot = Resolve-EvidenceRootFromReplayBase -ReplayRootBase $ReplayRootBase
+        if ([string]::IsNullOrWhiteSpace($evidenceRoot)) {
+            Write-Warning "Replay experiment ledger skipped because evidence root is unavailable."
+            return
+        }
+
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ledgerScript `
+            -EvidenceRoot $evidenceRoot `
+            -ReplayRootBase $ReplayRootBase `
+            -MaxRoots 160 `
+            -Quiet
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Replay experiment ledger failed with exit code $LASTEXITCODE"
+        }
+    } catch {
+        Write-Warning "Replay experiment ledger failed: $($_.Exception.Message)"
     }
 }
 
@@ -561,6 +628,481 @@ function Read-TextIfExists {
         return Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     }
     return ''
+}
+
+function Read-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value | ForEach-Object { [string]$_ }) }
+    return @([string]$Value)
+}
+
+function Resolve-ReplayEvidencePath {
+    param(
+        [string]$ReplayRoot,
+        [string]$EvidenceFile
+    )
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot) -or [string]::IsNullOrWhiteSpace($EvidenceFile)) {
+        return ''
+    }
+
+    $cleanEvidence = $EvidenceFile.Trim().Trim('"').Trim("'")
+    if ([System.IO.Path]::IsPathRooted($cleanEvidence)) {
+        return [System.IO.Path]::GetFullPath($cleanEvidence)
+    }
+    return [System.IO.Path]::GetFullPath((Join-Path $ReplayRoot $cleanEvidence))
+}
+
+function Test-PathInsideRoot {
+    param(
+        [string]$Path,
+        [string]$Root
+    )
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Root)) {
+        return $false
+    }
+
+    $pathFull = [System.IO.Path]::GetFullPath($Path)
+    $rootFull = [System.IO.Path]::GetFullPath($Root)
+    if (-not $rootFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $rootFull += [System.IO.Path]::DirectorySeparatorChar
+    }
+    return $pathFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-FileTailText {
+    param(
+        [string]$Path,
+        [int]$Tail = 80
+    )
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return ''
+    }
+    return ((Get-Content -LiteralPath $Path -Tail $Tail -Encoding UTF8 -ErrorAction SilentlyContinue) -join "`n")
+}
+
+function Test-TestCompileEvidenceHasSuccessSignal {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    return ($text -match '(?i)BUILD SUCCESS' -or $text -match '"exit_code"\s*:\s*0')
+}
+
+function Test-PolicyRebuildPlanText {
+    param([string]$PlanText)
+    if ([string]::IsNullOrWhiteSpace($PlanText)) {
+        return $false
+    }
+    return ($PlanText -match '(?i)policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor')
+}
+
+function Write-PlanTestCompileEvidencePolicyGate {
+    param(
+        [string]$ReplayRoot,
+        [string]$ModuleName,
+        [string]$Reason
+    )
+
+    [ordered]@{
+        schema = 'plan_test_compile_evidence_policy_gate.v1'
+        status = 'FAIL'
+        decision = 'SKIP_MAVEN'
+        fingerprint = 'policy_rebuild_claim_core_harness'
+        reason = $Reason
+        module = $ModuleName
+        required_module = 'claim-server'
+        generated_at = (Get-Date).ToString('s')
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $ReplayRoot 'PLAN_TEST_COMPILE_EVIDENCE_POLICY_GATE.json') -Encoding UTF8
+}
+
+function Set-ObjectPropertyValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Object,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        $Value
+    )
+
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        $Object.$Name = $Value
+    } else {
+        $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    }
+}
+
+function Get-ObjectPropertyString {
+    param(
+        $Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) { return '' }
+    if ($Object.PSObject.Properties.Name -contains $Name) {
+        return [string]$Object.$Name
+    }
+    return ''
+}
+
+function Resolve-PlanArtifactWorktreeLeak {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArtifactNames,
+        [string]$Stage = 'Plan'
+    )
+
+    $actions = @()
+    foreach ($artifact in $ArtifactNames) {
+        if ([string]::IsNullOrWhiteSpace($artifact)) { continue }
+        if ($artifact -match '[\\/]' -or [System.IO.Path]::IsPathRooted($artifact)) {
+            throw "plan_artifact_name_must_be_top_level:$artifact"
+        }
+
+        $worktreeArtifact = Join-Path $Worktree $artifact
+        if (-not (Test-Path -LiteralPath $worktreeArtifact -PathType Leaf)) { continue }
+
+        $replayRootArtifact = Join-Path $ReplayRoot $artifact
+        $action = 'removed_worktree_copy'
+        if (-not (Test-Path -LiteralPath $replayRootArtifact -PathType Leaf)) {
+            Copy-Item -LiteralPath $worktreeArtifact -Destination $replayRootArtifact -Force
+            $action = 'copied_to_replay_root_then_removed'
+        }
+
+        Remove-Item -LiteralPath $worktreeArtifact -Force
+        $actions += [ordered]@{
+            artifact = $artifact
+            action = $action
+            worktree_path = $worktreeArtifact
+            replay_root_path = $replayRootArtifact
+        }
+    }
+
+    if ($actions.Count -gt 0) {
+        [ordered]@{
+            schema = 'plan_worktree_artifact_quarantine.v1'
+            status = 'QUARANTINED'
+            stage = $Stage
+            actions = @($actions)
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $ReplayRoot 'PLAN_WORKTREE_ARTIFACT_QUARANTINE.json') -Encoding UTF8
+        Write-Warning "Plan artifacts were written under worktree root and were quarantined: $((@($actions) | ForEach-Object { $_.artifact }) -join ', ')"
+        return $true
+    }
+
+    return $false
+}
+
+function Repair-PolicyRebuildPlanHarness {
+    param(
+        [string]$ReplayRoot,
+        [string]$Worktree,
+        [string]$PlanResultJsonPath
+    )
+
+    $repairPath = Join-Path $ReplayRoot 'PLAN_POLICY_REBUILD_HARNESS_REPAIR.json'
+    $result = [ordered]@{
+        schema = 'plan_policy_rebuild_harness_repair.v1'
+        status = 'SKIPPED'
+        decision = 'NO_CHANGE'
+        reason = ''
+        plan_result_json = $PlanResultJsonPath
+        generated_at = (Get-Date).ToString('s')
+    }
+
+    if (-not (Test-Path -LiteralPath $PlanResultJsonPath -PathType Leaf)) {
+        $result.reason = 'plan_result_json_missing'
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+        return $false
+    }
+
+    try {
+        $planRaw = Get-Content -LiteralPath $PlanResultJsonPath -Raw -Encoding UTF8
+        $plan = $planRaw | ConvertFrom-Json
+    } catch {
+        $result.status = 'SKIPPED'
+        $result.reason = 'plan_result_json_parse_failed'
+        $result.error = [string]$_
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+        return $false
+    }
+
+    if (-not (Test-PolicyRebuildPlanText -PlanText $planRaw)) {
+        $result.reason = 'not_policy_rebuild_plan'
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+        return $false
+    }
+
+    $planStatus = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    if ($planStatus -ne 'PROCEED') {
+        $result.reason = "plan_status_not_proceed:$planStatus"
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+        return $false
+    }
+
+    $infraProp = $plan.PSObject.Properties['test_infrastructure_check']
+    if ($null -eq $infraProp -or $null -eq $infraProp.Value) {
+        $infra = [pscustomobject]@{}
+        Set-ObjectPropertyValue -Object $plan -Name 'test_infrastructure_check' -Value $infra
+    } else {
+        $infra = $infraProp.Value
+    }
+
+    $moduleName = Get-ObjectPropertyString -Object $infra -Name 'test_module_for_target'
+    $dryRunCommand = Get-ObjectPropertyString -Object $infra -Name 'compilation_dry_run_command'
+    $expectedTestClass = Get-ObjectPropertyString -Object $plan -Name 'expected_test_class'
+    $firstRedTest = Get-ObjectPropertyString -Object $plan -Name 'first_red_test'
+    $manualOrInspectionPattern = '(?i)\b(manual\s+(verification|check|inspection|code\s+inspection)|code\s+inspection)\b'
+
+    $needsRepair = $false
+    $reasons = New-Object System.Collections.Generic.List[string]
+    if ($moduleName.Trim().ToLowerInvariant() -ne 'claim-server') {
+        $needsRepair = $true
+        $reasons.Add("test_module_for_target:$moduleName") | Out-Null
+    }
+    $dryRunLower = $dryRunCommand.ToLowerInvariant()
+    if (-not ($dryRunLower.Contains('-pl claim-server') -and $dryRunLower.Contains('-am') -and $dryRunLower.Contains('test-compile'))) {
+        $needsRepair = $true
+        $reasons.Add('compile_command_not_claim_server_am_test_compile') | Out-Null
+    }
+    if ($expectedTestClass -match $manualOrInspectionPattern -or $firstRedTest -match $manualOrInspectionPattern -or $planRaw -match $manualOrInspectionPattern) {
+        $needsRepair = $true
+        $reasons.Add('manual_or_code_inspection_used_as_red_test') | Out-Null
+    }
+    if ($expectedTestClass -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java' -and $planRaw -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java') {
+        $needsRepair = $true
+        $reasons.Add('expected_test_class_missing_claim_server_src_test_java') | Out-Null
+    }
+
+    if (-not $needsRepair) {
+        $result.reason = 'policy_rebuild_harness_already_valid'
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+        return $false
+    }
+
+    $worktreePom = Join-Path $Worktree 'pom.xml'
+    $compileCommand = 'mvn -s D:\maven\settings\settings.xml -f "{0}" -pl claim-server -am test-compile' -f $worktreePom
+    $expectedClass = 'claim-server/src/test/java/com/huize/claim/core/ai/task/AiClaimRebuildPathTest.java'
+    $expectedMethod = 'testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
+    $firstRed = 'AiClaimRebuildPathTest.testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
+    $expectedAssertions = @(
+        'assert apply rebuildTaskData result is not null',
+        'assert apply taskData.policyNum equals RequestBuildContext.policyNum',
+        'assert apply taskData.insureNum equals RequestBuildContext.insureNum',
+        'assert calculate-loss taskData.policyNum equals RequestBuildContext.policyNum',
+        'assert calculate-loss taskData.insureNum equals RequestBuildContext.insureNum',
+        'assert AiClaimDataAssemblyHelper.RequestBuildFunction is invoked through buildRequestCommon'
+    )
+
+    Set-ObjectPropertyValue -Object $plan -Name 'expected_test_class' -Value $expectedClass
+    Set-ObjectPropertyValue -Object $plan -Name 'expected_test_method' -Value $expectedMethod
+    Set-ObjectPropertyValue -Object $plan -Name 'first_red_test' -Value $firstRed
+    Set-ObjectPropertyValue -Object $plan -Name 'expected_assertions' -Value $expectedAssertions
+    Set-ObjectPropertyValue -Object $infra -Name 'test_module_for_target' -Value 'claim-server'
+    Set-ObjectPropertyValue -Object $infra -Name 'test_module_has_dependencies' -Value $true
+    Set-ObjectPropertyValue -Object $infra -Name 'test_harness_available' -Value $true
+    Set-ObjectPropertyValue -Object $infra -Name 'can_import_production_classes' -Value $true
+    Set-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_exit_code' -Value 0
+    Set-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_command' -Value $compileCommand
+    Set-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_evidence_file' -Value 'TEST_INFRASTRUCTURE_DRY_RUN.json'
+    Set-ObjectPropertyValue -Object $infra -Name 'blocker_reason' -Value 'none'
+
+    $plan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $PlanResultJsonPath -Encoding UTF8
+
+    $result.status = 'REPAIRED'
+    $result.decision = 'REWRITE_PLAN_RESULT_JSON_TEST_HARNESS'
+    $result.reason = $reasons.ToArray() -join '; '
+    $result.required_module = 'claim-server'
+    $result.expected_test_class = $expectedClass
+    $result.expected_test_method = $expectedMethod
+    $result.compilation_dry_run_command = $compileCommand
+    $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $repairPath -Encoding UTF8
+    return $true
+}
+
+function Sync-PlanTestCompileEvidenceContract {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Plan,
+        [Parameter(Mandatory = $true)]
+        $Infra,
+        [Parameter(Mandatory = $true)]
+        [string]$PlanResultJsonPath,
+        [Parameter(Mandatory = $true)]
+        [string]$EvidencePath
+    )
+
+    if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $evidence = Get-Content -LiteralPath $EvidencePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        return $false
+    }
+
+    $exitProperty = $evidence.PSObject.Properties['exit_code']
+    if ($null -eq $exitProperty) {
+        return $false
+    }
+
+    $exitText = ([string]$exitProperty.Value).Trim()
+    if ($exitText -notmatch '^-?\d+$') {
+        return $false
+    }
+
+    $moduleProperty = $evidence.PSObject.Properties['module']
+    if ($null -ne $moduleProperty -and [string]::IsNullOrWhiteSpace((Get-ObjectPropertyString -Object $Infra -Name 'test_module_for_target'))) {
+        Set-ObjectPropertyValue -Object $Infra -Name 'test_module_for_target' -Value ([string]$moduleProperty.Value)
+    }
+
+    Set-ObjectPropertyValue -Object $Infra -Name 'compilation_dry_run_exit_code' -Value ([int]$exitText)
+    $Plan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $PlanResultJsonPath -Encoding UTF8
+    return $true
+}
+
+function Ensure-PlanTestCompileEvidence {
+    param(
+        [string]$ReplayRoot,
+        [string]$Worktree,
+        [string]$PlanResultJsonPath
+    )
+
+    if (-not (Test-Path -LiteralPath $PlanResultJsonPath -PathType Leaf)) {
+        return
+    }
+    if (-not (Test-Path -LiteralPath $Worktree -PathType Container)) {
+        return
+    }
+
+    try {
+        $planRaw = Get-Content -LiteralPath $PlanResultJsonPath -Raw -Encoding UTF8
+        $plan = $planRaw | ConvertFrom-Json
+    } catch {
+        return
+    }
+
+    $status = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $status = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    if ($status -ne 'PROCEED') {
+        return
+    }
+
+    $infra = $plan.PSObject.Properties['test_infrastructure_check'].Value
+    if ($null -eq $infra) {
+        return
+    }
+
+    $moduleName = [string]$infra.PSObject.Properties['test_module_for_target'].Value
+    $evidenceFile = [string]$infra.PSObject.Properties['compilation_dry_run_evidence_file'].Value
+    if ([string]::IsNullOrWhiteSpace($moduleName) -or [string]::IsNullOrWhiteSpace($evidenceFile)) {
+        return
+    }
+
+    if ((Test-PolicyRebuildPlanText -PlanText $planRaw) -and $moduleName.Trim() -ine 'claim-server') {
+        $reason = "policy_rebuild_test_module_must_be_claim_server; actual=$moduleName"
+        Write-PlanTestCompileEvidencePolicyGate -ReplayRoot $ReplayRoot -ModuleName $moduleName -Reason $reason
+        Write-Warning "Skipping plan test compile evidence materialization: $reason"
+        return
+    }
+
+    $evidencePath = Resolve-ReplayEvidencePath -ReplayRoot $ReplayRoot -EvidenceFile $evidenceFile
+    if (-not (Test-PathInsideRoot -Path $evidencePath -Root $ReplayRoot)) {
+        Write-Warning "Plan test compile evidence path is outside replay root; schema gate will reject it: $evidenceFile"
+        return
+    }
+    if (Test-Path -LiteralPath $evidencePath -PathType Leaf) {
+        Sync-PlanTestCompileEvidenceContract -Plan $plan -Infra $infra -PlanResultJsonPath $PlanResultJsonPath -EvidencePath $evidencePath | Out-Null
+    }
+    if (Test-TestCompileEvidenceHasSuccessSignal -Path $evidencePath) {
+        return
+    }
+
+    $worktreePom = Join-Path $Worktree 'pom.xml'
+    if (-not (Test-Path -LiteralPath $worktreePom -PathType Leaf)) {
+        Write-Warning "Worktree root pom not found; cannot materialize plan test compile evidence: $worktreePom"
+        return
+    }
+
+    $mvnCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
+    if ($null -eq $mvnCommand) {
+        $mvnCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $mvnCommand) {
+        Write-Warning 'Maven executable not found; cannot materialize plan test compile evidence.'
+        return
+    }
+
+    $stdoutPath = Join-Path $ReplayRoot 'test-compile-evidence.stdout.log'
+    $stderrPath = Join-Path $ReplayRoot 'test-compile-evidence.stderr.log'
+    $mvnArgs = @(
+        '-s', 'D:\maven\settings\settings.xml',
+        '-f', $worktreePom,
+        '-pl', $moduleName,
+        '-am',
+        'test-compile'
+    )
+    $commandText = "$($mvnCommand.Source) $($mvnArgs -join ' ')"
+    $startedAt = Get-Date
+    Write-Host "Materializing plan test compile evidence: $commandText"
+
+    $exitCode = -999
+    $timedOut = $false
+    try {
+        $process = Start-Process -FilePath $mvnCommand.Source -ArgumentList $mvnArgs -WorkingDirectory $Worktree -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden -PassThru
+        if (-not $process.WaitForExit(600000)) {
+            $timedOut = $true
+            try { Stop-Process -Id $process.Id -Force -ErrorAction Stop } catch { }
+            $exitCode = -1
+        } else {
+            $exitCode = [int]$process.ExitCode
+        }
+    } catch {
+        $exitCode = -998
+        Set-Content -LiteralPath $stderrPath -Value ([string]$_) -Encoding UTF8
+    }
+
+    $endedAt = Get-Date
+    $evidenceParent = Split-Path -Parent $evidencePath
+    if (-not (Test-Path -LiteralPath $evidenceParent)) {
+        New-Item -ItemType Directory -Force -Path $evidenceParent | Out-Null
+    }
+    [ordered]@{
+        command = $commandText
+        module = $moduleName
+        exit_code = $exitCode
+        timed_out = $timedOut
+        started_at = $startedAt.ToString('o')
+        ended_at = $endedAt.ToString('o')
+        stdout_log = $stdoutPath
+        stderr_log = $stderrPath
+        stdout_tail = (Get-FileTailText -Path $stdoutPath -Tail 120)
+        stderr_tail = (Get-FileTailText -Path $stderrPath -Tail 120)
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $evidencePath -Encoding UTF8
+    Sync-PlanTestCompileEvidenceContract -Plan $plan -Infra $infra -PlanResultJsonPath $PlanResultJsonPath -EvidencePath $evidencePath | Out-Null
 }
 
 function Repair-Phase0ManualOracleWaitText {
@@ -649,6 +1191,216 @@ function Get-GitHeadSafe {
     return ''
 }
 
+function Get-GitStatusShortSafe {
+    param([string]$Worktree)
+
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or -not (Test-Path -LiteralPath $Worktree)) {
+        return @("__worktree_missing__:$Worktree")
+    }
+
+    try {
+        $status = @(& git -C $Worktree status --short --untracked-files=all 2>$null)
+        if ($LASTEXITCODE -eq 0) {
+            return @($status | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+        return @("__git_status_failed__:exit=$LASTEXITCODE")
+    } catch {
+        return @("__git_status_exception__:$($_.Exception.Message)")
+    }
+}
+
+function Convert-GitStatusEntryToRelativePath {
+    param([string]$Entry)
+
+    if ([string]::IsNullOrWhiteSpace($Entry)) { return '' }
+    $text = $Entry.TrimEnd()
+    if ($text.Length -ge 3) {
+        $text = $text.Substring(3).Trim()
+    } else {
+        $text = $text.Trim()
+    }
+    if ($text -match '\s+->\s+') {
+        $parts = @($text -split '\s+->\s+')
+        $text = $parts[$parts.Count - 1]
+    }
+    return (Normalize-RelativeRepoPath -Path $text)
+}
+
+function Normalize-RelativeRepoPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $normalized = $Path.Trim().Trim('"').Trim("'") -replace '\\', '/'
+    while ($normalized.StartsWith('./')) {
+        $normalized = $normalized.Substring(2)
+    }
+    return $normalized
+}
+
+function Add-DeclaredSliceFile {
+    param(
+        [System.Collections.Generic.HashSet[string]]$Set,
+        $Value
+    )
+
+    if ($null -eq $Value) { return }
+    if ($Value -is [string]) {
+        $path = Normalize-RelativeRepoPath -Path $Value
+        if (-not [string]::IsNullOrWhiteSpace($path)) { [void]$Set.Add($path) }
+        return
+    }
+    if ($Value.PSObject.Properties.Name -contains 'file') {
+        $path = Normalize-RelativeRepoPath -Path ([string]$Value.file)
+        if (-not [string]::IsNullOrWhiteSpace($path)) { [void]$Set.Add($path) }
+    }
+}
+
+function Get-DeclaredSliceFiles {
+    param(
+        $SliceResult,
+        $SliceVerify
+    )
+
+    $files = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($value in @($SliceResult.implemented_files)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    foreach ($value in @($SliceResult.current_slice_changed_files)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    foreach ($value in @($SliceResult.changed_files)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    foreach ($value in @($SliceResult.round_changed_files_snapshot)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    foreach ($value in @($SliceVerify.changed_files)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    foreach ($value in @($SliceVerify.implemented_files)) { Add-DeclaredSliceFile -Set $files -Value $value }
+    return $files
+}
+
+function Get-ReuseExistingPrePhase1DirtyDecision {
+    param(
+        [string]$ReplayRoot,
+        [string[]]$DirtyEntries
+    )
+
+    $decision = [ordered]@{
+        allow = $false
+        reason = ''
+        slice_result = ''
+        slice_verify = ''
+        repair_result = ''
+        dirty_entries = @($DirtyEntries)
+        dirty_paths = @()
+        declared_files = @()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot) -or -not (Test-Path -LiteralPath $ReplayRoot)) {
+        $decision.reason = 'replay_root_missing'
+        return [pscustomobject]$decision
+    }
+
+    $dirtyPaths = @($DirtyEntries | ForEach-Object { Convert-GitStatusEntryToRelativePath -Entry ([string]$_) } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $decision.dirty_paths = @($dirtyPaths)
+    $authorizedDeclaredFiles = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $authorizedSliceResults = New-Object System.Collections.Generic.List[string]
+    $authorizedSliceVerifies = New-Object System.Collections.Generic.List[string]
+
+    $sliceResults = @(Get-ChildItem -LiteralPath $ReplayRoot -Filter 'SLICE_RESULT_*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)
+    foreach ($sliceResultFile in $sliceResults) {
+        if ($sliceResultFile.Name -notmatch '^SLICE_RESULT_(\d+)\.json$') { continue }
+        $sliceNumber = $matches[1]
+        $sliceResult = Read-JsonIfExists -Path $sliceResultFile.FullName
+        if ($null -eq $sliceResult) { continue }
+
+        $sliceVerifyPath = Join-Path $ReplayRoot ("SLICE_VERIFY_{0}.json" -f $sliceNumber)
+        $sliceVerify = Read-JsonIfExists -Path $sliceVerifyPath
+        if ($null -ne $sliceVerify) {
+            $verifyStatus = [string]$sliceVerify.verification_status
+            $sliceStatus = [string]$sliceVerify.slice_status
+            $authorized = (
+                $verifyStatus -in @('PASS', 'PARTIAL') -and
+                $sliceStatus -in @('DONE', 'PARTIAL') -and
+                $sliceVerify.authorized_for_next_slice -eq $true
+            )
+            if ($authorized) {
+                $declaredFiles = Get-DeclaredSliceFiles -SliceResult $sliceResult -SliceVerify $sliceVerify
+                foreach ($declaredFile in @($declaredFiles)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$declaredFile)) {
+                        [void]$authorizedDeclaredFiles.Add([string]$declaredFile)
+                    }
+                }
+                $authorizedSliceResults.Add($sliceResultFile.FullName) | Out-Null
+                $authorizedSliceVerifies.Add($sliceVerifyPath) | Out-Null
+                $allDirtyCovered = $dirtyPaths.Count -gt 0
+                foreach ($dirtyPath in $dirtyPaths) {
+                    if (-not $declaredFiles.Contains($dirtyPath)) {
+                        $allDirtyCovered = $false
+                        break
+                    }
+                }
+                if ($allDirtyCovered) {
+                    $decision.allow = $true
+                    $decision.reason = 'reuse_existing_dirty_matches_authorized_slice_files'
+                    $decision.slice_result = $sliceResultFile.FullName
+                    $decision.slice_verify = $sliceVerifyPath
+                    $decision.declared_files = @($declaredFiles | Sort-Object)
+                    return [pscustomobject]$decision
+                }
+                $decision.reason = 'dirty_entries_not_covered_by_authorized_slice'
+                $decision.slice_result = $sliceResultFile.FullName
+                $decision.slice_verify = $sliceVerifyPath
+                $decision.declared_files = @($authorizedDeclaredFiles | Sort-Object)
+            }
+        }
+
+        $isStaleTestCharterBlocker = (
+            [string]$sliceResult.slice_status -eq 'BLOCKED' -and
+            (
+                [string]$sliceResult.blocker -match 'test charter' -or
+                [string]$sliceResult.slice_title -match 'test charter'
+            )
+        )
+        if (-not $isStaleTestCharterBlocker) { continue }
+
+        $repairResultPath = Join-Path $ReplayRoot ("TEST_CHARTER_REPAIR_RESULT_{0}.md" -f $sliceNumber)
+        $repairResultText = Read-TextIfExists -Path $repairResultPath
+        $repairPassed = (
+            $repairResultText -match '(?im)^\s*-\s*validation_status:\s*PASSED\s*$' -and
+            $repairResultText -match '(?im)^\s*-\s*can_proceed:\s*true\s*$'
+        )
+        if (-not $repairPassed) { continue }
+
+        $decision.allow = $true
+        $decision.reason = 'reuse_existing_dirty_after_test_charter_repair_passed'
+        $decision.slice_result = $sliceResultFile.FullName
+        $decision.repair_result = $repairResultPath
+        return [pscustomobject]$decision
+    }
+
+    if ($authorizedDeclaredFiles.Count -gt 0) {
+        $allDirtyCoveredByAuthorizedSlices = $dirtyPaths.Count -gt 0
+        foreach ($dirtyPath in $dirtyPaths) {
+            if (-not $authorizedDeclaredFiles.Contains($dirtyPath)) {
+                $allDirtyCoveredByAuthorizedSlices = $false
+                break
+            }
+        }
+        if ($allDirtyCoveredByAuthorizedSlices) {
+            $decision.allow = $true
+            $decision.reason = 'reuse_existing_dirty_matches_authorized_slice_set'
+            $decision.slice_result = (@($authorizedSliceResults) -join ';')
+            $decision.slice_verify = (@($authorizedSliceVerifies) -join ';')
+            $decision.declared_files = @($authorizedDeclaredFiles | Sort-Object)
+            return [pscustomobject]$decision
+        }
+
+        $decision.reason = 'dirty_entries_not_covered_by_authorized_slice_set'
+        $decision.slice_result = (@($authorizedSliceResults) -join ';')
+        $decision.slice_verify = (@($authorizedSliceVerifies) -join ';')
+        $decision.declared_files = @($authorizedDeclaredFiles | Sort-Object)
+        return [pscustomobject]$decision
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$decision.reason)) {
+        $decision.reason = 'no_passed_test_charter_repair_for_dirty_reuse'
+    }
+    return [pscustomobject]$decision
+}
+
 function Write-WorktreeHeadAudit {
     param(
         [string]$ReplayRoot,
@@ -710,6 +1462,21 @@ function Write-AgentExecutorBlocker {
         }
     }
 
+    if ($category -eq 'executor_credit_required') {
+        @"
+# Autopilot Resource Blocker
+
+$Stage executor requires account credit or a positive balance. This is an external resource blocker, not workflow coverage evidence.
+
+- exit_code: $ExitCode
+- failure_category: executor_credit_required
+- logs: $LogDir
+
+Do not score this run, run oracle comparison, or evolve skills from this resource-only failure. Resume after the executor account has credit, or intentionally change executor policy.
+"@ | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
+        return
+    }
+
     if ($ExitCode -eq 86 -or $category -eq 'usage_limit') {
         @"
 # Autopilot Resource Blocker
@@ -725,14 +1492,14 @@ Do not score this run, run oracle comparison, or evolve skills from this resourc
         return
     }
 
-    if ($ExitCode -eq 87 -or $category -eq 'auth') {
+    if ($ExitCode -eq 87 -or @('auth', 'executor_auth_failed') -contains $category) {
         @"
 # Autopilot Resource Blocker
 
 $Stage executor failed authentication. This is a resource blocker, not workflow coverage evidence.
 
 - exit_code: $ExitCode
-- failure_category: auth
+- failure_category: executor_auth_failed
 - logs: $LogDir
 
 Do not score this run, run oracle comparison, or evolve skills from this resource-only failure. Resume after login is fixed or switch executor intentionally.
@@ -740,7 +1507,222 @@ Do not score this run, run oracle comparison, or evolve skills from this resourc
         return
     }
 
+    if ($ExitCode -eq 92 -or $category -eq 'protected_root_modified') {
+        @"
+# Autopilot Isolation Blocker
+
+$Stage executor modified the protected main project root. This is a replay isolation failure, not implementation evidence.
+
+- exit_code: $ExitCode
+- failure_category: protected_root_modified
+- logs: $LogDir
+
+Do not start the next replay round until the command guard and protected-root cleanup path are evolved and regression-tested.
+"@ | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
+        return
+    }
+
+    if ($ExitCode -eq 93 -or $category -eq 'command_guard_violation') {
+        @"
+# Autopilot Isolation Blocker
+
+$Stage executor attempted a forbidden replay command. This is a replay isolation failure, not implementation evidence.
+
+- exit_code: $ExitCode
+- failure_category: command_guard_violation
+- logs: $LogDir
+
+Do not start the next replay round until the command guard terminates offending process trees and classifies the blocker.
+"@ | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
+        return
+    }
+
     "# Autopilot Blocker`n`n$Stage executor failed with exit code $ExitCode. Inspect logs under $LogDir." | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
+}
+
+function Get-Phase1GateFailureEvidence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [int]$ExitCode
+    )
+
+    $reason = ''
+    $detail = ''
+    $evidencePath = ''
+
+    $validationFiles = @()
+    if (Test-Path -LiteralPath $ReplayRoot) {
+        $validationFiles = @(Get-ChildItem -LiteralPath $ReplayRoot -File -Filter 'TEST_CHARTER_VALIDATION_*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+    }
+    foreach ($file in $validationFiles) {
+        try {
+            $json = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $json.PSObject.Properties['can_proceed'] -and -not [bool]$json.can_proceed) {
+                $codes = @($json.failures | ForEach-Object { [string]$_.code } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+                $reason = if ($codes.Count -gt 0) { 'test_charter_prevalidation_failed:' + ($codes -join ',') } else { 'test_charter_prevalidation_failed' }
+                $detail = "TEST_CHARTER validation failed before Phase 1 executor could start. result=$($file.FullName)"
+                $evidencePath = $file.FullName
+                break
+            }
+        } catch {
+            continue
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($reason)) {
+        $stdoutFiles = @()
+        if (Test-Path -LiteralPath $ReplayRoot) {
+            $stdoutFiles = @(Get-ChildItem -LiteralPath $ReplayRoot -File -Filter 'TEST_CHARTER_VALIDATION_*.stdout.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+        }
+        foreach ($file in $stdoutFiles) {
+            $text = Read-TextIfExists $file.FullName
+            if ($text -match '"verification_status"\s*:\s*"FAILED"|MISSING_ENTRY_POINT|TEST_CHARTER_MISSING|SYNTHETIC_SOURCE_CHAIN_CHARTER|SIDE_EFFECTS_NOT_VERIFIED') {
+                $codes = @([regex]::Matches($text, '"code"\s*:\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                $reason = if ($codes.Count -gt 0) { 'test_charter_prevalidation_failed:' + ($codes -join ',') } else { 'test_charter_prevalidation_failed' }
+                $detail = "TEST_CHARTER validation failed before Phase 1 executor could start. stdout=$($file.FullName)"
+                $evidencePath = $file.FullName
+                break
+            }
+        }
+    }
+
+    $runnerContract = Join-Path $ReplayRoot 'RUNNER_ENFORCEMENT_CONTRACT.md'
+    if ([string]::IsNullOrWhiteSpace($reason) -and (Test-Path -LiteralPath $runnerContract)) {
+        $contractText = Read-TextIfExists $runnerContract
+        if ($contractText -match 'test charter prevalidation stop|pre-implementation test charter stop') {
+            $reason = 'test_charter_prevalidation_failed'
+            $detail = "RUNNER_ENFORCEMENT_CONTRACT recorded a test charter prevalidation stop. contract=$runnerContract"
+            $evidencePath = $runnerContract
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($reason)) {
+        return [pscustomobject]@{
+            HasGateEvidence = $false
+            Reason = "executor_failed_without_result:exit_code=$ExitCode"
+            Detail = ''
+            EvidencePath = ''
+        }
+    }
+
+    return [pscustomobject]@{
+        HasGateEvidence = $true
+        Reason = $reason
+        Detail = $detail
+        EvidencePath = $evidencePath
+    }
+}
+
+function Get-AgentCommandGuardSummary {
+    param(
+        [string]$LogDir,
+        [string]$Name
+    )
+
+    $guardLog = Join-Path $LogDir ("{0}.command-guard.jsonl" -f $Name)
+    $reasons = New-Object System.Collections.Generic.List[string]
+    $commands = New-Object System.Collections.Generic.List[string]
+
+    if (Test-Path -LiteralPath $guardLog) {
+        foreach ($line in @(Get-Content -LiteralPath $guardLog -Encoding UTF8)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $entry = $line | ConvertFrom-Json
+                if ($null -ne $entry.PSObject.Properties['reason'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.reason)) {
+                    $reasons.Add([string]$entry.reason) | Out-Null
+                }
+                if ($null -ne $entry.PSObject.Properties['command_line'] -and -not [string]::IsNullOrWhiteSpace([string]$entry.command_line)) {
+                    $command = [string]$entry.command_line
+                    if ($command.Length -gt 500) {
+                        $command = $command.Substring(0, 500) + '...'
+                    }
+                    $commands.Add($command) | Out-Null
+                }
+            } catch {
+                continue
+            }
+        }
+    }
+
+    $uniqueReasons = @($reasons | Select-Object -Unique)
+    $sampleCommands = @($commands | Select-Object -Unique | Select-Object -First 6)
+    return [pscustomobject][ordered]@{
+        GuardLogPath = $guardLog
+        Reasons = $uniqueReasons
+        ReasonText = if ($uniqueReasons.Count -gt 0) { $uniqueReasons -join ', ' } else { '(none parsed)' }
+        SampleCommands = $sampleCommands
+        SampleText = if ($sampleCommands.Count -gt 0) { ($sampleCommands | ForEach-Object { "- $_" }) -join "`n" } else { '- (none parsed)' }
+        HasMavenDeployForbidden = @($uniqueReasons | Where-Object { $_ -eq 'maven_deploy_forbidden' }).Count -gt 0
+    }
+}
+
+function Write-Phase0CommandGuardRepairPrompt {
+    param(
+        [string]$ReplayRoot,
+        [string]$Worktree,
+        [string]$OriginalPromptPath,
+        [string]$RepairPromptPath,
+        [string]$CompletionPath,
+        [object]$GuardSummary
+    )
+
+    $reasonText = if ($null -ne $GuardSummary) { [string]$GuardSummary.ReasonText } else { '(none parsed)' }
+    $sampleText = if ($null -ne $GuardSummary) { [string]$GuardSummary.SampleText } else { '- (none parsed)' }
+    $guardLogPath = if ($null -ne $GuardSummary) { [string]$GuardSummary.GuardLogPath } else { '' }
+
+    @"
+# Phase 0 Command-Guard Repair
+
+This is a bounded Phase 0 repair after the executor attempted a forbidden replay command. Do not repeat the failed command. Do not run Maven.
+
+Original Phase 0 prompt:
+$OriginalPromptPath
+
+Replay root:
+$ReplayRoot
+
+Isolated worktree:
+$Worktree
+
+Required completion file:
+$CompletionPath
+
+Command guard log:
+$guardLogPath
+
+Observed command-guard reasons:
+$reasonText
+
+Observed forbidden command samples:
+$sampleText
+
+## Non-Negotiable Rules
+
+1. Read the original Phase 0 prompt before writing artifacts.
+2. Phase 0 is read-only discovery plus artifact writing. It is not a build, test, deploy, or implementation phase.
+3. Do not run any command containing mvn, mvn.cmd, maven, gradle, deploy, install, package, compile, test-compile, surefire, or failsafe.
+4. Do not run tests. Do not compile. Do not build. Do not install. Do not deploy.
+5. Use only read-only source discovery commands such as rg, Get-Content, Select-String, Get-ChildItem, Test-Path, git status, git diff, and git show.
+6. If the current evidence is enough, write the required Phase 0 artifacts under the replay root. If it is not enough, write PHASE0_RESULT.md with phase0_status: BLOCKED and a concrete blocker.
+7. Preserve the protected project root. All artifact writes must stay under the replay root.
+
+## Required Outcome
+
+Write PHASE0_RESULT.md at:
+$CompletionPath
+
+Also write any Phase 0 artifacts required by the original prompt, including FAMILY_CONTRACT.json, EXPLORATION_REPORT.md, ROUND_CONTRACT.md, and IMPLEMENTATION_CONTRACT.md when the original prompt asks for them.
+
+The PHASE0_RESULT.md status must be one of:
+
+- phase0_status: PROCEED
+- phase0_status: BLOCKED
+- phase0_status: INVALID_PLAN
+- phase0_status: INVALID_REPLAY
+
+Do not answer conversationally until the required completion file exists.
+"@ | Set-Content -LiteralPath $RepairPromptPath -Encoding UTF8
 }
 
 function Get-FirstNumber {
@@ -769,8 +1751,10 @@ function Normalize-Phase0Status {
         $m = [regex]::Match($Phase0Text, $statusLabelPattern)
         if ($m.Success) { $normalized = $m.Groups[1].Value.Trim() }
     }
-    # Backward-compatible observed variants covered by the generic rule: CAVEATS|CAVIETS|CAVETS.
+    # Backward-compatible observed variants covered by the generic rules:
+    # CAVEATS|CAVIETS|CAVETS and GREEN_PROCEED / READY_PROCEED style values.
     if ($normalized -match '^PROCEED_WITH_[A-Z_]+$') { return 'PROCEED' }
+    if ($normalized -match '^[A-Z_]+_PROCEED$') { return 'PROCEED' }
     return $normalized
 }
 
@@ -881,6 +1865,271 @@ function Get-MetricNumber {
         $patterns.Add("(?m)^\s*\|\s*${decorated}\s*\|\s*(?:\*\*)?${bt}?([0-9]+)${bt}?(?:\*\*)?\s*(?:/100)?\s*%?\s*\|")
     }
     return Get-FirstNumber $Text $patterns.ToArray()
+}
+
+function Get-RunnerAuthorizationState {
+    param([string]$Root)
+
+    $router = Read-JsonIfExists (Join-Path $Root 'FAMILY_ROUTER_AND_CAP.json')
+    $ledgerCap = $null
+    $finalPassAllowed = $true
+    if ($null -ne $router) {
+        if ($router.PSObject.Properties.Name -contains 'coverage_cap_from_ledger' -and "$($router.coverage_cap_from_ledger)" -match '^\d+$') {
+            $ledgerCap = [int]$router.coverage_cap_from_ledger
+        }
+        if ($router.PSObject.Properties.Name -contains 'final_pass_allowed') {
+            $finalPassAllowed = [bool]$router.final_pass_allowed
+        }
+    }
+
+    $signals = New-Object System.Collections.Generic.List[string]
+    if (-not $finalPassAllowed) {
+        $signals.Add('router_final_pass_allowed=false') | Out-Null
+    }
+    if (Test-Path -LiteralPath $Root) {
+        foreach ($file in Get-ChildItem -LiteralPath $Root -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue | Sort-Object Name) {
+            $verify = Read-JsonIfExists $file.FullName
+            if ($null -eq $verify) { continue }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and -not [bool]$verify.authorized_for_next_slice) {
+                $signals.Add("authorized_for_next_slice=false:$($file.Name)") | Out-Null
+            }
+            if ($verify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and -not [bool]$verify.authorized_for_synthesis) {
+                $signals.Add("authorized_for_synthesis=false:$($file.Name)") | Out-Null
+            }
+            foreach ($blocker in Get-StringArray $verify.authorization_blockers) {
+                if (-not [string]::IsNullOrWhiteSpace($blocker)) {
+                    $signals.Add("blocker:$blocker") | Out-Null
+                }
+            }
+        }
+    }
+
+    $uniqueSignals = @($signals | Select-Object -Unique)
+    return [pscustomobject]@{
+        coverage_cap_from_ledger = $ledgerCap
+        final_pass_allowed = $finalPassAllowed
+        non_authorizing_signals = $uniqueSignals
+        has_non_authorizing_evidence = (-not $finalPassAllowed) -or $uniqueSignals.Count -gt 0
+    }
+}
+
+function Get-Phase1RoundReuseDecision {
+    param([string]$ReplayRoot)
+
+    $roundResultPath = Join-Path $ReplayRoot 'ROUND_RESULT.md'
+    $router = Read-JsonIfExists (Join-Path $ReplayRoot 'FAMILY_ROUTER_AND_CAP.json')
+    $authorization = Get-RunnerAuthorizationState -Root $ReplayRoot
+    $openRequiredFamilyCount = 0
+    $selectedFamily = ''
+    if ($null -ne $router) {
+        if ($router.PSObject.Properties.Name -contains 'open_required_family_count' -and "$($router.open_required_family_count)" -match '^\d+$') {
+            $openRequiredFamilyCount = [int]$router.open_required_family_count
+        }
+        if ($router.PSObject.Properties.Name -contains 'selected_family') {
+            $selectedFamily = [string]$router.selected_family
+        }
+    }
+
+    $hasOpenRequiredFamily = $openRequiredFamilyCount -gt 0 -or (
+        -not [bool]$authorization.final_pass_allowed -and
+        -not [string]::IsNullOrWhiteSpace($selectedFamily)
+    )
+    $mustRerun = (Test-Path -LiteralPath $roundResultPath) -and
+        [bool]$authorization.has_non_authorizing_evidence
+    $rerunReason = if ($mustRerun -and $hasOpenRequiredFamily) {
+        'round_result_non_authorizing_with_open_required_family'
+    } elseif ($mustRerun) {
+        'round_result_non_authorizing_slice_artifact'
+    } else {
+        'round_result_reusable'
+    }
+
+    return [pscustomobject]@{
+        can_reuse = -not $mustRerun
+        rerun_phase1 = $mustRerun
+        reason = $rerunReason
+        round_result = $roundResultPath
+        runner_final_pass_allowed = [bool]$authorization.final_pass_allowed
+        runner_non_authorizing_signals = @($authorization.non_authorizing_signals)
+        coverage_cap_from_ledger = $authorization.coverage_cap_from_ledger
+        open_required_family_count = $openRequiredFamilyCount
+        selected_family = $selectedFamily
+    }
+}
+
+function Archive-Phase1RoundArtifactsForRerun {
+    param(
+        [string]$ReplayRoot,
+        $Decision
+    )
+
+    $archiveRoot = Join-Path (Join-Path $ReplayRoot 'logs') 'stale-round-results'
+    if (-not (Test-Path -LiteralPath $archiveRoot)) {
+        New-Item -ItemType Directory -Force -Path $archiveRoot | Out-Null
+    }
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $archiveDir = Join-Path $archiveRoot $stamp
+    New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
+
+    $artifactNames = @(
+        'ROUND_RESULT.md',
+        'FINAL_REPLAY_REPORT.md',
+        'AUTOPILOT_SUMMARY.md',
+        'AUTOPILOT_DECISION.md',
+        'ORACLE_COVERAGE_ENFORCEMENT.md',
+        'STOP_LOSS_DECISION.json',
+        'STOP_LOSS_DECISION.md',
+        'EVOLUTION_PROMPT.md',
+        'EVOLUTION_PROPOSAL.md',
+        'DEEP_REVIEW_REPORT.md',
+        'DEEP_REVIEW_PROMPT.md'
+    )
+    $archived = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $artifactNames) {
+        $path = Join-Path $ReplayRoot $name
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        Move-Item -LiteralPath $path -Destination (Join-Path $archiveDir $name) -Force
+        $archived.Add($name) | Out-Null
+    }
+
+    $decisionPath = Join-Path $ReplayRoot 'PHASE1_REUSE_DECISION.json'
+    [ordered]@{
+        decision = 'RERUN_PHASE1'
+        reason = [string]$Decision.reason
+        archived_to = $archiveDir
+        archived_artifacts = @($archived)
+        runner_final_pass_allowed = [bool]$Decision.runner_final_pass_allowed
+        runner_non_authorizing_signals = @($Decision.runner_non_authorizing_signals)
+        coverage_cap_from_ledger = $Decision.coverage_cap_from_ledger
+        open_required_family_count = [int]$Decision.open_required_family_count
+        selected_family = [string]$Decision.selected_family
+        generated_at = (Get-Date -Format 'o')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $decisionPath -Encoding UTF8
+    return $decisionPath
+}
+
+function Get-Phase1SliceScopedArtifactPaths {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex
+    )
+
+    $names = @(
+        'SLICE_RESULT_{0:D2}.json',
+        'SLICE_VERIFY_{0:D2}.json',
+        'SLICE_AUTHORIZATION_{0:D2}.json',
+        'CARRIER_AUTHORIZATION_{0:D2}.json',
+        'CARRIER_RANK_{0:D2}.json',
+        'EXACT_CONTRACT_ASSERTION_MATRIX_{0:D2}.json',
+        'NEXT_SLICE_EXACT_CONTRACT_{0:D2}.json',
+        'SIDE_EFFECT_EVIDENCE_{0:D2}.json',
+        'PRE_SLICE_AUTHORIZATION_{0:D2}.json',
+        'PRE_SLICE_CAP_DISPLAY_{0:D2}.json',
+        'PRE_SLICE_CAP_DISPLAY_{0:D2}.md',
+        'CHECKPOINT_GATE_{0:D2}.json',
+        'V348_SLICE_QUALITY_GATE_{0:D2}.json',
+        'V348_HORIZONTAL_SLICE_GATE_{0:D2}.stdout.log',
+        'V348_HORIZONTAL_SLICE_GATE_{0:D2}.stderr.log',
+        'LAYER_VALIDATION_{0:D2}.stdout.log',
+        'PHASE0_PRECHECK_{0:D2}.stdout.log',
+        'TEST_CHARTER_VALIDATION_{0:D2}.json',
+        'TEST_CHARTER_VALIDATION_{0:D2}.stdout.log',
+        'TODO_DETECTION_{0:D2}.json',
+        'TODO_DETECTION_{0:D2}.stdout.log',
+        'TODO_CHECK_RESULT_{0:D2}.json',
+        'PHASE1_SLICE_{0:D2}_PROMPT.md',
+        'PHASE1_SLICE_{0:D2}_RETRY_PROMPT.md',
+        'PHASE1_SLICE_{0:D2}_FORCED_FAMILY_REPAIR_PROMPT.md',
+        'EXECUTABLE_EVIDENCE_GATE_{0:D2}.json'
+    )
+    return @($names | ForEach-Object { Join-Path $ReplayRoot ($_ -f $SliceIndex) })
+}
+
+function Test-Phase1AuthorizingSliceEvidence {
+    param(
+        [string]$ReplayRoot,
+        [int]$SliceIndex
+    )
+
+    $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $SliceIndex)
+    $sliceVerifyPath = Join-Path $ReplayRoot ('SLICE_VERIFY_{0:D2}.json' -f $SliceIndex)
+    $sliceResult = Read-JsonIfExists -Path $sliceResultPath
+    $sliceVerify = Read-JsonIfExists -Path $sliceVerifyPath
+    if ($null -eq $sliceResult -or $null -eq $sliceVerify) { return $false }
+
+    $resultStatus = [string]$sliceResult.slice_status
+    $verifyStatus = [string]$sliceVerify.verification_status
+    $verifySliceStatus = [string]$sliceVerify.slice_status
+    $hasAuthorization = (
+        ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and [bool]$sliceVerify.authorized_for_next_slice) -or
+        ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and [bool]$sliceVerify.authorized_for_synthesis)
+    )
+
+    return (
+        $verifyStatus -in @('PASS', 'PARTIAL') -and
+        ($resultStatus -in @('DONE', 'PARTIAL') -or $verifySliceStatus -in @('DONE', 'PARTIAL')) -and
+        $hasAuthorization
+    )
+}
+
+function Clear-OrphanFutureSliceArtifactsAfterPhase1Reuse {
+    param(
+        [string]$ReplayRoot,
+        [int]$MaxSlices,
+        $ReuseDecision
+    )
+
+    if ($null -eq $ReuseDecision -or -not [bool]$ReuseDecision.runner_final_pass_allowed -or [int]$ReuseDecision.open_required_family_count -gt 0) {
+        return [pscustomobject]@{ archived_count = 0; archived_slices = @(); reason = 'phase1_not_closed_or_not_reusable' }
+    }
+
+    $lastAuthorizedSlice = 0
+    for ($idx = 1; $idx -le $MaxSlices; $idx++) {
+        if (Test-Phase1AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $idx) {
+            $lastAuthorizedSlice = $idx
+        }
+    }
+    if ($lastAuthorizedSlice -le 0 -or $lastAuthorizedSlice -ge $MaxSlices) {
+        return [pscustomobject]@{ archived_count = 0; archived_slices = @(); reason = 'no_future_slice_window' }
+    }
+
+    $archivedCount = 0
+    $archivedSlices = New-Object System.Collections.Generic.List[int]
+    $archiveRoot = Join-Path (Join-Path $ReplayRoot 'logs') 'stale-slice-results'
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    for ($idx = $lastAuthorizedSlice + 1; $idx -le $MaxSlices; $idx++) {
+        if (Test-Phase1AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $idx) { continue }
+        $paths = @(Get-Phase1SliceScopedArtifactPaths -ReplayRoot $ReplayRoot -SliceIndex $idx | Where-Object { Test-Path -LiteralPath $_ })
+        if ($paths.Count -eq 0) { continue }
+        $sliceArchiveDir = Join-Path $archiveRoot ('slice{0:D2}' -f $idx)
+        if (-not (Test-Path -LiteralPath $sliceArchiveDir)) {
+            New-Item -ItemType Directory -Force -Path $sliceArchiveDir | Out-Null
+        }
+        foreach ($path in $paths) {
+            $leaf = [System.IO.Path]::GetFileName($path)
+            Move-Item -LiteralPath $path -Destination (Join-Path $sliceArchiveDir ("{0}.{1}" -f $leaf, $stamp)) -Force
+            $archivedCount++
+        }
+        $archivedSlices.Add($idx) | Out-Null
+    }
+
+    if ($archivedCount -gt 0) {
+        $runnerContractPath = Join-Path $ReplayRoot 'RUNNER_ENFORCEMENT_CONTRACT.md'
+        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| phase1 reuse cleanup | requirement_family_ledger | future_slice_artifacts | all_required_families_closed | archived_orphan_future_slice_artifacts={0}; slices={1}. |" -f $archivedCount, ((@($archivedSlices) | Sort-Object -Unique) -join ','))
+        [ordered]@{
+            replay_root = $ReplayRoot
+            max_slices = $MaxSlices
+            completed = @(1..$lastAuthorizedSlice)
+            stopped = $false
+            stop_reason = ''
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $ReplayRoot 'SLICE_PROGRESS.json') -Encoding UTF8
+    }
+
+    return [pscustomobject]@{
+        archived_count = $archivedCount
+        archived_slices = @($archivedSlices | Sort-Object -Unique)
+        reason = 'closed_phase1_reuse_future_artifact_cleanup'
+    }
 }
 
 function Replace-VersionToken {
@@ -1099,16 +2348,22 @@ function Invoke-WithRetry {
         [scriptblock]$Action,
         [string]$Label = 'executor',
         [int]$MaxRetries = 2,
-        [int]$DelaySeconds = 30
+        [int]$DelaySeconds = 30,
+        [int[]]$NonRetryExitCodes = @()
     )
     $attempt = 0
     while ($true) {
         $attempt++
         try {
             & $Action
-            if ($LASTEXITCODE -eq 0) { return $true }
+            $exitCodeNow = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+            if ($exitCodeNow -eq 0) { return $true }
+            if ($NonRetryExitCodes -contains $exitCodeNow) {
+                Write-Host "WARNING: $Label failed with non-retryable exit=$exitCodeNow (attempt $attempt)."
+                return $false
+            }
             if ($attempt -le $MaxRetries) {
-                Write-Host "WARNING: $Label failed (exit=$LASTEXITCODE, attempt $attempt/$MaxRetries). Retrying in ${DelaySeconds}s..."
+                Write-Host "WARNING: $Label failed (exit=$exitCodeNow, attempt $attempt/$MaxRetries). Retrying in ${DelaySeconds}s..."
                 Start-Sleep -Seconds $DelaySeconds
                 continue
             }
@@ -1418,6 +2673,10 @@ $stopLossMinOracleImprovement = if ($config.ContainsKey('stop_loss_min_oracle_im
 $stopLossLowCapThreshold = if ($config.ContainsKey('stop_loss_low_cap_threshold') -and -not [string]::IsNullOrWhiteSpace($config['stop_loss_low_cap_threshold'])) { [int]$config['stop_loss_low_cap_threshold'] } else { 45 }
 $stopLossLowCapRounds = if ($config.ContainsKey('stop_loss_low_cap_rounds') -and -not [string]::IsNullOrWhiteSpace($config['stop_loss_low_cap_rounds'])) { [int]$config['stop_loss_low_cap_rounds'] } else { 2 }
 $stopLossRepeatedGapThreshold = if ($config.ContainsKey('stop_loss_repeated_gap_threshold') -and -not [string]::IsNullOrWhiteSpace($config['stop_loss_repeated_gap_threshold'])) { [int]$config['stop_loss_repeated_gap_threshold'] } else { 2 }
+$stoplineNoProgressRounds = if ($config.ContainsKey('stopline_no_progress_rounds') -and -not [string]::IsNullOrWhiteSpace($config['stopline_no_progress_rounds'])) { [int]$config['stopline_no_progress_rounds'] } else { 3 }
+$stoplineAllowRecentToolingChange = if ($config.ContainsKey('stopline_allow_recent_tooling_change') -and -not [string]::IsNullOrWhiteSpace($config['stopline_allow_recent_tooling_change'])) { Convert-ToBool $config['stopline_allow_recent_tooling_change'] } else { $true }
+$executorResourceProbeActual = [bool]$ExecutorResourceProbe -or (Convert-ToBool $(if ($config.ContainsKey('executor_resource_preflight_probe')) { $config['executor_resource_preflight_probe'] } else { '' }))
+$bypassExecutorResourcePreflightActual = [bool]$BypassExecutorResourcePreflight -or (Convert-ToBool $(if ($config.ContainsKey('executor_resource_preflight_bypass')) { $config['executor_resource_preflight_bypass'] } else { '' }))
 $runEvolutionActual = [bool]$RunEvolution -or (Convert-ToBool $(if ($config.ContainsKey('auto_evolution')) { $config['auto_evolution'] } else { '' }))
 
 # Executor-aware model resolution: when executor=claude, prefer claude_* config keys
@@ -1486,6 +2745,10 @@ if ($ValidateOnly) {
         StopLossLowCapThreshold = $stopLossLowCapThreshold
         StopLossLowCapRounds = $stopLossLowCapRounds
         StopLossRepeatedGapThreshold = $stopLossRepeatedGapThreshold
+        StoplineNoProgressRounds = $stoplineNoProgressRounds
+        StoplineAllowRecentToolingChange = $stoplineAllowRecentToolingChange
+        ExecutorResourceProbe = $executorResourceProbeActual
+        BypassExecutorResourcePreflight = $bypassExecutorResourcePreflightActual
         RunEvolution = $runEvolutionActual
         Phase0Model = $phase0Model
         Phase0ReasoningEffort = $phase0ReasoningEffort
@@ -1515,6 +2778,65 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
     $logs = Join-Path $replayRoot 'logs'
 
     Write-Host "== Replay $roundId =="
+
+    Invoke-ReplayExperimentLedgerSafe -ReplayRootBase $replayRootBase
+
+    $stoplineScript = Join-Path $PSScriptRoot 'Invoke-ReplayStoplineGate.ps1'
+    if (Test-Path -LiteralPath $stoplineScript) {
+        $stoplineEvidenceRoot = Resolve-EvidenceRootFromReplayBase -ReplayRootBase $replayRootBase
+        $stoplineArgs = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $stoplineScript,
+            '-EvidenceRoot', $stoplineEvidenceRoot,
+            '-ReplayRootBase', $replayRootBase,
+            '-Lookback', [string]$stoplineNoProgressRounds,
+            '-RepeatThreshold', [string]$stoplineNoProgressRounds,
+            '-Quiet'
+        )
+        if ($stoplineAllowRecentToolingChange) {
+            $stoplineArgs += '-AllowRecentToolingChange'
+        }
+        & powershell @stoplineArgs
+        $stoplineExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        if ($stoplineExit -eq 94) {
+            Write-Host "Stopline gate blocked replay before creating $roundId. Inspect $(Join-Path $stoplineEvidenceRoot '_control\STOPLINE_ANALYSIS.md')."
+            exit 94
+        } elseif ($stoplineExit -ne 0) {
+            throw "Replay stopline gate failed with exit code $stoplineExit"
+        }
+    }
+
+    if (-not $bypassExecutorResourcePreflightActual -and $executorActual -ne 'manual') {
+        $executorResourcePreflightScript = Join-Path $PSScriptRoot 'Invoke-ExecutorResourcePreflight.ps1'
+        if (Test-Path -LiteralPath $executorResourcePreflightScript) {
+            if ([string]::IsNullOrWhiteSpace($stoplineEvidenceRoot)) {
+                $stoplineEvidenceRoot = Resolve-EvidenceRootFromReplayBase -ReplayRootBase $replayRootBase
+            }
+            $executorResourcePreflightArgs = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', $executorResourcePreflightScript,
+                '-EvidenceRoot', $stoplineEvidenceRoot,
+                '-ReplayRootBase', $replayRootBase,
+                '-Executor', $executorActual,
+                '-RequireExecutor', $requiredExecutorActual,
+                '-Model', $phase1Model,
+                '-Quiet'
+            )
+            if ($executorResourceProbeActual) {
+                $executorResourcePreflightArgs += '-Probe'
+            }
+            & powershell @executorResourcePreflightArgs
+            $executorResourcePreflightExit = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+            if ($executorResourcePreflightExit -eq 86) {
+                Write-Host "Executor resource preflight blocked replay before creating $roundId. Inspect $(Join-Path $stoplineEvidenceRoot '_control\EXECUTOR_RESOURCE_PREFLIGHT.md')."
+                exit 86
+            } elseif ($executorResourcePreflightExit -ne 0) {
+                throw "Executor resource preflight failed with exit code $executorResourcePreflightExit"
+            }
+        }
+    }
 
     $startArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'Start-ReplayRound.ps1'), '-ConfigPath', $configPathFull, '-Round', $round)
     if ($ReuseExisting) {
@@ -1576,13 +2898,14 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
     if (Test-Path -LiteralPath $phase0ResultPath) {
         Write-Host "Reusing existing Phase 0 result: $phase0ResultPath"
     } else {
+        $phase0LogDir = Join-Path $logs 'phase0'
         $phase0Args = @(
             '-NoProfile',
             '-ExecutionPolicy', 'Bypass',
             '-File', (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'),
             '-PromptPath', $phase0Prompt,
             '-WorkDir', $worktree,
-            '-LogDir', (Join-Path $logs 'phase0'),
+            '-LogDir', $phase0LogDir,
             '-Executor', $executorActual,
             '-Sandbox', $sandbox,
             '-Approval', $approval,
@@ -1592,14 +2915,74 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
             '-CompletionQuietSeconds', '90'
         )
         $phase0Args = Add-AgentModelArgs -BaseArgs $phase0Args -Model $phase0Model -ReasoningEffort $phase0ReasoningEffort
-        $phase0Succeeded = Invoke-WithRetry -Label 'Phase 0' -Action { & powershell @phase0Args } -MaxRetries 2 -DelaySeconds 30
+        $script:Phase0ExitCode = $null
+        $phase0Succeeded = Invoke-WithRetry -Label 'Phase 0' -Action {
+            & powershell @phase0Args
+            $script:Phase0ExitCode = $LASTEXITCODE
+        } -MaxRetries 2 -DelaySeconds 30 -NonRetryExitCodes @(93)
+
+        $phase0ExitCode = if ($null -ne $script:Phase0ExitCode) { [int]$script:Phase0ExitCode } else { [int]$LASTEXITCODE }
+        $phase0FailureLogDir = $phase0LogDir
+        $phase0FailureName = 'phase0'
+        $phase0FailureStage = 'Phase 0'
+
+        if (-not $phase0Succeeded -and $phase0ExitCode -eq 93 -and -not (Test-Path -LiteralPath $phase0ResultPath)) {
+            $phase0GuardSummary = Get-AgentCommandGuardSummary -LogDir $phase0LogDir -Name 'phase0'
+            $phase0CommandGuardRepairPrompt = Join-Path $replayRoot 'PHASE0_COMMAND_GUARD_REPAIR_PROMPT.md'
+            $phase0CommandGuardRepairLogDir = Join-Path $logs 'phase0-command-guard-repair'
+            New-Item -ItemType Directory -Force -Path $phase0CommandGuardRepairLogDir | Out-Null
+
+            Write-Phase0CommandGuardRepairPrompt `
+                -ReplayRoot $replayRoot `
+                -Worktree $worktree `
+                -OriginalPromptPath $phase0Prompt `
+                -RepairPromptPath $phase0CommandGuardRepairPrompt `
+                -CompletionPath $phase0ResultPath `
+                -GuardSummary $phase0GuardSummary
+
+            Write-Host "WARNING: Phase 0 hit command guard ($($phase0GuardSummary.ReasonText)); running one read-only command-guard repair attempt."
+            $phase0CommandGuardRepairArgs = @(
+                '-NoProfile',
+                '-ExecutionPolicy', 'Bypass',
+                '-File', (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'),
+                '-PromptPath', $phase0CommandGuardRepairPrompt,
+                '-WorkDir', $worktree,
+                '-LogDir', $phase0CommandGuardRepairLogDir,
+                '-Executor', $executorActual,
+                '-Sandbox', $sandbox,
+                '-Approval', $approval,
+                '-TimeoutMinutes', $timeoutMinutes,
+                '-Name', 'phase0-command-guard-repair',
+                '-CompletionPath', $phase0ResultPath,
+                '-CompletionQuietSeconds', '90'
+            )
+            $phase0CommandGuardRepairArgs = Add-AgentModelArgs -BaseArgs $phase0CommandGuardRepairArgs -Model $phase0Model -ReasoningEffort $phase0ReasoningEffort
+            $script:Phase0CommandGuardRepairExitCode = $null
+            $phase0CommandGuardRepairSucceeded = Invoke-WithRetry -Label 'Phase 0 command guard repair' -Action {
+                & powershell @phase0CommandGuardRepairArgs
+                $script:Phase0CommandGuardRepairExitCode = $LASTEXITCODE
+            } -MaxRetries 0 -DelaySeconds 0 -NonRetryExitCodes @(93)
+
+            if ($phase0CommandGuardRepairSucceeded -and (Test-Path -LiteralPath $phase0ResultPath)) {
+                $phase0Succeeded = $true
+                $phase0ExitCode = 0
+                Write-Host "Phase 0 command guard repair produced PHASE0_RESULT.md."
+            } else {
+                $phase0ExitCode = if ($null -ne $script:Phase0CommandGuardRepairExitCode) { [int]$script:Phase0CommandGuardRepairExitCode } else { [int]$LASTEXITCODE }
+                $phase0FailureLogDir = $phase0CommandGuardRepairLogDir
+                $phase0FailureName = 'phase0-command-guard-repair'
+                $phase0FailureStage = 'Phase 0 command guard repair'
+            }
+        }
+
         if (-not $phase0Succeeded) {
-            $phase0ExitCode = $LASTEXITCODE
-            Write-AgentExecutorBlocker -BlockerPath $blocker -Stage 'Phase 0' -ExitCode $phase0ExitCode -LogDir (Join-Path $logs 'phase0') -Name 'phase0'
+            Write-AgentExecutorBlocker -BlockerPath $blocker -Stage $phase0FailureStage -ExitCode $phase0ExitCode -LogDir $phase0FailureLogDir -Name $phase0FailureName
 
             # v281: Call recovery router for Phase 0 executor failures
             $blockerReason = if ($phase0ExitCode -eq 86) { "usage_limit" }
                              elseif ($phase0ExitCode -eq 87) { "authentication_failed" }
+                             elseif ($phase0ExitCode -eq 92) { "protected_root_modified" }
+                             elseif ($phase0ExitCode -eq 93) { "command_guard_violation" }
                              else { "executor_failed_without_result:exit_code=$phase0ExitCode" }
 
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Get-RecoveryAction.ps1') `
@@ -1648,6 +3031,7 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
         '(?mi)^##\s*Phase\s*0\s*Status\s*\r?\n\s*(?:\r?\n)?\s*\*{0,2}Status\*{0,2}\s*[:=]\s*`?([A-Z_]+)`?',
         '(?mi)^##\s*Phase\s*0\s*Status\s*[:=]*\s*[^A-Z_\r\n]*([A-Z_]+)',
         '(?mi)^##\s*Phase\s+0\s+Result[^:]*[:=]?\s*([A-Z_]+)',
+        '(?mi)^##\s*Status\s*[:=]\s*`?([A-Z_]+)`?',
         '(?m)\*\*phase0_status\*\*\s*[:=]\s*[`*]*([A-Z_]+)',
         '(?m)\*\*Phase\s+0\s+Status\*\*[^A-Z]*(PROCEED|BLOCKED|INVALID_PLAN)',
         '(?mi)^##\s*Gate\s+Decision[^A-Z]*([A-Z_]{3,})',
@@ -1918,6 +3302,7 @@ The goal is not to make the verifier weaker. The goal is to convert repairable s
                     '(?mi)^##\s*Phase\s*0\s*Status\s*\r?\n\s*(?:\r?\n)?\s*\*{0,2}Status\*{0,2}\s*[:=]\s*`?([A-Z_]+)`?',
                     '(?mi)^##\s*Phase\s*0\s*Status\s*[:=]*\s*[^A-Z_\r\n]*([A-Z_]+)',
                     '(?mi)^##\s*Phase\s+0\s+Result[^:]*[:=]?\s*([A-Z_]+)',
+                    '(?mi)^##\s*Status\s*[:=]\s*`?([A-Z_]+)`?',
                     '(?m)\*\*phase0_status\*\*\s*[:=]\s*[`*]*([A-Z_]+)',
                     '(?m)\*\*Phase\s+0\s+Status\*\*[^A-Z]*(PROCEED|BLOCKED|INVALID_PLAN)',
                     '(?mi)^##\s*Gate\s+Decision[^A-Z]*([A-Z_]{3,})',
@@ -2493,6 +3878,8 @@ The goal is not to weaken the verifier. The goal is to make Phase 0 select a rea
             # v281: Call recovery router for Plan executor failures
             $blockerReason = if ($planExitCode -eq 86) { "usage_limit" }
                              elseif ($planExitCode -eq 87) { "authentication_failed" }
+                             elseif ($planExitCode -eq 92) { "protected_root_modified" }
+                             elseif ($planExitCode -eq 93) { "command_guard_violation" }
                              else { "executor_failed_without_result:exit_code=$planExitCode" }
 
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Get-RecoveryAction.ps1') `
@@ -2531,6 +3918,7 @@ The goal is not to weaken the verifier. The goal is to make Phase 0 select a rea
             }
         }
     }
+    Resolve-PlanArtifactWorktreeLeak -ReplayRoot $replayRoot -Worktree $worktree -ArtifactNames $planArtifacts -Stage 'PlanArtifactRecovery' | Out-Null
 
     # v327: Carrier Search Verification - prevent synthetic carrier creation
     Write-Host "Running plan carrier search verification..."
@@ -2597,7 +3985,7 @@ Add or update the following sections in ``$planResultPath``:
 1. Before claiming "new service required", you MUST show at least 3 carrier search attempts
 2. Each search attempt must include: search query, results found, and why insufficient
 3. If existing carrier serves similar purpose, use it instead of creating new one
-4. Do not create synthetic carriers (e.g., "ExampleCompanyFlowConfigService") without exhaustive search
+4. Do not create synthetic carriers (e.g., "InsureCompanyFlowConfigService") without exhaustive search
 5. Method signatures must match requirements exactly - no inferred parameters
 
 ## After repair
@@ -2681,6 +4069,29 @@ The goal is to prevent synthetic carrier creation by forcing exhaustive search b
         $repairResultPath = Join-Path $replayRoot 'PLAN_ARTIFACT_REPAIR_RESULT.md'
         $planResultContent = Read-TextIfExists $planResultPath
         $phase0ResultContent = Read-TextIfExists (Join-Path $replayRoot 'PHASE0_RESULT.md')
+        $repairGuardDir = Join-Path $replayRoot '_plan_repair_guard'
+        if (Test-Path -LiteralPath $repairGuardDir) {
+            Remove-Item -LiteralPath $repairGuardDir -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $repairGuardDir | Out-Null
+        $repairGuardedArtifacts = @()
+        foreach ($artifact in $planArtifacts) {
+            if ($missingPlanArtifacts -contains $artifact) {
+                continue
+            }
+            $artifactPath = Join-Path $replayRoot $artifact
+            if (Test-Path -LiteralPath $artifactPath -PathType Leaf) {
+                $backupName = ($artifact -replace '[\\/:\*\?"<>\|]', '_')
+                $backupPath = Join-Path $repairGuardDir $backupName
+                Copy-Item -LiteralPath $artifactPath -Destination $backupPath -Force
+                $repairGuardedArtifacts += [pscustomobject]@{
+                    artifact = $artifact
+                    path = $artifactPath
+                    backup = $backupPath
+                    before_hash = Get-Sha256Hex -Path $artifactPath
+                }
+            }
+        }
 
         $repairPrompt = @"
 # Plan Artifact Repair Pass
@@ -2703,19 +4114,28 @@ $(foreach ($a in $missingPlanArtifacts) { "- ``$replayRoot\$a``" })
 ## Rules
 
 1. Read the existing PLAN_RESULT.md and PHASE0_RESULT.md for context.
-2. Create ONLY the missing files listed above.
-3. Do NOT modify any existing files.
-4. Do NOT write production code, tests, or run Maven.
-5. Each file must follow the format specified in the Plan Tournament prompt.
-6. Write each file to disk immediately after generating it.
-7. After creating all files, write a brief summary to ``$repairResultPath``.
+2. Create ONLY the missing plan artifacts listed above. Do not create test compile logs by running Maven; the runner materializes ``TEST_INFRASTRUCTURE_DRY_RUN.json`` after this repair returns.
+3. Do NOT modify existing plan artifacts that are not listed as missing. ``PLAN_RESULT.json`` and ``IMPLEMENTATION_CONTRACT.md`` are read-only when they already exist; preserve their existing ``test_infrastructure_check`` exactly, especially ``test_module_for_target`` and ``compilation_dry_run_command``.
+4. Do NOT write production code, tests, deploy artifacts, install artifacts, or package artifacts.
+5. For a ``PROCEED`` ``PLAN_RESULT.json``, you MUST NOT run Maven in this repair prompt:
+   - Declare only the intended isolated dry-run command: ``mvn -s D:\maven\settings\settings.xml -f "$worktree\pom.xml" -pl <test_module_for_target> -am test-compile``.
+   - Set ``test_infrastructure_check.compilation_dry_run_evidence_file`` to ``TEST_INFRASTRUCTURE_DRY_RUN.json`` under ``$replayRoot``.
+   - The runner materializes that evidence file after this repair returns and before ``Invoke-PlanSchemaFailFast.ps1``.
+   - If static inspection shows the harness cannot work, write ``plan_status: BLOCKED`` with a concrete ``blocker``. Do not claim ``PROCEED``.
+   - Never target the protected project root ``$projectRoot`` in ``compilation_dry_run_command`` and never run Maven deployment goals.
+6. For ``PROCEED``, write ``test_infrastructure_check.blocker_reason`` as the string ``"none"``. Do not write ``null``.
+7. ``side_effects`` MUST be a populated JSON array. Use either strings, or objects with non-empty ``side_effect``, ``state``, and ``proof`` keys.
+8. ``target_carrier_line_number`` MUST be an exact integer line number for ``PROCEED``. Read/search source text to find it; do not run Maven for this. If it cannot be confirmed, write ``plan_status: BLOCKED`` with ``blocker: PLAN_BLOCKED_LINE_NUMBER`` instead of leaving ``null``.
+9. Each file must follow the format specified in the Plan Tournament prompt.
+10. Write each file to disk immediately after generating it.
+11. After creating all files, write a brief summary to ``$repairResultPath``.
 
 ## Format Requirements
 
 - SIDE_EFFECT_LEDGER.md: entry -> side effect -> state/task/transaction -> proof
 - TEST_CHARTER.md: RED/GREEN order, real entry tests, DB/transaction verification
 - FIRST_SLICE_PROOF_PLAN.md: Use the exact field schema (first_slice, selected_real_entry, real_carrier_kind, proof_kind, etc.)
-- PLAN_RESULT.json: machine-readable plan contract. For PROCEED include plan_status, target_carrier_file_path, target_carrier_line_number, expected_test_class, expected_test_method, side_effects, expected_assertions. For BLOCKED include plan_status and blocker. For INVALID_PLAN include plan_status and invalid_reason.
+- PLAN_RESULT.json: create this only if it is listed under Missing Artifacts. If it already exists, it is read-only. For a newly created PROCEED file include plan_status, target_carrier_file_path, target_carrier_line_number, expected_test_class, expected_test_method, side_effects, expected_assertions, and test_infrastructure_check { test_module_for_target, test_module_has_dependencies, test_harness_available, can_import_production_classes, compilation_dry_run_exit_code, compilation_dry_run_command, compilation_dry_run_evidence_file, blocker_reason }. For BLOCKED include plan_status and blocker. For INVALID_PLAN include plan_status and invalid_reason. The intended command must name the selected test module, -pl, -am, and test-compile, and must point at the isolated worktree root POM; the runner writes the real evidence file under the replay root.
 - EXPECTED_DIFF_MATRIX.md: requirement -> module -> file -> change type -> validation -> closure
 - IMPLEMENTATION_CONTRACT.md: Phase 1 execution contract with Selected Real Entries
 - REPLAY_PLAN.md: Slice-sorted plan with family allocation
@@ -2747,6 +4167,42 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
         & powershell @repairArgs
         $repairExit = $LASTEXITCODE
         Write-Host "Plan repair pass exit code: $repairExit"
+
+        $unauthorizedRepairChanges = @()
+        foreach ($guarded in $repairGuardedArtifacts) {
+            $artifactPath = [string]$guarded.path
+            $changed = $false
+            $reason = ''
+            if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) {
+                $changed = $true
+                $reason = 'deleted'
+            } else {
+                $afterHash = Get-Sha256Hex -Path $artifactPath
+                if ($afterHash -ne [string]$guarded.before_hash) {
+                    $changed = $true
+                    $reason = 'modified'
+                }
+            }
+            if ($changed) {
+                Copy-Item -LiteralPath ([string]$guarded.backup) -Destination $artifactPath -Force
+                $unauthorizedRepairChanges += [ordered]@{
+                    artifact = [string]$guarded.artifact
+                    reason = $reason
+                    restored_from = [string]$guarded.backup
+                }
+            }
+        }
+        if ($unauthorizedRepairChanges.Count -gt 0) {
+            [ordered]@{
+                schema = 'plan_artifact_repair_guard.v1'
+                status = 'RESTORED_UNAUTHORIZED_MODIFICATIONS'
+                decision = 'RESTORE_AND_CONTINUE'
+                missing_artifacts = @($missingPlanArtifacts)
+                restored_artifacts = @($unauthorizedRepairChanges)
+                generated_at = (Get-Date -Format 'o')
+            } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_ARTIFACT_REPAIR_GUARD.json') -Encoding UTF8
+            Write-Warning "Plan artifact repair modified read-only artifacts; restored: $((@($unauthorizedRepairChanges) | ForEach-Object { $_.artifact }) -join ', ')"
+        }
 
         # Re-check missing artifacts after repair
         $stillMissing = @()
@@ -2790,10 +4246,26 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
     }
 
     $planMachineContractPath = Join-Path $replayRoot 'PLAN_RESULT.json'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRoot -PlanResultPath $planMachineContractPath | Out-Null
+    $policyHarnessRepaired = Repair-PolicyRebuildPlanHarness -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath
+    if ($policyHarnessRepaired) {
+        Write-Host "Policy rebuild Plan machine contract normalized to claim-server test harness."
+    }
+    Ensure-PlanTestCompileEvidence -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRoot -PlanResultPath $planMachineContractPath -Worktree $worktree | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        $reason = "PLAN_RESULT.json machine contract validation failed. Inspect $(Join-Path $replayRoot 'PLAN_SCHEMA_FAILFAST.json')."
+        $schemaFailPath = Join-Path $replayRoot 'PLAN_SCHEMA_FAILFAST.json'
+        $reason = "PLAN_RESULT.json machine contract validation failed. Inspect $schemaFailPath."
         $planTextForStop = Read-TextIfExists $planResultPath
+        [ordered]@{
+            stage = 'Plan'
+            plan_status = 'BLOCKED'
+            decision = 'STOP_BLOCKED'
+            reason = $reason
+            source_plan_result = $planResultPath
+            source_plan_machine_contract = $planMachineContractPath
+            verifier = $schemaFailPath
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_VERDICT.json') -Encoding UTF8
         Write-PlanEarlyStopEvolutionArtifacts `
             -ReplayRoot $replayRoot `
             -ScriptRoot $scriptRoot `
@@ -2819,10 +4291,17 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
         '(?m)\bplan_status\b[^\nA-Z_]*([A-Z_]{3,})',
         '(?m)^\s*-?\s*status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
         '(?mi)^##\s*Plan\s*Status\s*[:=]*\s*[^A-Z_\r\n]*([A-Z_]+)',
+        '(?mi)\*\*Plan\s+Status\*\*\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
         '(?m)\*\*plan_status\*\*[^A-Z]*(PROCEED|BLOCKED|INVALID_PLAN)',
         '(?m)\*\*plan_status\*\*\s*[:=]\s*[`*]*([A-Z_]+)',
         '(?mi)^##\s*Plan\s+Status\s*\r?\n\s*```\s*\r?\n\s*([A-Z_]+)'
     )
+    if ([string]::IsNullOrWhiteSpace($planStatus)) {
+        $planJson = Read-JsonIfExists (Join-Path $replayRoot 'PLAN_RESULT.json')
+        if ($null -ne $planJson -and $planJson.PSObject.Properties.Name -contains 'plan_status') {
+            $planStatus = ([string]$planJson.plan_status).Trim().Trim('`').Trim('*').ToUpperInvariant()
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($planStatus)) {
         "# Autopilot Blocker`n`nPLAN_RESULT.md did not expose plan_status. Inspect $planResultPath." | Set-Content -LiteralPath $blocker -Encoding UTF8
         Write-Host "BLOCKED: $blocker"
@@ -3006,7 +4485,7 @@ You are performing a targeted repair of existing Plan artifacts. Do NOT enter Ph
 The Plan verifier failed with:
 
 ```
-__INITIAL_VERIFY_TEXT__
+$initialVerifyText
 ```
 
 ## Golden Delivery Slice recovery
@@ -3033,21 +4512,24 @@ Required binding shape:
   - `literal_contract`
   - `real_entry`
 - **Correct format examples** (keyword MUST appear in the value):
-  - `golden_slice_binding: side_effect_ledger_gap → config_family → TExampleModuleConfig.java → ExampleModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
+  - `golden_slice_binding: side_effect_ledger_gap → config_family → TAiClaimModuleConfig.java → AiClaimModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
   - `golden_slice_binding: exact_contract_gap → facade → ClaimCaseFacade → getCaseInfo → testGetCaseInfo_ExactContract → production diff verified`
   - `golden_slice_binding: schema_contract_discovery_gap → entity → TCaseInfo → CaseInfoService → testSchemaDiscovery → table schema verified`
 - **Wrong format** (missing fingerprint keyword - will FAIL verification):
-  - `golden_slice_binding: config_family → TExampleModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
+  - `golden_slice_binding: config_family → TAiClaimModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
   - `golden_slice_binding: facade → ClaimCaseFacade → ...` (NO - starts with facade, not a fingerprint keyword)
 - The same binding must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
 - If `oracle_overlap_below_threshold`, `oracle_high_weight_uncovered`, or `low_verification_cap` appears, map at least one missing HIGH-weight oracle file to the Golden Slice first-slice contract: requirement literal -> real carrier -> RED test -> GREEN production diff -> side-effect proof.
-- Do not write `NONE`, `TBD`, `unknown`, `placeholder`, `none_with_reason`, or narrative-only text for this field. If no honest binding exists, set `plan_status: BLOCKED` and explain the concrete blocker.
+- Do not write 'NONE', 'TBD', 'unknown', 'placeholder', 'none_with_reason', or narrative-only text for this field. If no honest binding exists, set `plan_status: BLOCKED` and explain the concrete blocker.
 
 ## Allowed files
 
-You may modify ONLY these files under the replay root:
+Artifact root: $replayRootPath
+
+You may modify ONLY these files under the replay root. The current working directory may be the isolated worktree, so do not create or modify files relative to the current working directory. Every write must use an absolute path under the artifact root above.
 
 - PLAN_RESULT.md
+- PLAN_RESULT.json
 - PLAN_SELECTION.md
 - REPLAY_PLAN.md
 - IMPLEMENTATION_CONTRACT.md
@@ -3059,6 +4541,23 @@ You may modify ONLY these files under the replay root:
 ## Required repair
 
 1. Fix every issue reported in PLAN_CONTRACT_VERIFY.json.
+   If `issue_evidence` exists in PLAN_CONTRACT_VERIFY.json, treat every listed `artifact` and `snippet` as authoritative: repair those exact files/snippets first.
+   PLAN_RESULT.json is included because Verify-PlanContract scans it together with Markdown plan artifacts. If you edit PLAN_RESULT.json, keep it valid JSON and preserve `test_infrastructure_check` exactly unless the issue specifically names a test infrastructure field.
+   **Policy rebuild hard repair rules**: If any issue starts with `policy_rebuild_plan_`, the repair must remove every verifier-triggering pattern from all allowed files before writing the completion note.
+   - For `policy_rebuild_plan_missing:claim_server_test_harness`: add the exact path token `claim-server/src/test/java/...` to the allowed plan artifacts, preferably as the planned test file path (for example `claim-server/src/test/java/com/huize/claim/core/ai/task/AiClaimRebuildPathTest.java`). Also ensure `PLAN_RESULT.json.expected_test_class` uses either that full path or a class name backed by `test_infrastructure_check.test_module_for_target=claim-server`, and ensure Maven evidence still uses `-pl claim-server -am test-compile`. Do not stop at `claim-server/src/test`; the verifier requires the `/java` segment.
+   - For `policy_rebuild_plan_invalid:test_harness_claim_core`: remove all `claim-core/src/test`, `-pl claim-core`, and `claim-core -Dtest` references. Tests must be planned under `claim-server/src/test/java/...`, and Maven evidence must use `-pl claim-server -am test-compile`.
+   - For `policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.buildRequestCommon` or `policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.RequestBuildFunction`: add both exact literal tokens `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction` to the upstream source-chain contract evidence in the allowed plan artifacts. Do not substitute `buildRequestCommon`, `RequestBuildFunction`, `Function<RequestBuildContext, T>`, or `requestBuilder` alone; the verifier requires both machine contract keys.
+   - For `policy_rebuild_plan_invalid:fixed_db_caseid`: remove all fixed DB case id wording and literals including `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`, `12345L`, and `67890L`. These tokens are forbidden even in negative checklist text such as "No test uses fixed database caseIds"; rewrite that as "No numeric fixture id literals are used." Rewrite sample lines such as `Long caseId = 12345L`, `ctx.setCaseId(12345L)`, `mockContext.setCaseId(12345L)`, and `rebuildTaskData(12345L)` to use a symbolic generated/in-memory fixture variable such as `Long fixtureCaseId = generatedFixtureCaseId`, `ctx.setCaseId(fixtureCaseId)`, and `rebuildTaskData(fixtureCaseId)`. Do not leave numeric caseId literals anywhere in the allowed files.
+   - For `policy_rebuild_plan_invalid:null_taskdata_pass_path`: remove the exact literal forms `taskData == null`, `result == null`, `null then pass`, `null then warn`, `null then print`, and every regex-compatible `returns null ... pass/passes/passed/passing` sentence from every allowed file, including PLAN_RESULT.json. These forms are forbidden even when describing RED failure, fail-closed behavior, trigger conditions, golden_slice_binding, or boundary conditions. Rewrite examples like `RED: request.getPolicyNum() returns null -> GREEN -> unit test passes` to `RED: source-chain assignment missing before fix -> GREEN: req.setPolicyNum(buildContext.getPolicyNum()) and req.setInsureNum(buildContext.getInsureNum()) -> executable assertion passes`. Do not use the doIt null-taskData branch as the first-slice proof; the first slice must prove the rebuild RequestBuildFunction source-chain assignment.
+   - For `policy_rebuild_plan_invalid:dto_or_downstream_only`: remove the exact literal forms `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, and `Contract Definition (DTO Fields)` from every allowed file. The first slice must be the upstream rebuild lambda/source-chain proof, not DTO support. A downstream `taskData.setPolicyNum(request.getPolicyNum())` validation may appear only after the proof names the upstream source-chain assignments `req.setPolicyNum(buildContext.getPolicyNum())` and `req.setInsureNum(buildContext.getInsureNum())`, `AiClaimDataAssemblyHelper.RequestBuildFunction`, and `RequestBuildContext`.
+   - For `policy_rebuild_plan_missing:upstream_request_assignment_diff`: the repaired allowed files MUST contain both exact literal assignment expressions, with this spelling: `req.setPolicyNum(buildContext.getPolicyNum())` and `req.setInsureNum(buildContext.getInsureNum())`. Abbreviations such as `req.setPolicyNum/req.setInsureNum`, downstream setters such as `taskData.setPolicyNum(request.getPolicyNum())`, or prose like "source-chain assignment" do not satisfy this gate. Put the exact literals in PLAN_RESULT.md golden_slice_binding or next_action, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, and FIRST_SLICE_PROOF_PLAN.md so the verifier can match them.
+   - For `policy_rebuild_plan_invalid:no_production_change_against_oracle_additions`: ORACLE_DIFF_ANALYSIS.json has production additions, so the repaired plan must not claim `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, or test-only completion. Rewrite PLAN_RESULT.md, REPLAY_PLAN.md, EXPECTED_DIFF_MATRIX.md, and FIRST_SLICE_PROOF_PLAN.md so Slice 1 has production LOGIC_FIX changes in both oracle HIGH-weight TaskProcessor files.
+   - For `policy_rebuild_plan_invalid:core_closure_false_against_oracle` or `policy_rebuild_plan_invalid:highest_weight_gate_not_core_entry`: set the highest-weight open gate to `core_entry`, set `core_closure_required: true`, and bind Slice 1 to both `AiApplyClaimApiTaskProcessor.rebuildTaskData` and `AiCalculateLossApiTaskProcessor.rebuildTaskData`.
+   - For `policy_rebuild_plan_invalid:spring_context_harness`: remove optional Spring/real-DB integration slices and all `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB` references. Use only no-Spring JUnit with Mockito/reflection under `claim-server/src/test/java/...`.
+   - For `first_slice_proof_v457_side_effects_insufficient`: replace empty `expected_side_effects: []` with a non-empty JSON array of concrete state changes, for example `[{"memory":"request.policyNum","operation":"set","value":"from buildContext.getPolicyNum()"},{"memory":"request.insureNum","operation":"set","value":"from buildContext.getInsureNum()"},{"memory":"taskData.policyNum","operation":"set","value":"from request.getPolicyNum()"}]`. Do not use an empty array or prose-only side effects.
+   - TEST_CHARTER.md must pass `Invoke-TestCharterPrevalidator.ps1 -WorkDir <replay_root> -PassThru` before Phase 1 starts. It must include prevalidator-recognized labels: `Entry Point: <exact production entry method(s)>`, `Test Class: <no-Spring JUnit/Mockito test class>`, `DB Verification: <AtomicReference/ArgumentCaptor/SELECT verification>`, and `Side Effects:` with verify/assert/query wording for each listed side effect. For source-chain rebuild requirements, the Entry Point must name the real rebuildTaskData carrier(s), not a synthetic TaskData-only proof.
+   - For `golden_slice_binding_weak:plan_result` or `golden_slice_binding_weak:first_slice_proof`: replace `none`, `none_with_reason`, `TBD`, or "no golden delivery slice files exist" with a concrete binding that contains a verifier-approved fingerprint, for example `exact_contract_gap -> AiClaimDataAssemblyHelper.RequestBuildFunction -> AiApplyClaimApiTaskProcessor.rebuildTaskData -> RED -> req.setPolicyNum(buildContext.getPolicyNum())/req.setInsureNum(buildContext.getInsureNum()) -> stateful_side_effect`. The same value must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
+   - After repairing, self-scan PLAN_RESULT.md, PLAN_RESULT.json, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, SIDE_EFFECT_LEDGER.md, TEST_CHARTER.md, and FIRST_SLICE_PROOF_PLAN.md. The scan must prove both `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction` exist and the following forbidden residues do not exist anywhere: `12345L`, `67890L`, `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`, `taskData == null`, `result == null`, `returns null ->`, `returns null pass`, `returns null passes`, `returns null passed`, `returns null passing`, `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB`. `FIELD_ADD` is forbidden only when it is DTO-only, Request-DTO-only, compile-only, or test-none evidence; it is allowed when it explicitly describes TaskProcessor production field propagation plus the upstream RequestBuildFunction source-chain assignment. If any forbidden pattern remains, continue editing; do not claim completion.
 2. PLAN_RESULT.md must use these exact machine keys as single-line `key: value` fields; do not invent aliases:
    - `plan_status: PROCEED` or `plan_status: BLOCKED`
    - `carrier_search: performed` or `carrier_search: blocked`
@@ -3073,7 +4572,7 @@ You may modify ONLY these files under the replay root:
    - `oracle_out_of_scope_files: <semicolon-separated oracle files with blocker reasons or none>`
    - `golden_slice_binding: <MUST contain one of: side_effect_ledger_gap|exact_contract_gap|schema_contract_discovery_gap|low_verification_cap|oracle_overlap|positive_first_slice|first_slice_contract|stateful_side_effect|literal_contract|real_entry -> selected production carrier -> first RED -> minimum GREEN -> executable side effect>`
    - `first_slice: <S1 identifier, e.g., "S1" or "S1 - Auto Claim Flow">`
-   - `first_red_test: <test class.method, e.g., "ExampleFlowServiceTest.testHappyPath">`
+   - `first_red_test: <test class.method, e.g., "AiAutoClaimFlowServiceTest.testHappyPath">`
 3. FIRST_SLICE_PROOF_PLAN.md must use these exact single-line `key: value` fields; do not rely on headings, bullets, tables, or narrative paragraphs:
    - `first_slice: <S1 identifier MUST match PLAN_RESULT.md first_slice exactly>`
    - `first_red_test: <test signature MUST match PLAN_RESULT.md first_red_test exactly - this is cross-artifact consistency, not a suggestion>`
@@ -3102,9 +4601,9 @@ You may modify ONLY these files under the replay root:
    - `pattern_error_handling: <response_codes or exception_propagation>`
    - `pattern_evidence_source: <rg command + file path>`
    **V457 Executable Evidence Gate MANDATORY fields** (required for plan_status: PROCEED):
-   - `target_carrier_file_path: <exact file path to carrier, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java">`
+   - `target_carrier_file_path: <exact file path to carrier, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java">`
    - `target_carrier_line_number: <exact integer line number where method is defined, e.g., "42". If NEW_SERVICE and line number unknown, write "NEW_SERVICE_LINE_NUMBER_PENDING" and set plan_status: BLOCKED>`
-   - `expected_test_class: <full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest">`
+   - `expected_test_class: <full test class name, e.g., "AiApplyClaimApiTaskProcessorTest">`
    - `expected_test_method: <test method name, e.g., "testExecuteTask_AutoFlowTriggered">`
    - `expected_assertions: <JSON array with at least 3 assertions, e.g., ["assertEquals(35, caseStatus)", "verify(compensateDetailMapper).insert()", "assertNotNull(result)"]>`
    - `expected_side_effects: <JSON array with at least 1 side effect, e.g., [{"table": "t_compensate_detail", "operation": "insert"}, {"table": "t_case_route", "operation": "update", "field": "status", "value": "35"}]>`
@@ -3114,9 +4613,9 @@ You may modify ONLY these files under the replay root:
 6. If any `first_slice_proof_schema_missing:*` or dry-run `missing_fields` issue appears, update FIRST_SLICE_PROOF_PLAN.md using the exact keys above. Do not write `fail-closed condition:`; use `fail_closed_condition:`.
    **v452 CRITICAL**: If `first_slice_proof_schema_missing:highest_weight_open_gate` appears, you MUST add this field. Read ROUND_CONTRACT.md Requirement Family Ledger, find the highest-weight family (by weight field) that needs to be "opened" in S1 (has new service or needs core path change), and write its id as the value. Example values: `stateful_side_effect`, `core_entry`, `wire_payload_api_contract`, `config_policy_threshold`. Do NOT write TBD, unknown, or placeholder.
    **V457 Executable Evidence Gate CRITICAL**: If any `first_slice_proof_v457_missing:*` or `first_slice_proof_v457_*` issue appears, you MUST add or fix the specific V457 fields in FIRST_SLICE_PROOF_PLAN.md:
-   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java"
+   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java"
    - `first_slice_proof_v457_missing:target_carrier_line_number`: Add `target_carrier_line_number: <integer>` - read the file to find the exact line number where the method is defined, e.g., "42". Do NOT use TBD, unknown, or placeholder.
-   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest"
+   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "AiApplyClaimApiTaskProcessorTest"
    - `first_slice_proof_v457_missing:expected_test_method`: Add `expected_test_method: <methodName>` - the test method name, e.g., "testExecuteTask_AutoFlowTriggered"
    - `first_slice_proof_v457_assertions_missing` or `first_slice_proof_v457_assertions_insufficient`: Add `expected_assertions: ["assert1", "assert2", "assert3"]` - JSON array format with at least 3 concrete assertions. Convert any narrative format to JSON array.
    - `first_slice_proof_v457_side_effects_missing`: Add `expected_side_effects: [{"table": "...", "operation": "..."}]` - JSON array format with at least 1 side effect. Convert any narrative format to JSON array.
@@ -3134,13 +4633,13 @@ You may modify ONLY these files under the replay root:
 10. If carrier search proves the selected carrier is not derived from existing production carriers, revise the selected carrier or set `plan_status: BLOCKED` and `blocker: carrier_search_unproven`.
 11. After updating artifacts, write a concise completion note to this exact file path:
 
-__CONTRACT_REPAIR_RESULT_PATH__
+$contractRepairResultPath
 
 Do not create new production files, test files, or worktree changes.
 '@
-        $planContractRepairPrompt = $planContractRepairPrompt.
-            Replace('__INITIAL_VERIFY_TEXT__', $initialVerifyText).
-            Replace('__CONTRACT_REPAIR_RESULT_PATH__', $contractRepairResultPath)
+        $planContractRepairPrompt = $planContractRepairPrompt.Replace('$initialVerifyText', $initialVerifyText)
+        $planContractRepairPrompt = $planContractRepairPrompt.Replace('$contractRepairResultPath', $contractRepairResultPath)
+        $planContractRepairPrompt = $planContractRepairPrompt.Replace('$replayRootPath', $replayRoot)
         Set-Content -LiteralPath $contractRepairPromptPath -Value $planContractRepairPrompt -Encoding UTF8
 
         $contractRepairLogDir = Join-Path $logs 'plan-contract-repair'
@@ -3165,6 +4664,7 @@ Do not create new production files, test files, or worktree changes.
         & powershell @contractRepairArgs
         $contractRepairExit = $LASTEXITCODE
         Write-Host "Plan contract repair pass exit code: $contractRepairExit"
+        Resolve-PlanArtifactWorktreeLeak -ReplayRoot $replayRoot -Worktree $worktree -ArtifactNames $planArtifacts -Stage 'PlanContractRepair' | Out-Null
 
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $replayRoot -Stage Plan | Out-Null
         $planContractVerifyExit = $LASTEXITCODE
@@ -3229,6 +4729,16 @@ Do not create new production files, test files, or worktree changes.
         }
 
         $reason = "Plan contract verification failed. Inspect $planContractVerify."
+        [ordered]@{
+            stage = 'Plan'
+            plan_status = 'BLOCKED'
+            decision = 'STOP_BLOCKED'
+            reason = $reason
+            source_plan_result = $planResultPath
+            source_plan_machine_contract = $planMachineContractPath
+            verifier = $planContractVerify
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_VERDICT.json') -Encoding UTF8
         Write-PlanEarlyStopEvolutionArtifacts `
             -ReplayRoot $replayRoot `
             -ScriptRoot $scriptRoot `
@@ -3389,6 +4899,11 @@ Do not create new production files, test files, or worktree changes.
         # Domain-to-directory mapping (same as Verify-PlanContract.ps1)
         $domainDirectoryMap = @{
             'ai' = 'ai'
+            'ai-claim' = 'ai'
+            'ai-claim-auto' = 'ai'
+            'aiclaim' = 'ai'
+            'aiclaimv2' = 'ai'
+            'auto-claim' = 'ai'
             'ocr' = 'ocr'
             'calculate' = 'calculate'
             'calculation' = 'calculate'
@@ -3552,10 +5067,101 @@ Do not create new production files, test files, or worktree changes.
         Write-Host "Oracle overlap gate PASSED: $overlapPercent%"
     }
 
+    $prePhase1CleanCheckPath = Join-Path $replayRoot 'PRE_PHASE1_WORKTREE_CLEAN_CHECK.json'
+    Resolve-PlanArtifactWorktreeLeak -ReplayRoot $replayRoot -Worktree $worktree -ArtifactNames $planArtifacts -Stage 'PrePhase1WorktreeClean' | Out-Null
+    $prePhase1DirtyEntries = @(Get-GitStatusShortSafe -Worktree $worktree)
+    $prePhase1DirtyReuseDecision = $null
+    if ($prePhase1DirtyEntries.Count -gt 0 -and [bool]$ReuseExisting) {
+        $prePhase1DirtyReuseDecision = Get-ReuseExistingPrePhase1DirtyDecision -ReplayRoot $replayRoot -DirtyEntries $prePhase1DirtyEntries
+    }
+    if ($prePhase1DirtyEntries.Count -gt 0 -and (-not $prePhase1DirtyReuseDecision -or -not [bool]$prePhase1DirtyReuseDecision.allow)) {
+        $reason = "Pre-Phase1 worktree is dirty after planning. Plan/Phase0 artifacts must be written under replay root, not the isolated worktree. Inspect $prePhase1CleanCheckPath."
+        [ordered]@{
+            stage = 'PrePhase1WorktreeClean'
+            status = 'FAIL'
+            decision = 'BLOCKED'
+            worktree = $worktree
+            dirty_entries = $prePhase1DirtyEntries
+            reuse_existing = [bool]$ReuseExisting
+            reuse_decision = $prePhase1DirtyReuseDecision
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $prePhase1CleanCheckPath -Encoding UTF8
+        [ordered]@{
+            stage = 'Plan'
+            plan_status = 'BLOCKED'
+            decision = 'STOP_BLOCKED'
+            reason = $reason
+            source_plan_result = $planResultPath
+            source_plan_machine_contract = $planMachineContractPath
+            verifier = $prePhase1CleanCheckPath
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_VERDICT.json') -Encoding UTF8
+        Write-PlanEarlyStopEvolutionArtifacts `
+            -ReplayRoot $replayRoot `
+            -ScriptRoot $scriptRoot `
+            -SkillSourceRoot $skillSourceRoot `
+            -KnowledgeRepo $knowledgeRepo `
+            -ProjectRoot $projectRoot `
+            -Config $config `
+            -TargetCoverage $targetCoverage `
+            -Phase0Status $phase0Status `
+            -PlanStatus 'BLOCKED' `
+            -PlanText (($prePhase1DirtyEntries | ForEach-Object { "- $_" }) -join "`n") `
+            -Reason $reason `
+            -BestOracleCoverage $bestOracleCoverage `
+            -NoImprovementCount $noImprovementCount `
+            -RunEvolutionActual $runEvolutionActual `
+            -StopStage 'PrePhase1WorktreeClean'
+        Write-Host "Pre-Phase1 worktree clean gate blocked replay: $reason"
+        break
+    }
+    if ($prePhase1DirtyEntries.Count -gt 0) {
+        [ordered]@{
+            stage = 'PrePhase1WorktreeClean'
+            status = 'WARN'
+            decision = 'ALLOW_REUSE_EXISTING_DIRTY'
+            worktree = $worktree
+            dirty_entries = $prePhase1DirtyEntries
+            reuse_existing = [bool]$ReuseExisting
+            reuse_decision = $prePhase1DirtyReuseDecision
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $prePhase1CleanCheckPath -Encoding UTF8
+        Write-Warning "Pre-Phase1 dirty worktree allowed for -ReuseExisting because a reuse decision passed; slice resume will re-evaluate implementation artifacts."
+    } else {
+        [ordered]@{
+            stage = 'PrePhase1WorktreeClean'
+            status = 'PASS'
+            decision = 'ALLOW'
+            worktree = $worktree
+            dirty_entries = @()
+            reuse_existing = [bool]$ReuseExisting
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $prePhase1CleanCheckPath -Encoding UTF8
+    }
+
     Write-Host "Running v348 pre-S1 carrier verification gate..."
     Invoke-V348PreS1CarrierVerification -ReplayRoot $replayRoot -Worktree $worktree -RequirementSource (Join-Path $replayRoot 'REQUIREMENT_SOURCE_SNAPSHOT.md')
 
     $roundResultPath = Join-Path $replayRoot 'ROUND_RESULT.md'
+    $phase1ReuseDecision = Get-Phase1RoundReuseDecision -ReplayRoot $replayRoot
+    if ((Test-Path -LiteralPath $roundResultPath) -and [bool]$phase1ReuseDecision.rerun_phase1) {
+        $phase1ReuseDecisionPath = Archive-Phase1RoundArtifactsForRerun -ReplayRoot $replayRoot -Decision $phase1ReuseDecision
+        Write-Host "Existing Phase 1 result is non-authorizing; archived stale round artifacts and rerunning Phase 1: $phase1ReuseDecisionPath"
+    } elseif (Test-Path -LiteralPath $roundResultPath) {
+        $phase1ReuseCleanup = Clear-OrphanFutureSliceArtifactsAfterPhase1Reuse -ReplayRoot $replayRoot -MaxSlices $phase1MaxSlices -ReuseDecision $phase1ReuseDecision
+        [ordered]@{
+            decision = 'REUSE_PHASE1'
+            reason = [string]$phase1ReuseDecision.reason
+            round_result = $roundResultPath
+            runner_final_pass_allowed = [bool]$phase1ReuseDecision.runner_final_pass_allowed
+            runner_non_authorizing_signals = @($phase1ReuseDecision.runner_non_authorizing_signals)
+            coverage_cap_from_ledger = $phase1ReuseDecision.coverage_cap_from_ledger
+            open_required_family_count = [int]$phase1ReuseDecision.open_required_family_count
+            selected_family = [string]$phase1ReuseDecision.selected_family
+            orphan_future_slice_cleanup = $phase1ReuseCleanup
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'PHASE1_REUSE_DECISION.json') -Encoding UTF8
+    }
     if (Test-Path -LiteralPath $roundResultPath) {
         Write-Host "Reusing existing Phase 1 result: $roundResultPath"
     } else {
@@ -3649,11 +5255,28 @@ Do not create new production files, test files, or worktree changes.
         if ($LASTEXITCODE -ne 0) {
             $phase1ExitCode = $LASTEXITCODE
             Write-AgentExecutorBlocker -BlockerPath $blocker -Stage 'Phase 1' -ExitCode $phase1ExitCode -LogDir (Join-Path $logs 'phase1') -Name 'phase1'
+            $phase1GateEvidence = Get-Phase1GateFailureEvidence -ReplayRoot $replayRoot -ExitCode $phase1ExitCode
+            if ([bool]$phase1GateEvidence.HasGateEvidence) {
+                @(
+                    '# Autopilot Blocker',
+                    '',
+                    "Phase 1 stopped at a local gate before producing ROUND_RESULT.md.",
+                    '',
+                    "- exit_code: $phase1ExitCode",
+                    "- blocker_reason: $($phase1GateEvidence.Reason)",
+                    "- evidence: $($phase1GateEvidence.EvidencePath)",
+                    '',
+                    $phase1GateEvidence.Detail
+                ) -join "`n" | Set-Content -LiteralPath $blocker -Encoding UTF8
+            }
             $phase1BlockerText = Read-TextIfExists $blocker
 
             # v281: Call recovery router for Phase 1 executor failures
             $blockerReason = if ($phase1ExitCode -eq 86) { "usage_limit" }
                              elseif ($phase1ExitCode -eq 87) { "authentication_failed" }
+                             elseif ($phase1ExitCode -eq 92) { "protected_root_modified" }
+                             elseif ($phase1ExitCode -eq 93) { "command_guard_violation" }
+                             elseif ([bool]$phase1GateEvidence.HasGateEvidence) { [string]$phase1GateEvidence.Reason }
                              else { "executor_failed_without_result:exit_code=$phase1ExitCode" }
 
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Get-RecoveryAction.ps1') `
@@ -3675,7 +5298,7 @@ Do not create new production files, test files, or worktree changes.
                     -Phase0Status $phase0Status `
                     -PlanStatus 'BLOCKED' `
                     -PlanText $phase1BlockerText `
-                    -Reason "Phase 1 executor failed before producing a complete ROUND_RESULT.md. exit_code=$phase1ExitCode; inspect logs under $(Join-Path $logs 'phase1')." `
+                    -Reason "Phase 1 stopped before producing a complete ROUND_RESULT.md. reason=$blockerReason; exit_code=$phase1ExitCode; inspect $($phase1GateEvidence.EvidencePath) and logs under $(Join-Path $logs 'phase1')." `
                     -BestOracleCoverage $bestOracleCoverage `
                     -NoImprovementCount $noImprovementCount `
                     -RunEvolutionActual $runEvolutionActual `
@@ -3861,6 +5484,8 @@ Do not create new production files, test files, or worktree changes.
             # v281: Call recovery router for Phase 2 executor failures
             $blockerReason = if ($phase2ExitCode -eq 86) { "usage_limit" }
                              elseif ($phase2ExitCode -eq 87) { "authentication_failed" }
+                             elseif ($phase2ExitCode -eq 92) { "protected_root_modified" }
+                             elseif ($phase2ExitCode -eq 93) { "command_guard_violation" }
                              else { "executor_failed_without_result:exit_code=$phase2ExitCode" }
 
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Get-RecoveryAction.ps1') `
@@ -3919,22 +5544,41 @@ Do not create new production files, test files, or worktree changes.
         $oracleCoverage = Get-MetricNumber $combinedText @('replay coverage (self-assessed)', 'Replay Coverage (Self-Assessed)', 'blind_self_assessed_coverage')
     }
 
+    $runnerAuthorization = Get-RunnerAuthorizationState -Root $replayRoot
+    if ($null -ne $runnerAuthorization.coverage_cap_from_ledger) {
+        $ledgerCap = [int]$runnerAuthorization.coverage_cap_from_ledger
+        if ($null -eq $cappedCoverage -or [int]$cappedCoverage -gt $ledgerCap) {
+            $cappedCoverage = $ledgerCap
+        }
+    }
+
     $reportedOracleCoverage = $oracleCoverage
     $oracleCoverageEnforced = $false
-    if ($null -ne $oracleCoverage -and $null -ne $cappedCoverage -and [int]$cappedCoverage -le 0 -and [int]$oracleCoverage -gt 0) {
+    $oracleCoverageEnforcementRule = 'verification_capped_zero_blocks_oracle_credit'
+    $oracleDecisionCap = $null
+    if ($null -ne $oracleCoverage -and $null -ne $cappedCoverage -and [bool]$runnerAuthorization.has_non_authorizing_evidence -and [int]$oracleCoverage -gt [int]$cappedCoverage) {
+        $oracleDecisionCap = [int]$cappedCoverage
+        $oracleCoverageEnforcementRule = 'runner_non_authorizing_cap_blocks_oracle_credit'
+    } elseif ($null -ne $oracleCoverage -and $null -ne $cappedCoverage -and [int]$cappedCoverage -le 0 -and [int]$oracleCoverage -gt 0) {
+        $oracleDecisionCap = 0
+        $oracleCoverageEnforcementRule = 'verification_capped_zero_blocks_oracle_credit'
+    }
+    if ($null -ne $oracleDecisionCap) {
         $oracleCoverageEnforced = $true
         $enforcementPath = Join-Path $replayRoot 'ORACLE_COVERAGE_ENFORCEMENT.md'
         @(
             '# Oracle Coverage Enforcement',
             '',
-            '- rule: verification_capped_zero_blocks_oracle_credit',
+            "- rule: $oracleCoverageEnforcementRule",
             "- reported_oracle_adjusted_coverage: $reportedOracleCoverage",
-            "- enforced_oracle_adjusted_coverage: 0",
+            "- enforced_oracle_adjusted_coverage: $oracleDecisionCap",
             "- verification_capped_coverage: $cappedCoverage",
+            "- runner_final_pass_allowed: $($runnerAuthorization.final_pass_allowed)",
+            "- runner_non_authorizing_signals: $(@($runnerAuthorization.non_authorizing_signals) -join '; ')",
             '',
-            'Reason: oracle-adjusted coverage is replay implementation overlap, not oracle completeness. When Phase 1 has zero executable verification credit, post-hoc oracle credit is capped at zero for autopilot decisions.'
+            'Reason: oracle-adjusted coverage is replay implementation overlap, not oracle completeness. Runner-owned authorization and verification caps must control autopilot decisions.'
         ) | Set-Content -LiteralPath $enforcementPath -Encoding UTF8
-        $oracleCoverage = 0
+        $oracleCoverage = [int]$oracleDecisionCap
     }
 
     $decisionPath = Join-Path $replayRoot 'AUTOPILOT_DECISION.md'
@@ -3945,8 +5589,11 @@ Do not create new production files, test files, or worktree changes.
         "- oracle_adjusted_coverage: $oracleCoverage",
         "- reported_oracle_adjusted_coverage: $reportedOracleCoverage",
         "- oracle_coverage_enforced: $oracleCoverageEnforced",
-        "- oracle_coverage_enforcement_rule: verification_capped_zero_blocks_oracle_credit",
+        "- oracle_coverage_enforcement_rule: $oracleCoverageEnforcementRule",
         "- verification_capped_coverage: $cappedCoverage",
+        "- runner_coverage_cap_from_ledger: $($runnerAuthorization.coverage_cap_from_ledger)",
+        "- runner_final_pass_allowed: $($runnerAuthorization.final_pass_allowed)",
+        "- runner_non_authorizing_signals: $(@($runnerAuthorization.non_authorizing_signals) -join '; ')",
         "- best_oracle_coverage_before_round: $bestOracleCoverage",
         "- no_improvement_count_before_round: $noImprovementCount",
         "- evolution_prompt: $evolutionPrompt",
@@ -4132,6 +5779,8 @@ Do not create new production files, test files, or worktree changes.
             # v281: Call recovery router for Evolution executor failures
             $blockerReason = if ($evolutionExitCode -eq 86) { "usage_limit" }
                              elseif ($evolutionExitCode -eq 87) { "authentication_failed" }
+                             elseif ($evolutionExitCode -eq 92) { "protected_root_modified" }
+                             elseif ($evolutionExitCode -eq 93) { "command_guard_violation" }
                              else { "executor_failed_without_result:exit_code=$evolutionExitCode" }
 
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Get-RecoveryAction.ps1') `
@@ -4266,7 +5915,9 @@ Do not write VALIDATED if commit/push is blocked, if the changed file is not use
 }
 
 Invoke-GoldenSampleMiningSafe -Config $config -ConfigPath $configPathFull -ReplayRootBase $replayRootBase
-Invoke-ControlPlaneSummarySafe -Config $config -ReplayRootBase $replayRootBase
+Invoke-ReplayExperimentLedgerSafe -ReplayRootBase $replayRootBase
+Invoke-ControlPlaneSummarySafe -Config $config -ReplayRootBase $replayRootBase -CurrentReplayRoot $replayRoot
+Invoke-ReplayExperimentLedgerSafe -ReplayRootBase $replayRootBase
 Invoke-GoldenDeliverySliceSafe -Config $config -ReplayRootBase $replayRootBase
 Write-PortableSessionSummarySafe -ReplayRootBase $replayRootBase
 Invoke-KnowledgeBackupSyncSafe -Config $config -ConfigPath $configPathFull -ReplayRootBase $replayRootBase

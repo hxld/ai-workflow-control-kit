@@ -51,9 +51,9 @@ try {
     New-MinimalPlanFixtures -Root $t1Root
 
     @"
-- selected_real_entry: ExampleModuleConfigController (POST /ai/claim/config/add)
-- selected_carrier: TExampleModuleConfig entity + ExampleModuleConfigDto + TExampleModuleConfigMapper.xml
-- first_red_test: ExampleModuleConfigServiceTest.testSaveWithFreeReviewAmount
+- selected_real_entry: AiClaimModuleConfigController (POST /ai/claim/config/add)
+- selected_carrier: TAiClaimModuleConfig entity + AiClaimModuleConfigDto + TAiClaimModuleConfigMapper.xml
+- first_red_test: AiClaimModuleConfigServiceTest.testSaveWithFreeReviewAmount
 - forbidden_substitute_check: passed
 - proof_kind: real_entry_behavior
 - real_carrier_kind: production_entry_or_service
@@ -76,9 +76,9 @@ try {
     New-MinimalPlanFixtures -Root $t2Root
 
     @"
-- selected_real_entry: ExampleModuleConfigFacadeImpl.saveConfig(SaveConfigRequest)
-- selected_carrier: ExampleModuleConfigFacadeImpl via Facade interface
-- first_red_test: ExampleModuleConfigFacadeImplTest.testSaveExemptReviewAmount
+- selected_real_entry: AiClaimModuleConfigFacadeImpl.saveConfig(SaveConfigRequest)
+- selected_carrier: AiClaimModuleConfigFacadeImpl via Facade interface
+- first_red_test: AiClaimModuleConfigFacadeImplTest.testSaveExemptReviewAmount
 - public_entry_contract_coverage: assert ResultModel.success contains exemptReviewAmount; assert null param returns ResultModel.error
 - forbidden_substitute_check: passed
 - proof_kind: real_entry_behavior
@@ -103,9 +103,9 @@ try {
     New-MinimalPlanFixtures -Root $t3Root
 
     @"
-- selected_real_entry: ExampleCalculatorApiTaskProcessor.onTaskSuccess()
+- selected_real_entry: AiCalculateLossApiTaskProcessor.onTaskSuccess()
 - selected_carrier: CompensateService.writeCompensateData + ExamineFlowFacadeImpl.updateCaseStatus
-- first_red_test: ExampleCalculatorApiTaskProcessorTest.testOnTaskSuccessAutoFlow
+- first_red_test: AiCalculateLossApiTaskProcessorTest.testOnTaskSuccessAutoFlow
 - forbidden_substitute_check: passed
 - proof_kind: real_entry_behavior
 - real_carrier_kind: production_service
@@ -128,9 +128,9 @@ try {
     New-MinimalPlanFixtures -Root $t4Root
 
     @"
-- selected_real_entry: ExamplePushController.pushExampleTicket(ExampleTicketParam)
-- selected_carrier: ExamplePushController POST /push/return-ticket response assertion
-- first_red_test: ExamplePushControllerTest.testPushExampleTicketSuccess
+- selected_real_entry: InsureCompanyPushController.pushReturnTicket(ReturnTicketParam)
+- selected_carrier: InsureCompanyPushController POST /push/return-ticket response assertion
+- first_red_test: InsureCompanyPushControllerTest.testPushReturnTicketSuccess
 - public_entry_contract_coverage: assert HTTP 200 with ResultModel.success; assert invalid param returns ResultModel.error with message
 - forbidden_substitute_check: passed
 - proof_kind: route_export_behavior

@@ -89,8 +89,8 @@ Write-Text (Join-Path $root 'EXPECTED_DIFF_MATRIX.md') @"
 | requirement | expected file families | validation |
 | --- | --- | --- |
 | H5 request carries wxId | CaseInfoParam.java; ClaimNofityParam.java | source field reaches payload |
-| insurer callback fallback | ExamplePushService.java | callback emits MQ |
-| no duplicate while still wait-material | CaseFlowStatusService.java; ExamplePushService.java | same-status callback does not duplicate |
+| insurer callback fallback | InsureCompanyPushService.java | callback emits MQ |
+| no duplicate while still wait-material | CaseFlowStatusService.java; InsureCompanyPushService.java | same-status callback does not duplicate |
 "@
 Write-Json (Join-Path $root 'FAMILY_CONTRACT.json') ([ordered]@{
     schema_version = 1
@@ -109,7 +109,7 @@ Write-Json (Join-Path $root 'FAMILY_CONTRACT.json') ([ordered]@{
             id = 'external_integration'
             required = $true
             weight = 90
-            first_executable_carrier = 'ExamplePushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ'
+            first_executable_carrier = 'InsureCompanyPushService.updateCaseFlowStatus -> ClaimNotifyEvent.pushMsgToMQ'
             planned_slice = 'S3'
             proof_required = @('callback emits MQ')
             forbidden_proof = @('wechat_only')
@@ -119,7 +119,7 @@ Write-Json (Join-Path $root 'FAMILY_CONTRACT.json') ([ordered]@{
             id = 'lifecycle_cleanup_retention'
             required = $true
             weight = 85
-            first_executable_carrier = 'ExamplePushService old/new status guard'
+            first_executable_carrier = 'InsureCompanyPushService old/new status guard'
             planned_slice = 'S3'
             proof_required = @('same-status callback does not duplicate')
             forbidden_proof = @('happy_path_only')

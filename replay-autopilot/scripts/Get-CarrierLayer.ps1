@@ -10,13 +10,13 @@
     The carrier class name to validate.
 
 .PARAMETER BaselineRoot
-    Path to the baseline repository root (default: D:\opt\claim).
+    Path to the baseline repository root. Defaults to AI_WORKFLOW_PROJECT_ROOT.
 
 .PARAMETER Worktree
     Path to the worktree (optional, overrides BaselineRoot).
 
 .EXAMPLE
-    .\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "D:\opt\claim"
+    .\Get-CarrierLayer.ps1 -Carrier "AiApplyClaimApiTaskProcessor" -BaselineRoot "<PROJECT_ROOT>"
 
 .OUTPUTS
     System.Collections.Hashtable with layer, file, and reason fields.
@@ -27,7 +27,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Carrier,
 
-    [string]$BaselineRoot = "D:\opt\claim",
+    [string]$BaselineRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
 
     [string]$Worktree
 )

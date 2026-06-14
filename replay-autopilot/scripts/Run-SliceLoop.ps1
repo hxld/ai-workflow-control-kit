@@ -30,6 +30,7 @@ param(
     [string]$ReasoningEffort = '',
     [string]$Sandbox = 'danger-full-access',
     [string]$Approval = 'never',
+    [string]$MavenSettings = '',
     [int]$TimeoutMinutes = 240,
     [int]$MaxSlices = 3,
     [switch]$ValidateOnly
@@ -56,6 +57,19 @@ function Expand-Template {
         $output = $output.Replace('{{' + $key + '}}', [string]$Values[$key])
     }
     return $output
+}
+
+function Get-MavenArgumentList {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
+    return @('-s', $MavenSettings)
+}
+
+function Get-MavenSettingsCommandSegment {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return '' }
+    $escaped = $MavenSettings -replace '"', '\"'
+    return ('-s "{0}"' -f $escaped)
 }
 
 function Read-JsonObject {
@@ -498,8 +512,8 @@ function Invoke-GreenPhaseNoMockGate {
         } else {
             $testExecutionResult.reason = 'test_execution_running'
 
-            $mavenArgs = @(
-                '-s', 'D:\maven\settings\settings.xml',
+            $mavenArgs = @(Get-MavenArgumentList -MavenSettings $MavenSettings)
+            $mavenArgs += @(
                 '-f', (Join-Path $Worktree 'pom.xml'),
                 'test',
                 '-pl', $testModule,
@@ -1860,7 +1874,7 @@ function Invoke-Phase0PrecheckGate {
         [int]$SliceIndex,
         [Parameter(Mandatory = $true)]
         [string]$RunnerContractPath,
-        [string]$MavenSettings = 'D:\maven\settings\settings.xml'
+        [string]$MavenSettings = ''
     )
 
     $gateScript = Join-Path $PSScriptRoot 'phase0-precheck.ps1'
@@ -3830,7 +3844,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -4059,6 +4073,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         SURFACE_CARRIER_SCAN = $surfaceCarrierScanPath
         FEATURE_CLASSIFICATION = $featureClassificationPath
         SYSTEM_CONTEXT_DIR = $systemContextDirFull
+        MAVEN_SETTINGS_ARG = Get-MavenSettingsCommandSegment -MavenSettings $MavenSettings
         RUN_LABEL = $RunLabel
         ROUND_ID = $RoundId
         SLICE_INDEX = $i
@@ -4221,7 +4236,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         break
     }
     # v431: Phase0 precheck gate (test framework validation)
-    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
     if (-not [bool]$phase0Precheck.CanProceed) {
         Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
@@ -4390,7 +4405,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             break
         }
         # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings 'D:\maven\settings\settings.xml'
+        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
         if (-not [bool]$phase0Precheck.CanProceed) {
             Write-Host "Phase0 precheck gate failed for repaired slice ${i}: $($phase0Precheck.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck_after_repair: $($phase0Precheck.Blocker)"

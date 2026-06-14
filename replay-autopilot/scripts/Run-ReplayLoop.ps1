@@ -23,6 +23,19 @@ function Resolve-AbsolutePath {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function Get-MavenArgumentList {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
+    return @('-s', $MavenSettings)
+}
+
+function Get-MavenSettingsCommandSegment {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return '' }
+    $escaped = $MavenSettings -replace '"', '\"'
+    return ('-s "{0}"' -f $escaped)
+}
+
 function Get-Sha256Hex {
     param([string]$Path)
 
@@ -814,7 +827,8 @@ function Repair-PolicyRebuildPlanHarness {
     param(
         [string]$ReplayRoot,
         [string]$Worktree,
-        [string]$PlanResultJsonPath
+        [string]$PlanResultJsonPath,
+        [string]$MavenSettings = ''
     )
 
     $repairPath = Join-Path $ReplayRoot 'PLAN_POLICY_REBUILD_HARNESS_REPAIR.json'
@@ -901,7 +915,13 @@ function Repair-PolicyRebuildPlanHarness {
     }
 
     $worktreePom = Join-Path $Worktree 'pom.xml'
-    $compileCommand = 'mvn -s D:\maven\settings\settings.xml -f "{0}" -pl claim-server -am test-compile' -f $worktreePom
+    $compileCommandParts = @('mvn')
+    $mavenSettingsSegment = Get-MavenSettingsCommandSegment -MavenSettings $MavenSettings
+    if (-not [string]::IsNullOrWhiteSpace($mavenSettingsSegment)) {
+        $compileCommandParts += $mavenSettingsSegment
+    }
+    $compileCommandParts += @('-f', ('"{0}"' -f $worktreePom), '-pl', 'claim-server', '-am', 'test-compile')
+    $compileCommand = $compileCommandParts -join ' '
     $expectedClass = 'claim-server/src/test/java/com/huize/claim/core/ai/task/AiClaimRebuildPathTest.java'
     $expectedMethod = 'testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
     $firstRed = 'AiClaimRebuildPathTest.testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
@@ -986,7 +1006,8 @@ function Ensure-PlanTestCompileEvidence {
     param(
         [string]$ReplayRoot,
         [string]$Worktree,
-        [string]$PlanResultJsonPath
+        [string]$PlanResultJsonPath,
+        [string]$MavenSettings = ''
     )
 
     if (-not (Test-Path -LiteralPath $PlanResultJsonPath -PathType Leaf)) {
@@ -1058,8 +1079,8 @@ function Ensure-PlanTestCompileEvidence {
 
     $stdoutPath = Join-Path $ReplayRoot 'test-compile-evidence.stdout.log'
     $stderrPath = Join-Path $ReplayRoot 'test-compile-evidence.stderr.log'
-    $mvnArgs = @(
-        '-s', 'D:\maven\settings\settings.xml',
+    $mvnArgs = @(Get-MavenArgumentList -MavenSettings $MavenSettings)
+    $mvnArgs += @(
         '-f', $worktreePom,
         '-pl', $moduleName,
         '-am',
@@ -2177,6 +2198,25 @@ function Get-LatestKnowledgeVersion {
     }
 
     $candidates = New-Object System.Collections.Generic.List[object]
+    $workflowLatestPath = Join-Path $repo 'workflow-history\latest.json'
+    if (Test-Path -LiteralPath $workflowLatestPath) {
+        try {
+            $workflowLatest = Get-Content -LiteralPath $workflowLatestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $latestVersionText = [string]$workflowLatest.latest
+            if ($latestVersionText -match '^v([0-9]+)$') {
+                $candidates.Add([pscustomobject]@{
+                    Number = [int]$matches[1]
+                    Version = $latestVersionText
+                    Source = $workflowLatestPath
+                    LastWriteTime = (Get-Item -LiteralPath $workflowLatestPath).LastWriteTime
+                    Kind = 'workflow-history-latest'
+                })
+            }
+        } catch {
+            Write-Warning "Unable to read workflow-history latest version: $workflowLatestPath"
+        }
+    }
+
     $historyDir = Join-Path $repo 'custom-skills-history'
     if (Test-Path -LiteralPath $historyDir) {
         Get-ChildItem -LiteralPath $historyDir -File -Filter 'v*.md' | ForEach-Object {
@@ -2663,6 +2703,7 @@ $codexReasoningEffort = if ($config.ContainsKey('codex_reasoning_effort')) { $co
 $claudeModel = if ($config.ContainsKey('claude_model')) { $config['claude_model'] } else { '' }
 $sandbox = if ($config.ContainsKey('codex_sandbox')) { $config['codex_sandbox'] } else { 'danger-full-access' }
 $approval = if ($config.ContainsKey('codex_approval')) { $config['codex_approval'] } else { 'never' }
+$mavenSettings = Get-ConfigValueOrDefault -Config $config -Key 'maven_settings' -DefaultValue ''
 $skillSourceRoot = if ($config.ContainsKey('skill_source_root')) { Resolve-AbsolutePath $config['skill_source_root'] } else { '' }
 $knowledgeRepo = if ($config.ContainsKey('knowledge_repo')) { Resolve-AbsolutePath $config['knowledge_repo'] } else { '' }
 $evolutionWorkDir = Resolve-EvolutionWorkDir -ScriptRoot $scriptRoot -ProjectRoot $projectRoot
@@ -4118,7 +4159,7 @@ $(foreach ($a in $missingPlanArtifacts) { "- ``$replayRoot\$a``" })
 3. Do NOT modify existing plan artifacts that are not listed as missing. ``PLAN_RESULT.json`` and ``IMPLEMENTATION_CONTRACT.md`` are read-only when they already exist; preserve their existing ``test_infrastructure_check`` exactly, especially ``test_module_for_target`` and ``compilation_dry_run_command``.
 4. Do NOT write production code, tests, deploy artifacts, install artifacts, or package artifacts.
 5. For a ``PROCEED`` ``PLAN_RESULT.json``, you MUST NOT run Maven in this repair prompt:
-   - Declare only the intended isolated dry-run command: ``mvn -s D:\maven\settings\settings.xml -f "$worktree\pom.xml" -pl <test_module_for_target> -am test-compile``.
+   - Declare only the intended isolated dry-run command: ``mvn [optional -s <settings.xml>] -f "$worktree\pom.xml" -pl <test_module_for_target> -am test-compile``.
    - Set ``test_infrastructure_check.compilation_dry_run_evidence_file`` to ``TEST_INFRASTRUCTURE_DRY_RUN.json`` under ``$replayRoot``.
    - The runner materializes that evidence file after this repair returns and before ``Invoke-PlanSchemaFailFast.ps1``.
    - If static inspection shows the harness cannot work, write ``plan_status: BLOCKED`` with a concrete ``blocker``. Do not claim ``PROCEED``.
@@ -4246,11 +4287,11 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
     }
 
     $planMachineContractPath = Join-Path $replayRoot 'PLAN_RESULT.json'
-    $policyHarnessRepaired = Repair-PolicyRebuildPlanHarness -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath
+    $policyHarnessRepaired = Repair-PolicyRebuildPlanHarness -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath -MavenSettings $mavenSettings
     if ($policyHarnessRepaired) {
         Write-Host "Policy rebuild Plan machine contract normalized to claim-server test harness."
     }
-    Ensure-PlanTestCompileEvidence -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath
+    Ensure-PlanTestCompileEvidence -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath -MavenSettings $mavenSettings
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRoot -PlanResultPath $planMachineContractPath -Worktree $worktree | Out-Null
     if ($LASTEXITCODE -ne 0) {
         $schemaFailPath = Join-Path $replayRoot 'PLAN_SCHEMA_FAILFAST.json'
@@ -5250,6 +5291,7 @@ Do not create new production files, test files, or worktree changes.
             '-MaxSlices', $phase1MaxSlices
         )
         if ($allowCodexExecutorActual) { $phase1Args += '-AllowCodexExecutor' }
+        if (-not [string]::IsNullOrWhiteSpace($mavenSettings)) { $phase1Args += @('-MavenSettings', $mavenSettings) }
         $phase1Args = Add-AgentModelArgs -BaseArgs $phase1Args -Model $phase1Model -ReasoningEffort $phase1ReasoningEffort
         & powershell @phase1Args
         if ($LASTEXITCODE -ne 0) {

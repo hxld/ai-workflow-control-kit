@@ -120,6 +120,25 @@ function Get-LatestKnowledgeVersion {
     }
 
     $candidates = New-Object System.Collections.Generic.List[object]
+    $workflowLatestPath = Join-Path $repo 'workflow-history\latest.json'
+    if (Test-Path -LiteralPath $workflowLatestPath) {
+        try {
+            $workflowLatest = Get-Content -LiteralPath $workflowLatestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $latestVersionText = [string]$workflowLatest.latest
+            if ($latestVersionText -match '^v([0-9]+)$') {
+                $candidates.Add([pscustomobject]@{
+                    Number = [int]$matches[1]
+                    Version = $latestVersionText
+                    Source = $workflowLatestPath
+                    LastWriteTime = (Get-Item -LiteralPath $workflowLatestPath).LastWriteTime
+                    Kind = 'workflow-history-latest'
+                }) | Out-Null
+            }
+        } catch {
+            Write-Warning "Unable to read workflow-history latest version: $workflowLatestPath"
+        }
+    }
+
     $historyDir = Join-Path $repo 'custom-skills-history'
     if (Test-Path -LiteralPath $historyDir) {
         Get-ChildItem -LiteralPath $historyDir -File -Filter 'v*.md' | ForEach-Object {
@@ -461,6 +480,8 @@ if ($ValidateOnly) {
         project_root = $projectRoot
         knowledge_repo = $knowledgeRepo
         latest_knowledge_version = $latestVersion.Version
+        latest_knowledge_source = $latestVersion.Source
+        latest_knowledge_kind = $latestVersion.Kind
         replay_root_base = $replayRootBaseForLatest
         evidence_root = $evidenceRoot
         start_round = $initialStartRound

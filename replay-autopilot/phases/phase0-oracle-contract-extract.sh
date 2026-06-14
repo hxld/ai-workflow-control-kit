@@ -6,6 +6,8 @@ echo "=== ORACLE_CONTRACT_EXTRACTION ==="
 REPLAY_ROOT="$1"
 ORACLE_COMMIT="$2"
 REPO_PATH="$3"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AUTOPILOT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Check required arguments
 if [ -z "$REPLAY_ROOT" ] || [ -z "$ORACLE_COMMIT" ]; then
@@ -15,7 +17,12 @@ fi
 
 # Default repo path
 if [ -z "$REPO_PATH" ]; then
-    REPO_PATH="D:\opt\claim"
+    REPO_PATH="${AI_WORKFLOW_PROJECT_ROOT:-}"
+fi
+
+if [ -z "$REPO_PATH" ]; then
+    echo "Repository path is required. Pass [repo_path] or set AI_WORKFLOW_PROJECT_ROOT."
+    exit 1
 fi
 
 CONTRACTS_CACHE="$REPLAY_ROOT/../../ORACLE_CONTRACTS_CACHE.json"
@@ -30,7 +37,7 @@ if [ -f "$CONTRACTS_CACHE" ]; then
 fi
 
 # Use Python script for extraction
-EXTRACT_SCRIPT="$REPLAY_ROOT/../replay-autopilot/scripts/extract_oracle_contracts.py"
+EXTRACT_SCRIPT="${REPLAY_AUTOPILOT_ROOT:-$AUTOPILOT_ROOT}/scripts/extract_oracle_contracts.py"
 
 if [ -f "$EXTRACT_SCRIPT" ]; then
     echo "Extracting oracle contracts using Python script..."
@@ -66,5 +73,5 @@ cat > "$OUTPUT_FILE" <<'EOF'
 EOF
 
 echo "ORACLE_CONTRACT_EXTRACTION: INCOMPLETE (placeholder created)"
-echo "Please run: python3 D:\opt\replay-autopilot\scripts\extract_oracle_contracts.py \"$REPO_PATH\" \"$ORACLE_COMMIT\" > \"$OUTPUT_FILE\""
+echo "Please run: python3 <REPLAY_AUTOPILOT_ROOT>/scripts/extract_oracle_contracts.py \"$REPO_PATH\" \"$ORACLE_COMMIT\" > \"$OUTPUT_FILE\""
 exit 1

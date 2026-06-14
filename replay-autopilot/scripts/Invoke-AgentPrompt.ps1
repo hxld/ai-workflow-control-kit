@@ -677,7 +677,7 @@ $automationGuard = @(
     '- If you genuinely cannot proceed, write the requested completion file with BLOCKED status and concrete evidence instead of replying conversationally.',
     "- Maven project boundary: the only allowed project POM is $allowedPom; never run Maven with -f $protectedPomForPrompt or any POM under the protected project root.",
     '- Forbidden Maven goals in replay agent execution: never run `mvn deploy`; do not run `mvn install` unless the prompt explicitly authorizes install for an isolated replay worktree.',
-    '- Maven commands that run tests must include `-s D:\maven\settings\settings.xml` and `-f <isolated replay worktree>\pom.xml`.',
+    '- Maven commands that run tests must include `-f <isolated replay worktree>\pom.xml`; include `-s <settings.xml>` only when the replay config defines `maven_settings`.',
     '- Maven commands with `-pl <module>` must also include `-am` so reactor source modules are used instead of drifted local/remote SNAPSHOT artifacts.',
     '- In PowerShell, Maven commands containing `-Dtest`, `#`, or `-Dsurefire.failIfNoSpecifiedTests=false` should use `mvn --% ...` to avoid argument parsing false blockers.',
     '- If the target production carrier is in a module without test dependencies, place tests in an existing test-harness module; do not edit any `pom.xml` to add JUnit/Mockito/Spring Test.',

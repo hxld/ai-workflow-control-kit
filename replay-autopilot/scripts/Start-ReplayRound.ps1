@@ -72,6 +72,13 @@ function Get-ConfigValueOrDefault {
     return $DefaultValue
 }
 
+function Get-MavenSettingsCommandSegment {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return '' }
+    $escaped = $MavenSettings -replace '"', '\"'
+    return ('-s "{0}"' -f $escaped)
+}
+
 function Convert-ToBool {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
@@ -296,6 +303,8 @@ $config = Read-SimpleYaml -Path $configPathFull
 
 $projectRoot = Resolve-AbsolutePath (Require-Key $config 'project_root')
 $featureName = if ($config.ContainsKey('feature_name') -and -not [string]::IsNullOrWhiteSpace($config['feature_name'])) { $config['feature_name'] } else { 'feature' }
+$mavenSettings = Get-ConfigValueOrDefault -Config $config -Key 'maven_settings' -DefaultValue ''
+$mavenSettingsArg = Get-MavenSettingsCommandSegment -MavenSettings $mavenSettings
 $requirementSource = Resolve-AbsolutePath (Require-Key $config 'requirement_source')
 $baseCommit = Require-Key $config 'base_commit'
 $oracleBranch = Require-Key $config 'oracle_branch'
@@ -401,6 +410,7 @@ $evolutionVersion = 'unknown'
 $evolutionFileCandidates = @()
 $knowledgeRoot = Get-ConfigValueOrDefault -Config $config -Key 'knowledge_repo' -DefaultValue ''
 if (-not [string]::IsNullOrWhiteSpace($knowledgeRoot)) {
+    $evolutionFileCandidates += (Join-Path $knowledgeRoot 'workflow-history\latest.json')
     $evolutionFileCandidates += (Join-Path $knowledgeRoot 'CURRENT_VERSION.md')
 }
 $evolutionFileCandidates += (Join-Path $scriptRoot 'CURRENT_VERSION.md')
@@ -409,15 +419,29 @@ if ([string]::IsNullOrWhiteSpace($evolutionFile)) {
     $evolutionFile = $evolutionFileCandidates | Select-Object -First 1
 }
 if (Test-Path -LiteralPath $evolutionFile) {
-    $versionMatch = Select-String -Path $evolutionFile -Pattern "^\*\*Version\*\*:\s*v(\d+)" -ErrorAction SilentlyContinue
-    if ($null -ne $versionMatch) {
-        $evolutionVersion = 'v{0}' -f $versionMatch.Matches[0].Groups[1].Value
-        Write-Host "Loaded evolution version: $evolutionVersion"
+    if ((Split-Path -Leaf $evolutionFile) -ieq 'latest.json') {
+        try {
+            $workflowLatest = Get-Content -LiteralPath $evolutionFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ([string]$workflowLatest.latest -match '^v[0-9]+$') {
+                $evolutionVersion = [string]$workflowLatest.latest
+                Write-Host "Loaded evolution version: $evolutionVersion"
+            } else {
+                Write-Warning "workflow-history latest.json found but latest version pattern not matched"
+            }
+        } catch {
+            Write-Warning "workflow-history latest.json found but could not be parsed"
+        }
     } else {
-        Write-Warning "CURRENT_VERSION.md found but version pattern not matched"
+        $versionMatch = Select-String -Path $evolutionFile -Pattern "^\*\*Version\*\*:\s*v(\d+)" -ErrorAction SilentlyContinue
+        if ($null -ne $versionMatch) {
+            $evolutionVersion = 'v{0}' -f $versionMatch.Matches[0].Groups[1].Value
+            Write-Host "Loaded evolution version: $evolutionVersion"
+        } else {
+            Write-Warning "CURRENT_VERSION.md found but version pattern not matched"
+        }
     }
 } else {
-    Write-Warning "CURRENT_VERSION.md not found at $evolutionFile"
+    Write-Warning "Evolution version source not found at $evolutionFile"
 }
 $env:EVOLUTION_VERSION = $evolutionVersion
 
@@ -454,6 +478,7 @@ $values = @{
     ORACLE_DIFF_ANALYSIS = $oracleDiffAnalysisOut
     FEATURE_CLASSIFICATION = $featureClassificationOut
     SYSTEM_CONTEXT_DIR = $systemContextDirForPrompt
+    MAVEN_SETTINGS_ARG = $mavenSettingsArg
     PLAN_CANDIDATE_COUNT = $planCandidateCount
     RUN_LABEL = $runLabel
     ROUND_ID = $roundId

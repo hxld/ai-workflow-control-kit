@@ -124,12 +124,12 @@ If you proceed WITHOUT carrier validation:
    - 只有在 `pom.xml` 或既有测试明确证明 Mockito 2+ 时，才允许使用 `org.mockito.junit.MockitoJUnitRunner`、`org.mockito.ArgumentMatchers`、`invocation.getArgument(...)`。
    - 在 `closure_proof` 中记录 `mockito_compatibility_profile`，包含读取过的 `pom.xml`、至少一个既有测试 import 证据、最终选择的 import/thenAnswer 取参方式。
 9. RED/GREEN 命令必须使用本轮计划测试类。例如：
-   `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test`
+   `mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test`
    `<expected_test_class>` 必须来自 `PLAN_RESULT.json.expected_test_class` 或 `FIRST_SLICE_PROOF_PLAN.md.expected_test_class`，不得替换成无关测试类列表。
    如果命令包含 `-Dtest`、`#`、`.` 或 `-Dsurefire.failIfNoSpecifiedTests=false`，在 PowerShell 下优先使用 `mvn --%` 形态；不要把 PowerShell 参数误解析当成 RED 或环境 blocker。
 10. 覆盖率执行门禁（v478）：`coverage_delta > 0` 只能在以下两项都满足时声明：
-   - `mvn -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile` 返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_compilation_*` 字段。
-   - `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test` 实际运行目标测试，返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_execution_*` 字段。
+   - `mvn {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile` 返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_compilation_*` 字段。
+   - `mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am -Dtest=<expected_test_class>#<expected_test_method> -Dsurefire.failIfNoSpecifiedTests=false test` 实际运行目标测试，返回 exit code 0，并把命令、exit code、stdout/stderr 路径写入 `SLICE_RESULT.test_execution_*` 字段。
    如果 test-compile 失败、测试未执行、0 tests run、只创建测试文件、只描述 git diff、或只写“GREEN fix applied”，必须设置 `coverage_delta=0`，`slice_status=PARTIAL|BLOCKED`，`gap_flags` 包含 `test_compilation_failed` 或 `no_test_execution_evidence`。
 11. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若无法在现有 harness 中写出业务 RED，写 BLOCKED JSON，并说明 `red_business_assertion_not_observed`。
 12. 对本轮 `SOURCE_CHAIN_CONTRACT.json.next_required_slice` 指定的 source-chain，测试必须从真实 carrier 链路产生值；手工构造 terminal DTO、只断言字段存在、只跑旧测试都不能授权 GREEN。
@@ -368,8 +368,8 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
 12. 不允许连续三个 slice 都只修改同一 core/service/log test 家族。达到该条件时，必须切到报表/导出/模板/图片/OCR/外部 payload/API/controller/mapper 等 deploy-facing 承载点之一，或把该 surface 标为 BLOCKED 并降 coverage。
 13. 如果 forced family 是 core_entry/stateful_side_effect 且仍有 open sibling surfaces，本 slice 必须先补其中一个具体副作用 sibling；不能只新增日志、常量、DTO 或 mock-only 断言。
 14. 如果本 slice 没有关闭或推进 REQUIREMENT_FAMILY_LEDGER 中任何 OPEN/PARTIAL family，`coverage_delta` 必须为 0，`gap_flags` 必须包含 `no_progress_slice`。
-15. 严格 TDD：先写/调整 RED，运行并记录失败，再最小 GREEN。`DONE` 必须至少有一条 `phase=RED,result=fail` 的测试证据；如果 RED 命令因 PowerShell 参数解析、`-Dtest`、`-Dsurefire...` 或 wrapper 参数问题被阻断，必须立刻用 `mvn --% -s ... -f {{WORKTREE}}\pom.xml ...` 重放同一个 RED，再决定是否编码。不能把“RED 命令 blocked”当成可接受 RED，也不能在没有 RED fail 的情况下进入 GREEN；若重放仍非业务断言失败，写 BLOCKED 或 PARTIAL，并在 `gap_flags` 写 `tdd_red_not_replayed`、`feedback_loop_blocker`。
-16. Maven 必须带 `-s D:\maven\settings\settings.xml` 和 `-f {{WORKTREE}}\pom.xml`。任何带 `-pl <module>` 的 Maven test/test-compile/compile 命令都必须同时带 `-am`，否则会绕过 reactor 源码并可能误用本机 Maven 仓库里的漂移 SNAPSHOT 依赖；禁止把这种 `-am` 缺失导致的 facade/interface 编译错误报告成 `base_compile_blocker`。
+15. 严格 TDD：先写/调整 RED，运行并记录失败，再最小 GREEN。`DONE` 必须至少有一条 `phase=RED,result=fail` 的测试证据；如果 RED 命令因 PowerShell 参数解析、`-Dtest`、`-Dsurefire...` 或 wrapper 参数问题被阻断，必须立刻用 `mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml ...` 重放同一个 RED，再决定是否编码。不能把“RED 命令 blocked”当成可接受 RED，也不能在没有 RED fail 的情况下进入 GREEN；若重放仍非业务断言失败，写 BLOCKED 或 PARTIAL，并在 `gap_flags` 写 `tdd_red_not_replayed`、`feedback_loop_blocker`。
+16. Maven 必须带 `-f {{WORKTREE}}\pom.xml`；仅当 replay config 定义 `maven_settings` 时才带 `{{MAVEN_SETTINGS_ARG}}`。任何带 `-pl <module>` 的 Maven test/test-compile/compile 命令都必须同时带 `-am`，否则会绕过 reactor 源码并可能误用本机 Maven 仓库里的漂移 SNAPSHOT 依赖；禁止把这种 `-am` 缺失导致的 facade/interface 编译错误报告成 `base_compile_blocker`。
 17. 禁止执行 `mvn deploy`。默认禁止执行 `mvn install`；除非本 prompt 明确要求 isolated replay worktree 的 install，否则只能运行 `test-compile`、`test` 或必要的只读依赖检查。
 18. 禁止对主工作区运行 Maven：不得使用 `-f {{PROJECT_ROOT}}\pom.xml`，不得在 {{PROJECT_ROOT}} 下构建、测试、安装或发布。
 19. 不允许修改主工作区 {{PROJECT_ROOT}}。
@@ -502,7 +502,7 @@ Authorizing RED means all of the following are true:
 - the failure is a business assertion failure against the selected production carrier or observable output;
 - the failure is not caused by PowerShell parsing, Maven argument parsing, zero tests, missing dependency, compilation failure, environment setup, or a wrapper/tooling error.
 
-If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% -s D:\maven\settings\settings.xml -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
+If a RED command is blocked by PowerShell/Maven parsing, retry the same RED with `mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml ...` before any edit. If the retry is still not a business assertion failure, stop the slice.
 
 When RED is blocked, passes, runs zero tests, or fails for non-business tooling reasons:
 - do not edit production files;

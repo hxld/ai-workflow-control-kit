@@ -35,6 +35,8 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('agent-bridge-protocol-
 $bridgeRoot = Join-Path $tempRoot 'current'
 $archiveRoot = Join-Path $tempRoot 'runs'
 $promptPath = Join-Path $tempRoot 'initial.md'
+$defaultProtectedRoot = Join-Path $tempRoot 'protected-project'
+$originalProjectRootEnv = $env:AI_WORKFLOW_PROJECT_ROOT
 
 if ($ValidateOnly) {
     [ordered]@{
@@ -47,6 +49,9 @@ if ($ValidateOnly) {
 
 try {
     New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $defaultProtectedRoot | Out-Null
+    & git -C $defaultProtectedRoot init | Out-Null
+    $env:AI_WORKFLOW_PROJECT_ROOT = $defaultProtectedRoot
     Set-Content -LiteralPath $promptPath -Value 'Run one replay canary and write CLAUDE_RESULT.md.' -Encoding UTF8
 
     # Test 1: Init creates protocol files and WAITING_CLAUDE state.
@@ -64,7 +69,7 @@ try {
     Assert-True ((Test-Path -LiteralPath (Join-Path $bridgeRoot 'events.jsonl'))) "events.jsonl should exist"
     $initialAgentPrompt = Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_AGENT_PROMPT.md') -Raw -Encoding UTF8
     Assert-True ($initialAgentPrompt -match 'Protected Write Boundary') "CLAUDE_AGENT_PROMPT.md should include protected write boundary"
-    Assert-True ($initialAgentPrompt -match [regex]::Escape('D:\opt\claim')) "CLAUDE_AGENT_PROMPT.md should list the default protected git root"
+    Assert-True ($initialAgentPrompt -match [regex]::Escape($defaultProtectedRoot)) "CLAUDE_AGENT_PROMPT.md should list the default protected git root"
 
     # Test 2: Force init clears stale logs so a reused bridge root cannot mislead monitors.
     $staleLogDir = Join-Path $bridgeRoot 'logs\cycle-0001\claude'
@@ -274,6 +279,7 @@ Phase1: DONE
         temp_root = $tempRoot
     } | ConvertTo-Json -Depth 8
 } finally {
+    $env:AI_WORKFLOW_PROJECT_ROOT = $originalProjectRootEnv
     if (-not $KeepTemp -and (Test-Path -LiteralPath $tempRoot)) {
         $resolved = Resolve-AbsolutePath $tempRoot
         $tempBase = Resolve-AbsolutePath ([System.IO.Path]::GetTempPath())

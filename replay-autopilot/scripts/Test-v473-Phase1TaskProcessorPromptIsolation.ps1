@@ -41,10 +41,10 @@ $cases += (Assert-True -Name 'phase1_no_exact_facade_only_entry_rule' -Condition
 $condition = -not $prompt.Contains('claim-core has no test')
 $cases += (Assert-True -Name 'phase1_no_unconditional_claim_core_test_ban' -Condition $condition)
 
-$condition = $prompt.Contains('claim-server/src/test/java') -and $prompt.Contains('claim-core/src/test') -and $prompt.Contains('-pl claim-server -am') -and $prompt.Contains('JUnit/Mockito/Spring Test')
-$cases += (Assert-True -Name 'phase1_claim_core_carrier_uses_claim_server_harness' -Condition $condition)
+$condition = $prompt.Contains('测试 harness 模块由当前 worktree 的实际测试依赖') -and $prompt.Contains('候选模块 `pom.xml`') -and $prompt.Contains('-pl <test-module>') -and $prompt.Contains('-am') -and $prompt.Contains('JUnit/Mockito/Spring Test')
+$cases += (Assert-True -Name 'phase1_carrier_uses_existing_harness_module' -Condition $condition)
 
-$condition = $prompt.Contains('mvn --% -s D:\maven\settings\settings.xml') -and $prompt.Contains('-Dtest=<expected_test_class>#<expected_test_method>') -and $prompt.Contains('-Dsurefire.failIfNoSpecifiedTests=false')
+$condition = $prompt.Contains('mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am') -and $prompt.Contains('-Dtest=<expected_test_class>#<expected_test_method>') -and $prompt.Contains('-Dsurefire.failIfNoSpecifiedTests=false')
 $cases += (Assert-True -Name 'phase1_powershell_maven_test_command_is_copy_ready' -Condition $condition)
 
 $condition = $prompt.Contains('coverage_delta > 0') -and $prompt.Contains('test_compilation_exit_code') -and $prompt.Contains('test_execution_exit_code') -and $prompt.Contains('no_test_execution_evidence')

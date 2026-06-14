@@ -4,6 +4,7 @@
     [ValidateSet('Phase0', 'Plan')]
     [string]$Stage = 'Phase0',
     [switch]$ValidateOnly,
+    [switch]$SkipCarrierAndOracleChecks,
     [string]$Worktree = ''
 )
 
@@ -1268,7 +1269,7 @@ if ($Stage -eq 'Phase0') {
     # New services are expected NOT to exist in the codebase yet
     $shouldCheckCarrierExistence = -not $newServiceIsTrue
 
-    if (-not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
+    if (-not $SkipCarrierAndOracleChecks -and -not [string]::IsNullOrWhiteSpace($carrierNameForExistenceCheck) -and $carrierNameForExistenceCheck -notmatch '^(TBD|unknown|N/A|placeholder|NONE_FOUND)' -and $shouldCheckCarrierExistence) {
         $worktreePathForCarrierCheck = if ([string]::IsNullOrWhiteSpace($Worktree)) { Join-Path $replayRootFull 'worktree' } else { Resolve-AbsolutePath $Worktree }
 
         # v395: Check if carrier exists in oracle diff before searching codebase
@@ -1297,12 +1298,11 @@ if ($Stage -eq 'Phase0') {
             # Try to get project root from environment or common locations
             $projectRoot = $env:PROJECT_ROOT
             if ([string]::IsNullOrWhiteSpace($projectRoot)) {
-                # Try common project root locations
+                $projectRoot = $env:AI_WORKFLOW_PROJECT_ROOT
+            }
+            if ([string]::IsNullOrWhiteSpace($projectRoot)) {
                 $replayRootParent = Split-Path $replayRootFull -Parent
-                $projectRootCandidates = @(
-                    'D:\opt\claim',
-                    'C:\projects\claim'
-                )
+                $projectRootCandidates = @()
                 # Add inferred parent if valid
                 if (-not [string]::IsNullOrWhiteSpace($replayRootParent)) {
                     $inferredParent = Split-Path $replayRootParent -Parent
@@ -1388,7 +1388,7 @@ if ($Stage -eq 'Phase0') {
     $oracleCommit = if (Test-Path -LiteralPath $oracleCommitPath) { (Get-Content -LiteralPath $oracleCommitPath -Raw -Encoding UTF8).Trim() } else { '' }
     $oracleDiffPath = Join-Path $replayRootFull 'ORACLE_DIFF_ANALYSIS.json'
 
-    if ($carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
+    if (-not $SkipCarrierAndOracleChecks -and $carrierFieldIssues.Count -eq 0 -and (Test-Path -LiteralPath $worktreePath) -and $oracleCommit) {
         $carrierVerifyScript = Join-Path $PSScriptRoot 'Invoke-PlanCarrierSearchVerification.ps1'
         if (Test-Path -LiteralPath $carrierVerifyScript) {
             $planResultPathForCarrier = Join-Path $replayRootFull 'PLAN_RESULT.md'

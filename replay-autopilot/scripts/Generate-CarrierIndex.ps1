@@ -7,7 +7,7 @@ Scans the codebase for all Facade and Controller classes, writes them to
 SURFACE_CARRIER_SCAN.md for use by planning prompts.
 
 .PARAMETER ProjectRoot
-Root directory of the project (e.g., D:\opt\claim)
+Root directory of the project (e.g., <PROJECT_ROOT>)
 
 .PARAMETER OutputPath
 Output file path (default: {ProjectRoot}\SURFACE_CARRIER_SCAN.md)

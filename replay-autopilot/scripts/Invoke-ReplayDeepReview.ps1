@@ -133,7 +133,7 @@ if ($NoExecute -or $Executor -eq 'manual') {
 }
 
 $logDir = Join-Path $replayRootFull 'logs\deep-review'
-$workDir = if (Test-Path -LiteralPath 'D:\opt\claim') { 'D:\opt\claim' } else { $replayRootFull }
+$workDir = if (-not [string]::IsNullOrWhiteSpace($env:AI_WORKFLOW_PROJECT_ROOT) -and (Test-Path -LiteralPath $env:AI_WORKFLOW_PROJECT_ROOT)) { $env:AI_WORKFLOW_PROJECT_ROOT } else { $replayRootFull }
 $invokeArgs = @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',

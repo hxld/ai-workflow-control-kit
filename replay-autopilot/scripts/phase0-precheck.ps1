@@ -10,7 +10,7 @@ param(
     [string]$Worktree,
 
     [Parameter(Mandatory = $false)]
-    [string]$MavenSettings = 'D:\maven\settings\settings.xml',
+    [string]$MavenSettings = '',
 
     [Parameter(Mandatory = $false)]
     [bool]$DiscoveryMode = $false,
@@ -22,6 +22,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Get-MavenArgumentList {
+    param([string]$MavenSettings)
+    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
+    return @('-s', $MavenSettings)
+}
 
 function Test-TestFramework {
     <#
@@ -52,8 +58,8 @@ function Test-TestFramework {
 
     # Test 1: Verify test dependencies
     Write-Host "Checking test dependencies..." -ForegroundColor Gray
-    $depArgs = @(
-        '-s', $MavenSettingsPath,
+    $depArgs = @(Get-MavenArgumentList -MavenSettings $MavenSettingsPath)
+    $depArgs += @(
         '-f', $pomPath,
         'dependency:tree',
         '-Dscope=test',
@@ -71,8 +77,8 @@ function Test-TestFramework {
 
     # Test 2: Compile test sources
     Write-Host "Compiling test sources..." -ForegroundColor Gray
-    $compileArgs = @(
-        '-s', $MavenSettingsPath,
+    $compileArgs = @(Get-MavenArgumentList -MavenSettings $MavenSettingsPath)
+    $compileArgs += @(
         '-f', $pomPath,
         'test-compile',
         '-pl', 'claim-server',

@@ -7,7 +7,7 @@
     Scans baseline for potential carriers and outputs BASELINE_CARRIER_INDEX.json.
 
 .PARAMETER BaselineRoot
-    Path to the baseline repository root (default: D:\opt\claim).
+    Path to the baseline repository root. Defaults to AI_WORKFLOW_PROJECT_ROOT.
 
 .PARAMETER OutputPath
     Path to output JSON file (default: .\BASELINE_CARRIER_INDEX.json).
@@ -16,12 +16,12 @@
     Git commit hash for baseline verification (default: e19c16c).
 
 .EXAMPLE
-    .\Build-BaselineCarrierIndex.ps1 -BaselineRoot "D:\opt\claim" -OutputPath "BASELINE_CARRIER_INDEX.json"
+    .\Build-BaselineCarrierIndex.ps1 -BaselineRoot "<PROJECT_ROOT>" -OutputPath "BASELINE_CARRIER_INDEX.json"
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BaselineRoot = "D:\opt\claim",
+    [string]$BaselineRoot = "$env:AI_WORKFLOW_PROJECT_ROOT",
     [string]$OutputPath = ".\BASELINE_CARRIER_INDEX.json",
     [string]$BaselineCommit = "e19c16c"
 )
@@ -29,6 +29,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Resolve absolute paths
+if ([string]::IsNullOrWhiteSpace($BaselineRoot)) {
+    throw "BaselineRoot is required. Pass -BaselineRoot or set AI_WORKFLOW_PROJECT_ROOT."
+}
 $BaselineRoot = (Resolve-Path $BaselineRoot -ErrorAction SilentlyContinue).Path
 $OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 

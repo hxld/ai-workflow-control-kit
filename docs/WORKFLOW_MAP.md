@@ -208,3 +208,22 @@
 | [知识库分类体系](./agents/reference/knowledge-base-design/knowledge-taxonomy.md) | 各阶段消费的知识类型不同：需求阶段吃 Knowledge，实现阶段吃 Facts |
 | [系统蒸馏](./agents/reference/distillation-methodology/OVERVIEW.md) | S3（用例级 API）影响 skill 粒度设计；S6（验证）影响 replay 策略 |
 | [replay-autopilot](../replay-autopilot/) | 端到端验证工作流编排的正确性 |
+
+## 新增组件引用
+
+以下是在本地图基础上新增的组件：
+
+### Goal 模式 skill（`agents/skills/goal-mode/`）
+- 用途：将长程任务封装为结构化 Goal，定义 title/inputs/constraints/success_criteria/failure_modes/deliverables
+- 位置在工作流中：可以在任何阶段启动 —— 一个复杂需求可以用 Goal 封装后由 Agent 自主执行
+- 与 BDD/TDD 的关系：BDD 定方向、TDD 定质量、Goal 定执行
+
+### PRD 质量流水线（`requirement-assessment` 的增强）
+- 用途：在需求评估阶段对 PRD 执行三层体检（规范层/完备层/自洽层）
+- 影响：在现有 100 分制基础上增加 ±10 分的 PRD 质量附加分
+- 反哺：检测到的系统性 PRD 问题可反哺到知识库
+
+### 需求工作空间隔离（`scripts/start-requirement-workspace.js`）
+- 用途：为跨服务需求创建隔离工作空间（PRD + 方案 + 多服务 worktree）
+- 位置：紧接需求评估之后，在规划/实现之前
+- 适用：涉及 2+ 服务的需求

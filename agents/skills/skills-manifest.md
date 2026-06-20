@@ -52,6 +52,7 @@ Non-negotiables:
 | `req-alignment-check` | Freeze requirements, literals, surfaces, and open issues before planning. |
 | `ideate` | Run dialogue design or planning brainstorm before technical design is frozen. |
 | `deep-plan` | Produce technical design, OpenSpec, surface matrix, and expected diff matrix. |
+| `goal-mode` | Define structured goals for long-running autonomous agent tasks. |
 | `dev-workflow` | Implement only after planning, OpenSpec, TDD, isolation, and scope gates pass. |
 | `gen-tests` | Generate and verify tests from requirement and surface matrices. |
 | `deep-review` | Review implementation risks and regressions. |

@@ -248,6 +248,19 @@ function Get-BlockerRule {
                 severity = 'P0'
             }
         }
+        '^maven_pl_without_am_command_guard$' {
+            return [ordered]@{
+                blocker = $Fingerprint
+                root_cause_layer = 'runner_command_policy'
+                root_cause = 'Slice executor ran a Maven command with -pl for compile/test goals without -am, so dependent modules may be skipped and replay evidence becomes unreliable.'
+                required_fix = 'Inject command-guard feedback into the retry prompt and keep a machine gate requiring -am for every Maven compile/test command that uses -pl.'
+                prevention_gate = 'Phase1 retry prompt must name maven_pl_without_am_forbidden and show the valid -pl <module> -am command shape before retrying.'
+                regression_test = 'Command-guard retry fixture proves PHASE1_SLICE retry prompt contains maven_pl_without_am_forbidden and -pl <test-module> -am guidance.'
+                next_validation = 'Next Phase1 retry either uses -am with -pl or writes BLOCKED SLICE_RESULT without running a forbidden command.'
+                machine_gate = 'maven_project_list_also_make_required'
+                severity = 'P0'
+            }
+        }
         '^schema_contract_discovery_gap$' {
             return [ordered]@{
                 blocker = $Fingerprint
@@ -336,6 +349,23 @@ if ($fingerprints.Count -eq 0 -and $null -ne $control -and $null -ne $control.la
 }
 if ($fingerprints.Count -eq 0) {
     Add-UniqueString $fingerprints 'unknown'
+}
+
+$commandGuardSignals = New-Object System.Collections.Generic.List[string]
+Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.exec.json' -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+        $exec = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        $category = [string]$exec.failure_category
+        $reasons = [string]$exec.command_guard_reasons
+        if ($category -eq 'command_guard_violation' -and $reasons -match 'maven_pl_without_am_forbidden') {
+            $commandGuardSignals.Add($_.FullName) | Out-Null
+        }
+    } catch {
+        continue
+    }
+}
+if ($commandGuardSignals.Count -gt 0) {
+    Add-UniqueString $fingerprints 'maven_pl_without_am_command_guard'
 }
 
 $repeated = New-Object System.Collections.Generic.List[string]

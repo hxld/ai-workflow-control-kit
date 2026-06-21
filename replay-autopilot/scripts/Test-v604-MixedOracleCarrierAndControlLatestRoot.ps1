@@ -98,7 +98,7 @@ first_red_test: ExampleBackendTaskProcessorTest.handleTaskResponse_InvokesBacken
     Assert-True 'control_has_cycle_root_resolver' ($controlText.Contains('function Resolve-CycleReplayRootForSummary'))
     Assert-True 'control_passes_replay_root_to_summary' ($controlText.Contains("'-ReplayRoot', `$currentReplayRoot"))
     Assert-True 'control_resolver_all_versions_same_cycle' ($controlText.Contains('$allCandidates = @($candidates + $fallback'))
-    Assert-True 'control_resolver_sorts_highest_round' ($controlText -match 'Sort-Object\s+Round,\s*Updated\s+-Descending')
+    Assert-True 'control_resolver_sorts_highest_version_then_round' ($controlText -match 'Sort-Object\s+Version,\s*Round,\s*Updated\s+-Descending')
 
     $sliceVerifierText = Get-Content -LiteralPath $sliceVerifier -Raw -Encoding UTF8
     Assert-True 'slice_verifier_uses_meta_authorizing_flags' ($sliceVerifierText.Contains('$metaAuthorizingFlags'))

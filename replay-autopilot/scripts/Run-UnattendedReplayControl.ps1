@@ -97,6 +97,14 @@ function Get-VersionNumberFromText {
     return [int]$match.Groups[1].Value
 }
 
+function Get-VersionNumberFromReplayRootName {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return -1 }
+    $match = [regex]::Match($Name, '-v([0-9]+)-')
+    if (-not $match.Success) { return -1 }
+    return [int]$match.Groups[1].Value
+}
+
 function Resolve-EvidenceRootFromReplayBase {
     param([string]$ReplayRootBase)
     if ([string]::IsNullOrWhiteSpace($ReplayRootBase)) { return '' }
@@ -203,6 +211,7 @@ function Resolve-CycleReplayRootForSummary {
     $parent = Split-Path -Parent $ReplayRootBase
     $baseLeaf = Split-Path -Leaf $ReplayRootBase
     if (-not (Test-Path -LiteralPath $parent)) { return '' }
+    $baseVersionNumber = Get-VersionNumberFromReplayRootName -Name $baseLeaf
 
     $candidates = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
         $_.Name -match ('^' + [regex]::Escape($baseLeaf) + '-r(?<round>[0-9]+)$')
@@ -210,11 +219,12 @@ function Resolve-CycleReplayRootForSummary {
         [pscustomobject]@{
             Path = $_.FullName
             Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Version = Get-VersionNumberFromReplayRootName -Name $_.Name
             Updated = $_.LastWriteTime
         }
     } | Where-Object {
         $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds)
-    } | Sort-Object Round, Updated -Descending)
+    } | Sort-Object Version, Round, Updated -Descending)
 
     $versionMatch = [regex]::Match($baseLeaf, '-v[0-9]+-')
     if ($versionMatch.Success) {
@@ -231,13 +241,15 @@ function Resolve-CycleReplayRootForSummary {
         [pscustomobject]@{
             Path = $_.FullName
             Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Version = Get-VersionNumberFromReplayRootName -Name $_.Name
             Updated = $_.LastWriteTime
         }
     } | Where-Object {
-        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds)
-    } | Sort-Object Round, Updated -Descending)
+        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds) -and
+        ($baseVersionNumber -lt 0 -or $_.Version -ge $baseVersionNumber)
+    } | Sort-Object Version, Round, Updated -Descending)
 
-    $allCandidates = @($candidates + $fallback | Sort-Object Round, Updated -Descending)
+    $allCandidates = @($candidates + $fallback | Sort-Object Version, Round, Updated -Descending)
     if ($allCandidates.Count -gt 0) {
         return [System.IO.Path]::GetFullPath([string]$allCandidates[0].Path)
     }

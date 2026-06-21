@@ -421,6 +421,91 @@ function Get-PermanentExecutorResourceBlocker {
     return [pscustomobject]@{ IsResourceBlocker = $true; Category = $category; Diagnostic = $diagnostic }
 }
 
+function Get-CommandGuardRetryGuidance {
+    param([string]$LogDir)
+
+    $meta = Get-LatestExecutorMetadata -LogDir $LogDir
+    if ($null -eq $meta) {
+        return [pscustomobject]@{
+            HasCommandGuardViolation = $false
+            ReasonText = ''
+            SampleText = '- (none parsed)'
+            GuidanceText = ''
+        }
+    }
+
+    $category = [string]$meta.failure_category
+    $rawReasons = [string]$meta.command_guard_reasons
+    if ($category -ne 'command_guard_violation' -and [string]::IsNullOrWhiteSpace($rawReasons)) {
+        return [pscustomobject]@{
+            HasCommandGuardViolation = $false
+            ReasonText = ''
+            SampleText = '- (none parsed)'
+            GuidanceText = ''
+        }
+    }
+
+    $guardLogPath = [string]$meta.command_guard_log
+    $reasonValues = New-Object System.Collections.Generic.List[string]
+    $sampleCommands = New-Object System.Collections.Generic.List[string]
+
+    foreach ($part in @($rawReasons -split ';')) {
+        $trimmed = ([string]$part).Trim()
+        if ($trimmed -match '^([^:]+)') {
+            $reasonValues.Add($matches[1]) | Out-Null
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($guardLogPath) -and (Test-Path -LiteralPath $guardLogPath)) {
+        foreach ($line in @(Get-Content -LiteralPath $guardLogPath -Encoding UTF8)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $entry = $line | ConvertFrom-Json
+                if ($null -ne $entry.PSObject.Properties['reason']) {
+                    $reason = [string]$entry.reason
+                    if (-not [string]::IsNullOrWhiteSpace($reason)) {
+                        $reasonValues.Add($reason) | Out-Null
+                    }
+                }
+                if ($null -ne $entry.PSObject.Properties['command_line']) {
+                    $command = [string]$entry.command_line
+                    if (-not [string]::IsNullOrWhiteSpace($command)) {
+                        if ($command.Length -gt 500) { $command = $command.Substring(0, 500) + '...' }
+                        $sampleCommands.Add($command) | Out-Null
+                    }
+                }
+            } catch {
+                continue
+            }
+        }
+    }
+
+    $uniqueReasons = @($reasonValues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    $uniqueSamples = @($sampleCommands | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique | Select-Object -First 5)
+    $guidance = New-Object System.Collections.Generic.List[string]
+    if ($uniqueReasons -contains 'maven_pl_without_am_forbidden') {
+        $guidance.Add('Every Maven command that uses -pl and runs compile, test-compile, or test must also include -am in the same command.') | Out-Null
+        $guidance.Add('Use this shape for replay Maven tests: mvn <settings> -f <WORKTREE>\pom.xml -pl <test-module> -am test-compile, and mvn --% <settings> -f <WORKTREE>\pom.xml -pl <test-module> -am -Dtest=<class>#<method> -Dsurefire.failIfNoSpecifiedTests=false test.') | Out-Null
+        $guidance.Add('Do not repeat the forbidden -pl command without -am. If a valid module cannot be identified, write BLOCKED SLICE_RESULT JSON instead of running Maven.') | Out-Null
+    }
+    if ($uniqueReasons -contains 'protected_root_pom_forbidden') {
+        $guidance.Add('Never run Maven against the protected project root pom.xml; all build/test commands must point -f to the isolated worktree pom.xml.') | Out-Null
+    }
+    if ($uniqueReasons -contains 'maven_deploy_forbidden') {
+        $guidance.Add('Never run Maven deploy during replay. Use only compile/test/test-compile commands required by the slice.') | Out-Null
+    }
+    if ($guidance.Count -eq 0 -and $uniqueReasons.Count -gt 0) {
+        $guidance.Add('Do not repeat any command-guard violation. Convert the observed guard reason into a valid command or write BLOCKED SLICE_RESULT JSON.') | Out-Null
+    }
+
+    return [pscustomobject]@{
+        HasCommandGuardViolation = ($category -eq 'command_guard_violation' -or $uniqueReasons.Count -gt 0)
+        ReasonText = if ($uniqueReasons.Count -gt 0) { $uniqueReasons -join ', ' } else { $rawReasons }
+        SampleText = if ($uniqueSamples.Count -gt 0) { ($uniqueSamples | ForEach-Object { "- $_" }) -join "`n" } else { '- (none parsed)' }
+        GuidanceText = if ($guidance.Count -gt 0) { ($guidance | ForEach-Object { "- $_" }) -join "`n" } else { '' }
+    }
+}
+
 function Invoke-SliceExecutorWithRetry {
     param(
         [string[]]$AgentArgs,
@@ -4258,6 +4343,25 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             $retryLogDir = Join-Path $logsRoot ('{0}-retry' -f $sliceId)
             $lastMessagePath = Join-Path $sliceLogDir ('phase1-{0}.last-message.md' -f $sliceId)
             $lastMessage = Read-TextIfExists -Path $lastMessagePath
+            $guardGuidance = Get-CommandGuardRetryGuidance -LogDir $sliceLogDir
+            $guardSection = ''
+            if ([bool]$guardGuidance.HasCommandGuardViolation) {
+                $guardSection = @(
+                    'Previous command-guard failure:',
+                    "- reasons: $($guardGuidance.ReasonText)",
+                    '',
+                    'Observed forbidden command samples:',
+                    '```text',
+                    $guardGuidance.SampleText,
+                    '```',
+                    '',
+                    'Mandatory retry corrections:',
+                    $guardGuidance.GuidanceText,
+                    '',
+                    'This retry must not repeat a command that matches any reason above. If the only available command would violate the guard, write BLOCKED SLICE_RESULT JSON with command_guard_blocker instead of running it.',
+                    ''
+                ) -join "`n"
+            }
             $retryPreamble = @(
                 'RECOVERY MODE: the previous slice executor exited without writing the required SLICE_RESULT JSON.',
                 '',
@@ -4266,6 +4370,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 'Narrow the slice before retrying: choose the smallest deployable carrier for the forced family, close one concrete surface with RED/GREEN evidence, and leave sibling surfaces as explicit remaining gaps.',
                 'If you cannot safely continue, write a BLOCKED SLICE_RESULT JSON with the concrete blocker instead of ending with a question.',
                 '',
+                $guardSection,
                 'Previous last message excerpt:',
                 '```text',
                 ($lastMessage.Substring(0, [Math]::Min($lastMessage.Length, 2000))),
@@ -4275,7 +4380,12 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 ''
             ) -join "`n"
             Set-Content -LiteralPath $retryPrompt -Encoding UTF8 -Value ($retryPreamble + "`n" + (Get-Content -LiteralPath $slicePrompt -Raw -Encoding UTF8))
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor retry | {1} | {2} | missing_slice_result_retry | first attempt wrote no result; retrying once with non-interactive dirty-worktree authorization. |" -f $i, $forced.family_id, $forced.slice_type)
+            $retryReason = if ([bool]$guardGuidance.HasCommandGuardViolation) {
+                "first attempt hit command guard reasons=$($guardGuidance.ReasonText); retry prompt includes mandatory command corrections."
+            } else {
+                'first attempt wrote no result; retrying once with non-interactive dirty-worktree authorization.'
+            }
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor retry | {1} | {2} | missing_slice_result_retry | {3} |" -f $i, $forced.family_id, $forced.slice_type, ($retryReason -replace '\|', '/'))
 
             $retryAgentArgs = @(
                 '-NoProfile',

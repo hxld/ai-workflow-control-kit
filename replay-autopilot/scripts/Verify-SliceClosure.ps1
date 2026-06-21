@@ -2272,12 +2272,13 @@ if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAccep
 if ($hasRedPhaseDidNotFail) { $nonAuthorizingReasons.Add('red_phase_did_not_fail') | Out-Null }
 if ($hasTddRedNotReplayed) { $nonAuthorizingReasons.Add('tdd_red_not_replayed') | Out-Null }
 if ($hasImplementationAfterBlockedRed) { $nonAuthorizingReasons.Add('implementation_after_blocked_red') | Out-Null }
+if ($gapFlags -contains 'feedback_loop_blocker') { $nonAuthorizingReasons.Add('feedback_loop_blocker') | Out-Null }
 if ($hasSubstituteProof) { $nonAuthorizingReasons.Add('substitute_or_shallow_proof') | Out-Null }
 if ($hasWrongSurfaceGap.Count -gt 0) { $nonAuthorizingReasons.Add('wrong_test_surface') | Out-Null }
 if ($hasShallowModuleGap.Count -gt 0) { $nonAuthorizingReasons.Add('shallow_module') | Out-Null }
 if ($hasSyntheticCarrierGap.Count -gt 0) { $nonAuthorizingReasons.Add('synthetic_carrier') | Out-Null }
 if ($proofTypeMismatchFamilies.Count -gt 0) { $nonAuthorizingReasons.Add('proof_type_mismatch') | Out-Null }
-foreach ($flag in @('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion')) {
+foreach ($flag in @('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
 if ($gapFlags -contains 'behavior_test_charter_gap') { $nonAuthorizingReasons.Add('behavior_test_charter_gap') | Out-Null }
@@ -2298,12 +2299,14 @@ $hardAuthorizationGapFlags = @(
     'red_phase_did_not_fail',
     'tdd_red_not_replayed',
     'implementation_after_blocked_red',
+    'feedback_loop_blocker',
     'carrier_authorization_missing',
     'carrier_authorization_stop',
     'exact_contract_assertion_missing',
     'exact_contract_boundary_proof_stop',
     'side_effect_evidence_missing',
     'side_effect_red_not_business_assertion',
+    'side_effect_ledger_gap',
     'behavior_test_charter_gap',
     'test_compilation_failed',
     'test_compilation_evidence_missing',

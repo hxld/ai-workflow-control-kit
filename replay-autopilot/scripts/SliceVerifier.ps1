@@ -226,6 +226,29 @@ if ($featureExemptedGapFlags.Count -gt 0) {
 }
 $blockers = @(Get-StringArray $verify.authorization_blockers)
 $warnings = @(Get-StringArray $verify.warnings)
+$blockingGapFlags = @()
+$warningOnlyGapFlags = @()
+if ($null -ne $verify.PSObject.Properties['blocking_gap_flags']) {
+    $blockingGapFlags = @(Get-StringArray $verify.blocking_gap_flags)
+}
+if ($null -ne $verify.PSObject.Properties['warning_only_gap_flags']) {
+    $warningOnlyGapFlags = @(Get-StringArray $verify.warning_only_gap_flags)
+}
+$hasSeveritySplit = $blockingGapFlags.Count -gt 0 -or $warningOnlyGapFlags.Count -gt 0
+$metaAuthorizingFlags = if ($hasSeveritySplit) {
+    if ($blockingGapFlags.Count -gt 0) {
+        @($blockingGapFlags)
+    } else {
+        @($gapFlags)
+    }
+} else {
+    @($gapFlags)
+}
+foreach ($blocker in @($blockers)) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$blocker) -and $metaAuthorizingFlags -notcontains [string]$blocker) {
+        $metaAuthorizingFlags += [string]$blocker
+    }
+}
 
 $mustFailClosed = $false
 $mustFailReasons = New-Object System.Collections.Generic.List[string]
@@ -248,15 +271,21 @@ foreach ($flag in @(
     'exact_contract_assertion_missing',
     'side_effect_evidence_missing',
     'side_effect_red_not_business_assertion',
+    'side_effect_ledger_gap',
+    'feedback_loop_blocker',
     'behavior_carrier_gap',
     'facade_direction_gap',
     'facade_direction_facade_class_missing',
     'facade_direction_method_signature_missing',
     'test_contract_mismatch',
     'return_value_vs_exception_mismatch',
-    'assertion_surface_mismatch'
+    'assertion_surface_mismatch',
+    'no_test_execution_evidence',
+    'test_command_evidence_missing',
+    'executable_surface_slice_gap',
+    'core_entry_unclosed'
 )) {
-    if ($gapFlags -contains $flag) {
+    if ($metaAuthorizingFlags -contains $flag) {
         $mustFailClosed = $true
         $mustFailReasons.Add($flag) | Out-Null
     }
@@ -281,13 +310,19 @@ $requiresCapTen = @($mustFailReasons | Where-Object {
         'exact_contract_assertion_missing',
         'side_effect_evidence_missing',
         'side_effect_red_not_business_assertion',
+        'side_effect_ledger_gap',
+        'feedback_loop_blocker',
         'behavior_carrier_gap',
         'facade_direction_gap',
         'facade_direction_facade_class_missing',
         'facade_direction_method_signature_missing',
         'test_contract_mismatch',
         'return_value_vs_exception_mismatch',
-        'assertion_surface_mismatch'
+        'assertion_surface_mismatch',
+        'no_test_execution_evidence',
+        'test_command_evidence_missing',
+        'executable_surface_slice_gap',
+        'core_entry_unclosed'
     ) -contains [string]$_
 }).Count -gt 0
 

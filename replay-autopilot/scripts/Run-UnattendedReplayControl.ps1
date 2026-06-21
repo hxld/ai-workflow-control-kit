@@ -189,6 +189,61 @@ function Get-NextRound {
     return ($max + 1)
 }
 
+function Resolve-CycleReplayRootForSummary {
+    param(
+        [string]$ReplayRootBase,
+        [int]$StartRound,
+        [int]$Rounds
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRootBase) -or $StartRound -lt 1 -or $Rounds -lt 1) {
+        return ''
+    }
+
+    $parent = Split-Path -Parent $ReplayRootBase
+    $baseLeaf = Split-Path -Leaf $ReplayRootBase
+    if (-not (Test-Path -LiteralPath $parent)) { return '' }
+
+    $candidates = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match ('^' + [regex]::Escape($baseLeaf) + '-r(?<round>[0-9]+)$')
+    } | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.FullName
+            Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Updated = $_.LastWriteTime
+        }
+    } | Where-Object {
+        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds)
+    } | Sort-Object Round, Updated -Descending)
+
+    $versionMatch = [regex]::Match($baseLeaf, '-v[0-9]+-')
+    if ($versionMatch.Success) {
+        $prefix = [regex]::Escape($baseLeaf.Substring(0, $versionMatch.Index))
+        $suffixStart = $versionMatch.Index + $versionMatch.Length
+        $suffix = [regex]::Escape($baseLeaf.Substring($suffixStart))
+        $regex = '^' + $prefix + '-v[0-9]+-' + $suffix + '-r(?<round>[0-9]+)$'
+    } else {
+        $regex = '^' + [regex]::Escape($baseLeaf) + '-r(?<round>[0-9]+)$'
+    }
+    $fallback = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match $regex
+    } | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.FullName
+            Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Updated = $_.LastWriteTime
+        }
+    } | Where-Object {
+        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds)
+    } | Sort-Object Round, Updated -Descending)
+
+    $allCandidates = @($candidates + $fallback | Sort-Object Round, Updated -Descending)
+    if ($allCandidates.Count -gt 0) {
+        return [System.IO.Path]::GetFullPath([string]$allCandidates[0].Path)
+    }
+    return ''
+}
+
 function Write-JsonStatus {
     param(
         [string]$Path,
@@ -583,12 +638,23 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
     }
 
     $controlScript = Join-Path $PSScriptRoot 'Write-ControlPlaneSummary.ps1'
+    $currentReplayRoot = Resolve-CycleReplayRootForSummary -ReplayRootBase $cycleReplayRootBase -StartRound $nextStartRound -Rounds $cycleRoundsActual
     if (Test-Path -LiteralPath $controlScript) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $controlScript `
-            -EvidenceRoot $evidenceRoot `
-            -TargetCoverage $targetCoverage `
-            -RequireExecutor $requiredExecutorActual `
-            -Quiet
+        $controlArgs = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $controlScript,
+            '-EvidenceRoot', $evidenceRoot,
+            '-TargetCoverage', [string]$targetCoverage
+        )
+        if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual)) {
+            $controlArgs += @('-RequireExecutor', $requiredExecutorActual)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($currentReplayRoot)) {
+            $controlArgs += @('-ReplayRoot', $currentReplayRoot)
+        }
+        $controlArgs += '-Quiet'
+        & powershell @controlArgs
         if ($LASTEXITCODE -ne 0) {
             $stopReason = "control_summary_exit_$LASTEXITCODE"
             Write-JsonStatus -Path $statusPath -Data ([ordered]@{

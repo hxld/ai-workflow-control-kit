@@ -75,7 +75,7 @@ function Test-SourceChainAppliesForSlice {
     if (-not [string]::IsNullOrWhiteSpace($sourceCarrier) -and [string]$ForcedSiblingSurface -eq $sourceCarrier) {
         return $true
     }
-    if ($currentText -match '(?i)\b(rebuildTaskData|RequestBuildContext|AiClaimBaseRequest|source_chain)\b') {
+    if ($currentText -match '(?i)\b(rebuildTaskData|RequestBuildContext|BaseRequest|source_chain|source field|wire field|input_data)\b') {
         return $true
     }
     if (-not [string]::IsNullOrWhiteSpace($sourceEntry) -and $currentText -match [regex]::Escape($sourceEntry)) {
@@ -187,12 +187,16 @@ function Extract-LayerFromCarrier {
     param([string]$CarrierName)
     if ([string]::IsNullOrWhiteSpace($CarrierName)) { return 'Unknown' }
 
-    if ($CarrierName -match 'Facade$') { return 'Facade' }
-    if ($CarrierName -match 'Controller$') { return 'Controller' }
-    if ($CarrierName -match 'Api$') { return 'Api' }
-    if ($CarrierName -match 'Service$') { return 'Service' }
-    if ($CarrierName -match '(?i)TaskProcessor|Task$|Processor$|rebuildTaskData') { return 'Service' }
-    if ($CarrierName -match 'Mapper$|Dao$') { return 'Mapper' }
+    $carrierHead = (($CarrierName -split '\s*->\s*')[0]).Trim()
+    $className = (($carrierHead -split '[.#:]')[0]).Trim()
+    if ([string]::IsNullOrWhiteSpace($className)) { $className = $carrierHead }
+
+    if ($className -match 'Facade(?:Impl)?$') { return 'Facade' }
+    if ($className -match 'Controller(?:Impl)?$') { return 'Controller' }
+    if ($className -match 'Api$') { return 'Api' }
+    if ($className -match 'Service(?:Impl)?$') { return 'Service' }
+    if ($className -match '(?i)TaskProcessor|Task$|Processor$' -or $carrierHead -match '(?i)\brebuildTaskData\b') { return 'Service' }
+    if ($className -match 'Mapper$|Dao$') { return 'Mapper' }
 
     return 'Unknown'
 }
@@ -225,6 +229,33 @@ function Get-OracleFilePath {
     return ''
 }
 
+function Get-BackendCarrierClassCandidates {
+    param([string[]]$Texts)
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($text in @($Texts)) {
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+        foreach ($match in [regex]::Matches([string]$text, '(?i)\b([A-Za-z_][A-Za-z0-9_]*(?:TaskProcessor|Processor|Service|Task))\b')) {
+            $candidate = [string]$match.Groups[1].Value
+            if (-not [string]::IsNullOrWhiteSpace($candidate) -and -not $candidates.Contains($candidate)) {
+                $candidates.Add($candidate) | Out-Null
+            }
+        }
+
+        $carrierHead = (([string]$text -split '\s*->\s*')[0]).Trim()
+        foreach ($token in @($carrierHead -split '[\s,#:(]+')) {
+            if ([string]::IsNullOrWhiteSpace($token)) { continue }
+            $leaf = @($token -split '\.')[-1]
+            if ($leaf -match '(?i)(TaskProcessor|Processor|Service|Task)$' -and -not $candidates.Contains($leaf)) {
+                $candidates.Add($leaf) | Out-Null
+            }
+        }
+    }
+
+    return @($candidates)
+}
+
 function Test-BackendTaskProcessorOracleReplay {
     <#
     .SYNOPSIS
@@ -244,7 +275,14 @@ function Test-BackendTaskProcessorOracleReplay {
     }
 
     $productionRows = @(Get-OracleProductionRows -ReplayRoot $ReplayRoot)
-    if ($productionRows.Count -eq 0) { return $false }
+    if ($productionRows.Count -eq 0) {
+        $evidenceText = @($TargetCarrier, $EntryCall, $AdditionalEvidenceText) -join ' '
+        $targetLooksBackend = $evidenceText -match '(?i)(TaskProcessor|rebuildTaskData|Service|backend)\b'
+        if ($targetLooksBackend -and $ForcedRequirementFamily -eq 'core_entry') {
+            return $true
+        }
+        return $false
+    }
 
     $highRows = @($productionRows | Where-Object {
         if ($_.PSObject.Properties.Name -contains 'weight') { [string]$_.weight -eq 'HIGH' } else { $true }
@@ -265,16 +303,28 @@ function Test-BackendTaskProcessorOracleReplay {
             $path -match '(?i)/(service|task|helper)/' -or
             $className -match '(?i)(Service|TaskProcessor|Processor)$'
         )
-        $isPublicSurface = $path -match '(?i)/(controller|facade)/|claim-api/|claim-web/'
+        $isPublicSurface = $path -match '(?i)/(controller|facade)/|(^|/)[^/]*(?:api|web)[^/]*/'
         if (-not $isBackend -or $isPublicSurface) {
             $allBackendServiceOrTask = $false
-            break
         }
     }
 
-    if (-not $allBackendServiceOrTask) { return $false }
-
     $evidenceText = @($TargetCarrier, $EntryCall, $AdditionalEvidenceText) -join ' '
+    if (-not $allBackendServiceOrTask) {
+        $carrierClassCandidates = @(Get-BackendCarrierClassCandidates -Texts @($TargetCarrier, $EntryCall, $AdditionalEvidenceText))
+        $hasTargetInOracle = $false
+        foreach ($candidate in $carrierClassCandidates) {
+            foreach ($className in @($oracleClassNames)) {
+                if (-not [string]::IsNullOrWhiteSpace($className) -and $candidate -eq $className) {
+                    $hasTargetInOracle = $true
+                    break
+                }
+            }
+            if ($hasTargetInOracle) { break }
+        }
+        if (-not $hasTargetInOracle) { return $false }
+    }
+
     $hasOracleCarrierEvidence = $false
     foreach ($className in $oracleClassNames) {
         if (-not [string]::IsNullOrWhiteSpace($className) -and $evidenceText -match [regex]::Escape($className)) {
@@ -282,11 +332,11 @@ function Test-BackendTaskProcessorOracleReplay {
             break
         }
     }
-    if (-not $hasOracleCarrierEvidence -and $evidenceText -match '(?i)\bTaskProcessor\b|\brebuildTaskData\b') {
+    if (-not $hasOracleCarrierEvidence -and $evidenceText -match '(?i)(TaskProcessor|rebuildTaskData|Service)\b') {
         $hasOracleCarrierEvidence = $true
     }
 
-    $targetLooksBackend = $evidenceText -match '(?i)\b(TaskProcessor|rebuildTaskData|Service|backend)\b'
+    $targetLooksBackend = $evidenceText -match '(?i)(TaskProcessor|rebuildTaskData|Service|backend)\b'
     return ($hasOracleCarrierEvidence -and $targetLooksBackend)
 }
 
@@ -341,9 +391,9 @@ function Add-CorrectionSuggestion {
         }
     }
 
-    # Fallback: common Facade patterns for claim domain
+    # Fallback: common public entry patterns.
     if ($suggestedCarriers.Count -eq 0) {
-        $suggestedCarriers = @('AiClaimFacade', 'ClaimCalculationFacade', 'AiApplyClaimFacade')
+        $suggestedCarriers = @("${baseName}Facade", "${baseName}FacadeImpl", "${baseName}Controller")
     }
 
     # Remove duplicates and limit to top 3
@@ -615,8 +665,8 @@ $sourceChainDeclared = $null -ne $sourceChain -and [bool]$sourceChain.required_s
 $sourceChainRequired = Test-SourceChainAppliesForSlice -SourceChain $sourceChain -ForcedRequirementFamily $ForcedRequirementFamily -ForcedSliceType $ForcedSliceType -ForcedSiblingSurface $ForcedSiblingSurface -EntryCall $entryCall -CarrierText $carrierTextForPlanLock
 $sourceChainCarrier = if ($sourceChainRequired -and $null -ne $sourceChain.next_required_slice) { [string]$sourceChain.next_required_slice.carrier } else { '' }
 $matchesSourceChain = -not $sourceChainRequired -or (
-    [string]$ForcedSiblingSurface -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
-    [string]$entryCall -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|AiClaimDataAssemblyHelper|source' -or
+    [string]$ForcedSiblingSurface -match '(?i)source|target|wire|input_data|RequestBuildContext|BaseRequest|DataAssembly|rebuildTaskData' -or
+    [string]$entryCall -match '(?i)source|target|wire|input_data|RequestBuildContext|BaseRequest|DataAssembly|rebuildTaskData' -or
     [string]$sourceChainCarrier -eq '' -or
     [string]$ForcedSiblingSurface -eq $sourceChainCarrier
 )
@@ -625,7 +675,7 @@ if ($sourceChainDeclared -and -not $sourceChainRequired) {
 }
 $unrequiredSourceChainCarrier = (
     -not $sourceChainDeclared -and
-    $carrierTextForPlanLock -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    $carrierTextForPlanLock -match '(?i)\b(DataAssembly|BuildContext|BaseRequest|BaseTaskData|InputData|source_chain|wire_payload|[a-z][a-z0-9]+_[a-z0-9_]+)\b'
 )
 if ($unrequiredSourceChainCarrier) {
     $issues.Add('blocked_plan_mismatch:unrequired_source_chain_carrier') | Out-Null

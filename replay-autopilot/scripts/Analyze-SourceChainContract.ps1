@@ -35,6 +35,31 @@ function Add-Unique {
     }
 }
 
+function Get-SafeFileStem {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+
+    $leaf = @(([string]$Path -replace '\\', '/') -split '/')[-1]
+    if ([string]::IsNullOrWhiteSpace($leaf)) { return '' }
+    return ($leaf -replace '\.[^.]+$', '')
+}
+
+function Convert-SnakeToCamel {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+
+    $parts = @([string]$Value -split '_')
+    if ($parts.Count -eq 0) { return '' }
+
+    $camel = [string]$parts[0]
+    for ($i = 1; $i -lt $parts.Count; $i++) {
+        if ([string]::IsNullOrWhiteSpace($parts[$i])) { continue }
+        $part = [string]$parts[$i]
+        $camel += $part.Substring(0, 1).ToUpperInvariant() + $part.Substring(1)
+    }
+    return $camel
+}
+
 function Get-OracleTaskProcessorFiles {
     param([string]$ReplayRoot)
 
@@ -117,6 +142,29 @@ if ($hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
     Add-Unique $assertions 'captured InputData.secondary_id equals SecondaryRecord.secondaryId queried by policy number'
 }
 
+$ignoredWireTokens = @(
+    'input_data',
+    'task_data',
+    'source_chain',
+    'wire_payload',
+    'request_body',
+    'response_body'
+)
+$wireTokens = @([regex]::Matches($text, '(?i)\b[a-z][a-z0-9]+(?:_[a-z0-9]+)+\b') | ForEach-Object {
+    $_.Value.ToLowerInvariant()
+} | Where-Object {
+    $ignoredWireTokens -notcontains $_
+} | Select-Object -Unique)
+foreach ($wireToken in $wireTokens) {
+    $camelToken = Convert-SnakeToCamel -Value $wireToken
+    if ([string]::IsNullOrWhiteSpace($camelToken)) { continue }
+    if ($text -match ('(?i)\b' + [regex]::Escape($camelToken) + '\b')) {
+        Add-Unique $sourceFields "source.$camelToken"
+        Add-Unique $targetFields $wireToken
+        Add-Unique $assertions "captured InputData.$wireToken equals source.$camelToken from backend source extraction"
+    }
+}
+
 foreach ($file in @(
     '<production-module>/src/main/java/com/example/project/core/helper/ExampleDataAssemblyHelper.java',
     '<production-module>/src/main/java/com/example/project/core/service/ExampleApplyService.java',
@@ -127,10 +175,28 @@ foreach ($file in @(
     '<production-module>/src/main/java/com/example/project/core/task/ExampleApplyTaskProcessor.java',
     '<production-module>/src/main/java/com/example/project/core/task/ExampleCalculateTaskProcessor.java'
 )) {
-    if ($text -match [regex]::Escape(([System.IO.Path]::GetFileNameWithoutExtension($file)))) {
+    $fileStem = Get-SafeFileStem -Path $file
+    if (-not [string]::IsNullOrWhiteSpace($fileStem) -and $text -match [regex]::Escape($fileStem)) {
         Add-Unique $mustTouchFiles $file
     }
 }
+
+$oracleTaskProcessorClassNames = New-Object System.Collections.Generic.List[string]
+foreach ($file in @($oracleTaskProcessorFiles)) {
+    Add-Unique -List $oracleTaskProcessorClassNames -Value (Get-SafeFileStem -Path $file)
+}
+$taskProcessorCarrierNames = if ($oracleTaskProcessorClassNames.Count -gt 0) {
+    @($oracleTaskProcessorClassNames) -join ' and '
+} else {
+    'TaskProcessor rebuildTaskData'
+}
+$taskProcessorEntry = if ($oracleTaskProcessorClassNames.Count -gt 0) {
+    @($oracleTaskProcessorClassNames | ForEach-Object { "$_.rebuildTaskData(Long caseId)" }) -join ' and '
+} else {
+    'TaskProcessor.rebuildTaskData(Long caseId)'
+}
+$sourceFieldDisplay = if ($sourceFields.Count -gt 0) { @($sourceFields) -join '/' } else { 'source fields' }
+$targetFieldDisplay = if ($targetFields.Count -gt 0) { @($targetFields) -join '/' } else { 'wire fields' }
 
 $hasNamedSource = $sourceFields.Count -gt 0 -and $targetFields.Count -gt 0
 $sourceChainMode = if ($hasNamedSource -and $rebuildPathRequirement) {
@@ -156,8 +222,8 @@ $activationReason = if ($hasNamedSource) {
 $requiredFamilies = @()
 if ($hasNamedSource -and $sourceChainMode -eq 'task_processor_rebuild') {
     $requiredFamilies = @(
-        [ordered]@{ family = 'task_processor_rebuild'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
-        [ordered]@{ family = 'wire_payload'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'rebuilt task data must still reach outgoing InputData primary_id/secondary_id keys' }
+        [ordered]@{ family = 'task_processor_rebuild'; carrier = $taskProcessorCarrierNames; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
+        [ordered]@{ family = 'wire_payload'; carrier = $taskProcessorCarrierNames; reason = "rebuilt task data must still reach outgoing InputData $targetFieldDisplay keys" }
     )
 } elseif ($hasNamedSource) {
     $requiredFamilies = @(
@@ -174,18 +240,12 @@ $nextRequiredSlice = if ($hasNamedSource) {
     if ($sourceChainMode -eq 'task_processor_rebuild') {
         [ordered]@{
             family = 'source_chain'
-            entry = 'ExampleApplyTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)'
-            carrier = 'TaskProcessor rebuildTaskData -> ExampleBaseTaskData.primaryId/secondaryId -> InputData.primary_id/InputData.secondary_id'
+            entry = $taskProcessorEntry
+            carrier = "TaskProcessor rebuildTaskData -> $sourceFieldDisplay -> InputData.$targetFieldDisplay"
             slice_type = 'exact_contract_slice'
-            test_name = 'ExampleApplyTaskProcessorTest.testRebuildTaskData_PreservesPrimaryNumAndSecondaryNum'
+            test_name = "$(@($oracleTaskProcessorClassNames | Select-Object -First 1))Test.testRebuildTaskData_PreservesSourceFields"
             must_touch_files = @($oracleTaskProcessorFiles)
-            required_assertions = @(
-                'apply-example rebuildTaskData preserves primaryId',
-                'apply-example rebuildTaskData preserves secondaryId',
-                'calculate-example rebuildTaskData preserves primaryId',
-                'calculate-example rebuildTaskData preserves secondaryId',
-                'final AI input_data includes primary_id and secondary_id after rebuild'
-            )
+            required_assertions = @($assertions)
             forbidden_proof = @('synthetic_carrier', 'hand_built_task_data_only', 'reflection_setter_only', 'terminal_payload_only', 'dto_existence_only', 'helper_chain_expansion_without_oracle_proof')
         }
     } else {

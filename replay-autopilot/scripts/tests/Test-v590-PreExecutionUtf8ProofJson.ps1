@@ -89,7 +89,7 @@ target_carrier_file_path: claim-core/src/main/java/com/example/ExistingTaskProce
 target_carrier_line_number: 2
 expected_test_class: ExistingTaskProcessorTest
 expected_test_method: testHandleTaskResponse
-expected_assertions: ["verify(compensateDetailMapper, times(3)).insert(any())", "verify(caseRouteService).updateStatus(eq(caseId), eq(31), eq(35))", "verify(examineLogService).insertAiLog(eq(caseId), contains(\"__UTF8_ASSERTION_TEXT__\"))"]
+expected_assertions: ["verify(primaryRepository).insertRows(eq(3))", "verify(statusGateway).updateStatus(eq(entityId), eq(31), eq(35))", "verify(auditLogGateway).insertBusinessLog(eq(entityId), contains(\"__UTF8_ASSERTION_TEXT__\"))"]
 expected_side_effects: [{"table":"t_case","operation":"update"}]
 '@
     $proofPath = Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md'

@@ -407,6 +407,24 @@ function Test-AgentCompletionFileReady {
     return (-not $item.PSIsContainer -and $item.Length -gt 0)
 }
 
+function Get-AgentArtifactInfo {
+    param([string]$Path)
+    $full = ''
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    }
+    $exists = (-not [string]::IsNullOrWhiteSpace($full)) -and (Test-Path -LiteralPath $full -PathType Leaf)
+    $length = 0
+    if ($exists) {
+        $length = (Get-Item -LiteralPath $full).Length
+    }
+    return [ordered]@{
+        path = $full
+        exists = $exists
+        length = $length
+    }
+}
+
 function Receive-JobWithTimeout {
     param(
         [System.Management.Automation.Job]$Job,
@@ -700,6 +718,8 @@ $stdoutLog = Join-Path $logDirFull "$Name.stdout.log"
 $stderrLog = Join-Path $logDirFull "$Name.stderr.log"
 $lastMessage = Join-Path $logDirFull "$Name.last-message.md"
 $metaPath = Join-Path $logDirFull "$Name.exec.json"
+$goalSpecPath = Join-Path $logDirFull "$Name.goalspec.json"
+$proofSpecPath = Join-Path $logDirFull "$Name.proofspec.json"
 $commandGuardLog = Join-Path $logDirFull "$Name.command-guard.jsonl"
 $rgConfigPath = Join-Path $PSScriptRoot 'ripgrep-autopilot.config'
 $toolPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools'))
@@ -718,6 +738,46 @@ if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and -not [string]::IsNullOrWhi
     $effectiveSilentNoOutputTimeoutSeconds = 900
 }
 
+$reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
+$completionArtifact = Get-AgentArtifactInfo -Path $CompletionPath
+$completionRequired = -not [string]::IsNullOrWhiteSpace($CompletionPath)
+$completionCriterion = if ($completionRequired) { 'required_completion_artifact_non_empty' } else { 'completion_artifact_not_required' }
+$goalSpec = [ordered]@{
+    schema = 'replay_agent_goal_spec.v1'
+    stage = $Name
+    executor = $Executor
+    prompt_path = $promptPathFull
+    work_dir = $workDirFull
+    log_dir = $logDirFull
+    model = $Model
+    reasoning_effort = $reasoningEffortActual
+    completion_path = $completionArtifact.path
+    success_criteria = @(
+        'executor_exit_code_zero',
+        $completionCriterion,
+        'protected_root_not_modified',
+        'command_guard_has_no_violation'
+    )
+    stop_policy = [ordered]@{
+        timeout_seconds = $timeoutSeconds
+        completion_quiet_seconds = $CompletionQuietSeconds
+        silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
+        fail_closed_on_missing_completion = $completionRequired
+        fail_closed_on_command_guard = $true
+        fail_closed_on_protected_root_modified = $true
+    }
+    proof_obligations = @(
+        [ordered]@{ name = 'executor_exit'; required = $true; evidence_path = $metaPath },
+        [ordered]@{ name = 'completion_artifact'; required = $completionRequired; evidence_path = $completionArtifact.path },
+        [ordered]@{ name = 'stdout_log'; required = $false; evidence_path = $stdoutLog },
+        [ordered]@{ name = 'stderr_log'; required = $false; evidence_path = $stderrLog },
+        [ordered]@{ name = 'command_guard'; required = $true; evidence_path = $commandGuardLog },
+        [ordered]@{ name = 'protected_root_guard'; required = $true; evidence_path = $metaPath }
+    )
+    created_at = (Get-Date).ToString('s')
+}
+$goalSpec | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $goalSpecPath -Encoding UTF8
+
 if ($ValidateOnly -or $Executor -eq 'manual') {
     [pscustomobject]@{
         Executor = $Executor
@@ -725,6 +785,8 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         PromptPath = $promptPathFull
         WorkDir = $workDirFull
         LogDir = $logDirFull
+        GoalSpecPath = $goalSpecPath
+        ProofSpecPath = $proofSpecPath
         Model = $Model
         ReasoningEffort = $ReasoningEffort
         CompletionPath = $CompletionPath
@@ -737,7 +799,6 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
 }
 
 $started = Get-Date
-$reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
 $allowedPom = Join-Path $workDirFull 'pom.xml'
 $protectedPomForPrompt = if (-not [string]::IsNullOrWhiteSpace($protectedRoot)) { Join-Path $protectedRoot 'pom.xml' } else { '<protected project root pom>' }
 $automationGuard = @(
@@ -757,6 +818,10 @@ $automationGuard = @(
     ''
 ) -join "`n"
 
+$result = $null
+$exitCode = 1
+$executorInvocationError = ''
+try {
 if ($Executor -eq 'codex') {
     $codexExecHelp = (& $commandSource exec --help 2>&1 | Out-String)
     $supportsApproval = $codexExecHelp -match '--ask-for-approval'
@@ -872,6 +937,29 @@ if ($Executor -eq 'codex') {
 } else {
     throw "Unsupported executor: $Executor"
 }
+} catch {
+    $executorInvocationError = ($_ | Out-String)
+    if ($null -ne $_.Exception) {
+        $executorInvocationError += "`n$($_.Exception.ToString())"
+    }
+    $completionMode = if ($executorInvocationError -match '(?i)timed out|timeout') { 'executor_timeout_exception' } else { 'executor_exception' }
+    $exitCode = if ($completionMode -eq 'executor_timeout_exception') { 89 } else { 1 }
+    Add-Content -LiteralPath $stderrLog -Encoding UTF8 -Value $executorInvocationError
+    $result = [pscustomobject]@{
+        ExitCode = $exitCode
+        CompletionMode = $completionMode
+        ExecutorExitCode = $exitCode
+        InvocationError = $executorInvocationError
+    }
+}
+if ($null -eq $result) {
+    $result = [pscustomobject]@{
+        ExitCode = 1
+        CompletionMode = 'executor_missing_result'
+        ExecutorExitCode = 1
+    }
+    $exitCode = 1
+}
 
 $ended = Get-Date
 $stdoutLength = if (Test-Path -LiteralPath $stdoutLog -PathType Leaf) { (Get-Item -LiteralPath $stdoutLog).Length } else { 0 }
@@ -889,7 +977,11 @@ $executorProducedNoOutput = (
     )
 )
 $failureCategory = ''
-if ($result.CompletionMode -eq 'silent_no_output_timeout') {
+if ($result.CompletionMode -eq 'executor_timeout_exception') {
+    $failureCategory = 'executor_timeout'
+} elseif ($result.CompletionMode -eq 'executor_exception' -or $result.CompletionMode -eq 'executor_missing_result') {
+    $failureCategory = 'executor_exception'
+} elseif ($result.CompletionMode -eq 'silent_no_output_timeout') {
     $exitCode = 88
     $failureCategory = 'executor_silent_no_output'
 } elseif ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and -not (Test-AgentCompletionFileReady $CompletionPath)) {
@@ -955,6 +1047,8 @@ $meta = [ordered]@{
     stderr_log = $stderrLog
     last_message = $lastMessage
     command_guard_log = $commandGuardLog
+    goal_spec_path = $goalSpecPath
+    proof_spec_path = $proofSpecPath
     model = $Model
     reasoning_effort = $reasoningEffortActual
     started_at = $started.ToString('s')
@@ -975,6 +1069,65 @@ $meta = [ordered]@{
     failure_category = $failureCategory
 }
 $meta | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+
+$completionArtifactAfter = Get-AgentArtifactInfo -Path $CompletionPath
+$completionReady = if ($completionRequired) { ($completionArtifactAfter.exists -and $completionArtifactAfter.length -gt 0) } else { $true }
+$validatedObligations = @(
+    [ordered]@{
+        name = 'executor_exit'
+        required = $true
+        status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
+        evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'completion_artifact'
+        required = $completionRequired
+        status = if (-not $completionRequired) { 'SKIP' } elseif ($completionReady) { 'PASS' } else { 'FAIL' }
+        evidence_path = $completionArtifactAfter.path
+    },
+    [ordered]@{
+        name = 'protected_root_guard'
+        required = $true
+        status = if ($failureCategory -eq 'protected_root_modified') { 'FAIL' } else { 'PASS' }
+        evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'command_guard'
+        required = $true
+        status = if ($failureCategory -eq 'command_guard_violation') { 'FAIL' } else { 'PASS' }
+        evidence_path = $commandGuardLog
+    },
+    [ordered]@{
+        name = 'silent_progress'
+        required = $true
+        status = if ($failureCategory -eq 'executor_silent_no_output') { 'FAIL' } else { 'PASS' }
+        evidence_path = $stdoutLog
+    }
+)
+$proofSpec = [ordered]@{
+    schema = 'replay_agent_proof_spec.v1'
+    stage = $Name
+    executor = $Executor
+    goal_spec_path = $goalSpecPath
+    exec_metadata_path = $metaPath
+    status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
+    exit_code = $exitCode
+    executor_exit_code = if ($null -ne $result.PSObject.Properties['ExecutorExitCode']) { $result.ExecutorExitCode } else { $exitCode }
+    failure_category = $failureCategory
+    completion_mode = $result.CompletionMode
+    completion_ready = $completionReady
+    evidence = [ordered]@{
+        completion = $completionArtifactAfter
+        stdout = Get-AgentArtifactInfo -Path $stdoutLog
+        stderr = Get-AgentArtifactInfo -Path $stderrLog
+        last_message = Get-AgentArtifactInfo -Path $lastMessage
+        command_guard_log = Get-AgentArtifactInfo -Path $commandGuardLog
+        exec_metadata = Get-AgentArtifactInfo -Path $metaPath
+    }
+    validated_obligations = $validatedObligations
+    generated_at = $ended.ToString('s')
+}
+$proofSpec | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $proofSpecPath -Encoding UTF8
 
 if ($exitCode -ne 0) {
     if ($failureCategory -eq 'protected_root_modified') {
@@ -1000,6 +1153,14 @@ if ($exitCode -ne 0) {
     if ($failureCategory -eq 'executor_silent_no_output') {
         Write-Host "$Executor produced no output or stage artifacts before the silent watchdog expired: $CompletionPath. See $stdoutLog"
         exit 88
+    }
+    if ($failureCategory -eq 'executor_timeout') {
+        Write-Host "$Executor timed out before writing required proof artifacts. See $stderrLog"
+        exit 89
+    }
+    if ($failureCategory -eq 'executor_exception') {
+        Write-Host "$Executor invocation failed before normal completion. See $stderrLog"
+        exit 1
     }
     if ($failureCategory -eq 'command_guard_violation') {
         Write-Host "$Executor attempted a forbidden replay command. See $commandGuardLog"

@@ -114,17 +114,74 @@ function Write-Phase1InitFailure {
     }
 }
 
+function Resolve-MavenSettingsPath {
+    param([string]$ConfiguredValue)
+
+    $script:ResolvedMavenSettingsSource = 'none'
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($ConfiguredValue)) {
+        $candidates += [pscustomobject]@{ Source = 'argument:MavenSettings'; Path = $ConfiguredValue }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:AI_WORKFLOW_MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:AI_WORKFLOW_MAVEN_SETTINGS'; Path = $env:AI_WORKFLOW_MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_SETTINGS'; Path = $env:MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $candidates += [pscustomobject]@{ Source = 'userprofile:.m2/settings.xml'; Path = (Join-Path $env:USERPROFILE '.m2\settings.xml') }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_HOME)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_HOME'; Path = (Join-Path $env:MAVEN_HOME 'conf\settings.xml') }
+    }
+    $mvnCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
+    if ($null -eq $mvnCommand) {
+        $mvnCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $mvnCommand) {
+        $mavenHome = Split-Path -Parent (Split-Path -Parent $mvnCommand.Source)
+        if (-not [string]::IsNullOrWhiteSpace($mavenHome)) {
+            $candidates += [pscustomobject]@{ Source = 'maven-home-from-path'; Path = (Join-Path $mavenHome 'conf\settings.xml') }
+        }
+    }
+    foreach ($candidate in $candidates) {
+        $pathText = [string]$candidate.Path
+        if ([string]::IsNullOrWhiteSpace($pathText)) { continue }
+        try {
+            $full = [System.IO.Path]::GetFullPath($pathText)
+        } catch {
+            continue
+        }
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+            $script:ResolvedMavenSettingsSource = [string]$candidate.Source
+            return $full
+        }
+    }
+
+    return ''
+}
+
 function Get-MavenArgumentList {
     param([string]$MavenSettings)
-    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
-    return @('-s', $MavenSettings)
+    $args = @()
+    if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) {
+        $args += @('-s', $MavenSettings)
+    }
+    $args += @('-Dproject.build.sourceEncoding=UTF-8', '-Dfile.encoding=UTF-8')
+    return $args
 }
 
 function Get-MavenSettingsCommandSegment {
     param([string]$MavenSettings)
-    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return '' }
-    $escaped = $MavenSettings -replace '"', '\"'
-    return ('-s "{0}"' -f $escaped)
+    $args = @(Get-MavenArgumentList -MavenSettings $MavenSettings)
+    if ($args.Count -eq 0) { return '' }
+    return (($args | ForEach-Object {
+        if ($_ -match '\s') {
+            '"' + ($_ -replace '"', '\"') + '"'
+        } else {
+            $_
+        }
+    }) -join ' ')
 }
 
 function Read-JsonObject {
@@ -3971,6 +4028,10 @@ foreach ($path in $required) {
 
 if ($MaxSlices -lt 1) { $MaxSlices = 1 }
 New-Item -ItemType Directory -Force -Path $logsRoot | Out-Null
+$MavenSettings = Resolve-MavenSettingsPath -ConfiguredValue $MavenSettings
+if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) {
+    Write-Host "Using Maven settings ($script:ResolvedMavenSettingsSource): $MavenSettings"
+}
 
 if ($ValidateOnly) {
     [pscustomobject]@{

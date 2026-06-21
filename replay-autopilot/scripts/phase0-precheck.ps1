@@ -23,10 +23,61 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Resolve-MavenSettingsPath {
+    param([string]$ConfiguredValue)
+
+    $script:ResolvedMavenSettingsSource = 'none'
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($ConfiguredValue)) {
+        $candidates += [pscustomobject]@{ Source = 'argument:MavenSettings'; Path = $ConfiguredValue }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:AI_WORKFLOW_MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:AI_WORKFLOW_MAVEN_SETTINGS'; Path = $env:AI_WORKFLOW_MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_SETTINGS'; Path = $env:MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $candidates += [pscustomobject]@{ Source = 'userprofile:.m2/settings.xml'; Path = (Join-Path $env:USERPROFILE '.m2\settings.xml') }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_HOME)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_HOME'; Path = (Join-Path $env:MAVEN_HOME 'conf\settings.xml') }
+    }
+    $mvnCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
+    if ($null -eq $mvnCommand) {
+        $mvnCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $mvnCommand) {
+        $mavenHome = Split-Path -Parent (Split-Path -Parent $mvnCommand.Source)
+        if (-not [string]::IsNullOrWhiteSpace($mavenHome)) {
+            $candidates += [pscustomobject]@{ Source = 'maven-home-from-path'; Path = (Join-Path $mavenHome 'conf\settings.xml') }
+        }
+    }
+    foreach ($candidate in $candidates) {
+        $pathText = [string]$candidate.Path
+        if ([string]::IsNullOrWhiteSpace($pathText)) { continue }
+        try {
+            $full = [System.IO.Path]::GetFullPath($pathText)
+        } catch {
+            continue
+        }
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+            $script:ResolvedMavenSettingsSource = [string]$candidate.Source
+            return $full
+        }
+    }
+
+    return ''
+}
+
 function Get-MavenArgumentList {
     param([string]$MavenSettings)
-    if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
-    return @('-s', $MavenSettings)
+    $args = @()
+    if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) {
+        $args += @('-s', $MavenSettings)
+    }
+    $args += @('-Dproject.build.sourceEncoding=UTF-8', '-Dfile.encoding=UTF-8')
+    return $args
 }
 
 function Test-TestFramework {
@@ -82,6 +133,7 @@ function Test-TestFramework {
         '-f', $pomPath,
         'test-compile',
         '-pl', 'claim-server',
+        '-am',
         '-q'
     )
     $compileResult = & mvn @compileArgs 2>&1
@@ -300,6 +352,8 @@ function Invoke-Phase0Precheck {
         can_proceed = $true
         validation_status = 'PASS'
         discovery_mode = $DiscoveryMode
+        maven_settings = $MavenSettings
+        maven_settings_source = $script:ResolvedMavenSettingsSource
         checks = @{}
         issues = @()
         warnings = @()
@@ -399,6 +453,10 @@ if ($ValidateOnly) {
 }
 
 # Main execution
+$MavenSettings = Resolve-MavenSettingsPath -ConfiguredValue $MavenSettings
+if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) {
+    Write-Host "Using Maven settings ($script:ResolvedMavenSettingsSource): $MavenSettings"
+}
 $result = Invoke-Phase0Precheck -ReplayRoot $ReplayRoot -Worktree $Worktree -MavenSettings $MavenSettings -DiscoveryMode $DiscoveryMode -SliceIndex $SliceIndex
 
 exit $(if ($result.can_proceed) { 0 } else { 1 })

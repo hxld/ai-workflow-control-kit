@@ -43,7 +43,7 @@ try {
     Assert-True 'prompt_declares_machine_readable_authority' ($promptText -match 'machine-readable plan contract')
     Assert-True 'prompt_lists_proceed_required_json_fields' ($promptText -match 'target_carrier_file_path' -and $promptText -match 'expected_test_method' -and $promptText -match 'side_effects')
     Assert-True 'prompt_requires_test_infrastructure_check' ($promptText -match 'test_infrastructure_check' -and $promptText -match 'compilation_dry_run_exit_code' -and $promptText -match 'compilation_dry_run_evidence_file')
-    Assert-True 'prompt_requires_policy_rebuild_claim_server_harness' ($promptText -match 'policyNum/insureNum rebuild' -and $promptText -match 'test_module_for_target`?\s*`? must be `?claim-server|test_module_for_target.*claim-server' -and $promptText -match '-pl claim-server -am test-compile' -and $promptText -match 'No sources to compile')
+    Assert-True 'prompt_requires_profile_specific_test_harness' ($promptText -match 'profile .*test harness' -and $promptText -match 'test_module_for_target' -and $promptText -match '<required-test-module>' -and $promptText -match '-pl <required-test-module> -am test-compile' -and $promptText -match 'No sources to compile')
 
     $runLoopText = Get-Content -LiteralPath $runLoopPath -Raw -Encoding UTF8
     Assert-True 'runner_requires_plan_result_json_artifact' ($runLoopText -match "'PLAN_RESULT\.json'")

@@ -738,7 +738,23 @@ function Test-TestCompileEvidenceHasSuccessSignal {
         return $false
     }
     $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if (Test-MavenFailureSignal -Text $text) {
+        return $false
+    }
     return ($text -match '(?i)BUILD SUCCESS' -or $text -match '"exit_code"\s*:\s*0')
+}
+
+function Test-MavenFailureSignal {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+    return ($Text -match '(?im)^\s*\[ERROR\]' -or
+        $Text -match '(?i)\bBUILD FAILURE\b' -or
+        $Text -match '(?i)\bCompilation failure\b' -or
+        $Text -match '(?i)\bFailed to execute goal\b' -or
+        $Text -match '(?i)\bMojoFailureException\b' -or
+        $Text -match '(?i)\bMojoExecutionException\b')
 }
 
 function Test-PolicyRebuildPlanText {
@@ -1140,10 +1156,21 @@ function Ensure-PlanTestCompileEvidence {
     if (-not (Test-Path -LiteralPath $evidenceParent)) {
         New-Item -ItemType Directory -Force -Path $evidenceParent | Out-Null
     }
+    $combinedMavenOutput = @(
+        Get-FileTailText -Path $stdoutPath -Tail 240
+        Get-FileTailText -Path $stderrPath -Tail 240
+    ) -join "`n"
+    $failureSignalDetected = Test-MavenFailureSignal -Text $combinedMavenOutput
+    $rawExitCode = $exitCode
+    if ($exitCode -eq 0 -and $failureSignalDetected) {
+        $exitCode = 1
+    }
     [ordered]@{
         command = $commandText
         module = $moduleName
         exit_code = $exitCode
+        raw_exit_code = $rawExitCode
+        failure_signal_detected = $failureSignalDetected
         timed_out = $timedOut
         started_at = $startedAt.ToString('o')
         ended_at = $endedAt.ToString('o')

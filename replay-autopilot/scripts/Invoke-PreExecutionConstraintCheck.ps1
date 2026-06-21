@@ -88,6 +88,19 @@ function Test-BooleanTrue {
     return ([string]$Value).Trim().ToLowerInvariant() -eq 'true'
 }
 
+function Test-MavenFailureSignal {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+    return ($Text -match '(?im)^\s*\[ERROR\]' -or
+        $Text -match '(?i)\bBUILD FAILURE\b' -or
+        $Text -match '(?i)\bCompilation failure\b' -or
+        $Text -match '(?i)\bFailed to execute goal\b' -or
+        $Text -match '(?i)\bMojoFailureException\b' -or
+        $Text -match '(?i)\bMojoExecutionException\b')
+}
+
 function Test-RequiredValuePresent {
     param($Value)
     if ($null -eq $Value) { return $false }
@@ -272,6 +285,9 @@ function Get-TestInfrastructureRealityIssues {
                 if ($evidenceCommandText.Replace('/', '\').Contains('d:\opt\lipei\claim\pom.xml')) {
                     $issues += 'compilation_dry_run_evidence_command_must_not_target_protected_root_pom'
                 }
+            }
+            if (Test-MavenFailureSignal -Text $evidenceText) {
+                $issues += 'compilation_dry_run_evidence_contains_failure_signal'
             }
             if ($evidenceText -notmatch '(?i)BUILD SUCCESS' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
                 $issues += 'compilation_dry_run_evidence_missing_success_signal'

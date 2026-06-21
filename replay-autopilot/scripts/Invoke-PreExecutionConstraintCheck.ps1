@@ -24,8 +24,7 @@ function Read-JsonObject {
     if (-not (Test-Path -LiteralPath $Path)) {
         return $null
     }
-    $content = Get-Content -LiteralPath $Path
-    $text = $content -join "`n"
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     try {
         return $text | ConvertFrom-Json
     } catch {
@@ -465,8 +464,7 @@ function Test-ValidLayer {
     # otherwise PowerShell paths can be interpreted as a malformed regex.
     $filePath = Find-JavaFileByClassName -ClassName $className -Root $Worktree
     if ($filePath) {
-        $content = Get-Content -LiteralPath $filePath
-        $contentText = $content -join "`n"
+        $contentText = Get-Content -LiteralPath $filePath -Raw -Encoding UTF8
         if ($contentText -match '\s+(public|protected|private)\s+(abstract\s+)?(class|interface)\s+') {
             return @{ Valid = $false; Layer = 'Unknown'; Reason = 'Could not determine layer from naming pattern' }
         }
@@ -505,11 +503,9 @@ if ($plan.PSObject.Properties.Name -contains 'plan_status') {
 
 $firstSliceProofPath = Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md'
 $firstSliceProofExists = Test-Path -LiteralPath $firstSliceProofPath
-$firstSliceProofContentArray = @()
 $firstSliceProofContent = ''
 if ($firstSliceProofExists) {
-    $firstSliceProofContentArray = Get-Content -LiteralPath $firstSliceProofPath
-    $firstSliceProofContent = $firstSliceProofContentArray -join "`n"
+    $firstSliceProofContent = Get-Content -LiteralPath $firstSliceProofPath -Raw -Encoding UTF8
 }
 
 $checks = @()
@@ -640,8 +636,7 @@ $testCharterPath = Join-Path $replayRootFull 'TEST_CHARTER.md'
 $testCharterExists = Test-Path -LiteralPath $testCharterPath
 
 if ($testCharterExists) {
-    $testCharterContent = Get-Content -LiteralPath $testCharterPath
-    $testCharterText = $testCharterContent -join "`n"
+    $testCharterText = Get-Content -LiteralPath $testCharterPath -Raw -Encoding UTF8
     $hasTestSurface = $testCharterText -match 'test_surface|entry[_\s-]*point|test[_\s-]*method|test[_\s-]*class|test[_\s-]*scenario'
 } else {
     $hasTestSurface = $false

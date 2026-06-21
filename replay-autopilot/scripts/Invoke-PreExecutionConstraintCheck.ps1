@@ -93,12 +93,17 @@ function Test-MavenFailureSignal {
     if ([string]::IsNullOrWhiteSpace($Text)) {
         return $false
     }
-    return ($Text -match '(?im)^\s*\[ERROR\]' -or
-        $Text -match '(?i)\bBUILD FAILURE\b' -or
+    if ($Text -match '(?i)\bBUILD FAILURE\b' -or
         $Text -match '(?i)\bCompilation failure\b' -or
         $Text -match '(?i)\bFailed to execute goal\b' -or
         $Text -match '(?i)\bMojoFailureException\b' -or
-        $Text -match '(?i)\bMojoExecutionException\b')
+        $Text -match '(?i)\bMojoExecutionException\b') {
+        return $true
+    }
+    if ($Text -match '(?i)\bBUILD SUCCESS\b') {
+        return $false
+    }
+    return ($Text -match '(?im)^\s*\[ERROR\]')
 }
 
 function Test-RequiredValuePresent {

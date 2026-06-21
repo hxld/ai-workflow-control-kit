@@ -1566,6 +1566,21 @@ Do not start the next replay round until the command guard terminates offending 
         return
     }
 
+    if ($ExitCode -eq 95 -or $category -eq 'phase1_init_failure') {
+        @"
+# Autopilot Phase1 Init Blocker
+
+$Stage stopped during Phase 1 runner initialization. This is a local gate failure with machine evidence, not executor coverage evidence.
+
+- exit_code: $ExitCode
+- failure_category: phase1_init_failure
+- logs: $LogDir
+
+Inspect `PHASE1_INIT_FAILURE.json` in the replay root before replaying.
+"@ | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
+        return
+    }
+
     "# Autopilot Blocker`n`n$Stage executor failed with exit code $ExitCode. Inspect logs under $LogDir." | Set-Content -LiteralPath $BlockerPath -Encoding UTF8
 }
 
@@ -1596,6 +1611,23 @@ function Get-Phase1GateFailureEvidence {
             }
         } catch {
             continue
+        }
+    }
+
+    $phase1InitFailure = Join-Path $ReplayRoot 'PHASE1_INIT_FAILURE.json'
+    if ([string]::IsNullOrWhiteSpace($reason) -and (Test-Path -LiteralPath $phase1InitFailure)) {
+        try {
+            $json = Get-Content -LiteralPath $phase1InitFailure -Raw -Encoding UTF8 | ConvertFrom-Json
+            $reason = 'phase1_init_failure'
+            if (-not [string]::IsNullOrWhiteSpace([string]$json.reason)) {
+                $reason = 'phase1_init_failure:' + [string]$json.reason
+            }
+            $detail = "Phase 1 initialization failed before slice executor start. result=$phase1InitFailure"
+            $evidencePath = $phase1InitFailure
+        } catch {
+            $reason = 'phase1_init_failure'
+            $detail = "Phase 1 initialization failure file exists but could not be parsed. result=$phase1InitFailure"
+            $evidencePath = $phase1InitFailure
         }
     }
 
@@ -5306,10 +5338,25 @@ Do not create new production files, test files, or worktree changes.
         if ($allowCodexExecutorActual) { $phase1Args += '-AllowCodexExecutor' }
         if (-not [string]::IsNullOrWhiteSpace($mavenSettings)) { $phase1Args += @('-MavenSettings', $mavenSettings) }
         $phase1Args = Add-AgentModelArgs -BaseArgs $phase1Args -Model $phase1Model -ReasoningEffort $phase1ReasoningEffort
-        & powershell @phase1Args
-        if ($LASTEXITCODE -ne 0) {
-            $phase1ExitCode = $LASTEXITCODE
-            Write-AgentExecutorBlocker -BlockerPath $blocker -Stage 'Phase 1' -ExitCode $phase1ExitCode -LogDir (Join-Path $logs 'phase1') -Name 'phase1'
+        $phase1WrapperLogDir = Join-Path $logs 'phase1-wrapper'
+        New-Item -ItemType Directory -Force -Path $phase1WrapperLogDir | Out-Null
+        $phase1WrapperStdout = Join-Path $phase1WrapperLogDir 'phase1-wrapper.stdout.log'
+        $phase1WrapperStderr = Join-Path $phase1WrapperLogDir 'phase1-wrapper.stderr.log'
+        & powershell @phase1Args > $phase1WrapperStdout 2> $phase1WrapperStderr
+        $phase1ExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        [ordered]@{
+            schema = 'phase1_wrapper_exec.v1'
+            stage = 'phase1'
+            exit_code = $phase1ExitCode
+            command = 'powershell'
+            args = @($phase1Args)
+            stdout_log = $phase1WrapperStdout
+            stderr_log = $phase1WrapperStderr
+            failure_category = if ($phase1ExitCode -eq 95) { 'phase1_init_failure' } else { '' }
+            generated_at = (Get-Date).ToString('s')
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $phase1WrapperLogDir 'phase1.exec.json') -Encoding UTF8
+        if ($phase1ExitCode -ne 0) {
+            Write-AgentExecutorBlocker -BlockerPath $blocker -Stage 'Phase 1' -ExitCode $phase1ExitCode -LogDir $phase1WrapperLogDir -Name 'phase1'
             $phase1GateEvidence = Get-Phase1GateFailureEvidence -ReplayRoot $replayRoot -ExitCode $phase1ExitCode
             if ([bool]$phase1GateEvidence.HasGateEvidence) {
                 @(
@@ -5331,6 +5378,7 @@ Do not create new production files, test files, or worktree changes.
                              elseif ($phase1ExitCode -eq 87) { "authentication_failed" }
                              elseif ($phase1ExitCode -eq 92) { "protected_root_modified" }
                              elseif ($phase1ExitCode -eq 93) { "command_guard_violation" }
+                             elseif ($phase1ExitCode -eq 95) { "phase1_init_failure" }
                              elseif ([bool]$phase1GateEvidence.HasGateEvidence) { [string]$phase1GateEvidence.Reason }
                              else { "executor_failed_without_result:exit_code=$phase1ExitCode" }
 
@@ -5353,7 +5401,7 @@ Do not create new production files, test files, or worktree changes.
                     -Phase0Status $phase0Status `
                     -PlanStatus 'BLOCKED' `
                     -PlanText $phase1BlockerText `
-                    -Reason "Phase 1 stopped before producing a complete ROUND_RESULT.md. reason=$blockerReason; exit_code=$phase1ExitCode; inspect $($phase1GateEvidence.EvidencePath) and logs under $(Join-Path $logs 'phase1')." `
+                    -Reason "Phase 1 stopped before producing a complete ROUND_RESULT.md. reason=$blockerReason; exit_code=$phase1ExitCode; inspect $($phase1GateEvidence.EvidencePath) and logs under $phase1WrapperLogDir." `
                     -BestOracleCoverage $bestOracleCoverage `
                     -NoImprovementCount $noImprovementCount `
                     -RunEvolutionActual $runEvolutionActual `

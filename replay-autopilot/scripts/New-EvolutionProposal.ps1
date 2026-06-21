@@ -138,6 +138,14 @@ $flagMap = [ordered]@{
         Gate = 'Core-First Budget Gate'
         Recommendation = 'Budget still goes to low-risk helper/DTO/log slices. Route first slice to the highest-weight surface.'
     }
+    plan_oracle_overlap_gap = [pscustomobject]@{
+        Gate = 'Surface Coverage Gate'
+        Recommendation = 'Plan oracle production file coverage is below the 50% threshold. Expand coverage by mapping missing production files to implementation slices, or document out-of-scope files with architectural separation reasons. The evolution proposal system must detect this gap to prevent no-op evolutions when the plan was BLOCKED by oracle overlap enforcement.'
+    }
+    plan_high_weight_oracle_overlap_gap = [pscustomobject]@{
+        Gate = 'Surface Coverage Gate'
+        Recommendation = 'Plan oracle high-weight production file coverage is below the 70% threshold. Core service, facade, and flow files must be covered before proceeding. The evolution proposal should flag this as tooling-evolution-needed.'
+    }
 }
 
 $detected = @(foreach ($key in $flagMap.Keys) {
@@ -166,6 +174,40 @@ $detected = @(foreach ($key in $flagMap.Keys) {
     }
 })
 
+$planContractVerifyPath = Join-Path $root 'PLAN_CONTRACT_VERIFY.json'
+if (Test-Path -LiteralPath $planContractVerifyPath) {
+    try {
+        $planContract = Get-Content -LiteralPath $planContractVerifyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $contractIssues = @($planContract.issues)
+
+        if (($contractIssues | Where-Object { $_ -match 'oracle_overlap_below_threshold' } | Select-Object -First 1)) {
+            $alreadyDetected = $detected | Where-Object { $_.Flag -eq 'plan_oracle_overlap_gap' }
+            if (-not $alreadyDetected) {
+                $detected += [pscustomobject]@{
+                    Gate = 'Surface Coverage Gate'
+                    Flag = 'plan_oracle_overlap_gap'
+                    Count = 1
+                    Recommendation = 'Plan oracle production file coverage is below the 50% threshold. Expand coverage by mapping missing production files to implementation slices, or document out-of-scope files with architectural separation reasons.'
+                    ActionClass = 'tooling-evolution-needed'
+                }
+            }
+        }
+        if (($contractIssues | Where-Object { $_ -match 'oracle_high_weight_overlap_below_threshold' } | Select-Object -First 1)) {
+            $alreadyDetected = $detected | Where-Object { $_.Flag -eq 'plan_high_weight_oracle_overlap_gap' }
+            if (-not $alreadyDetected) {
+                $detected += [pscustomobject]@{
+                    Gate = 'Surface Coverage Gate'
+                    Flag = 'plan_high_weight_oracle_overlap_gap'
+                    Count = 1
+                    Recommendation = 'Plan oracle high-weight production file coverage is below the 70% threshold. Core service, facade, and flow files must be covered before proceeding.'
+                    ActionClass = 'tooling-evolution-needed'
+                }
+            }
+        }
+    } catch {
+    }
+}
+
 $shouldEvolve = $false
 $reason = 'No transferable gap was detected, or oracle coverage already reached the target.'
 if ($oracle -ne $null -and $oracle -lt 90 -and $detected.Count -gt 0) {
@@ -176,7 +218,13 @@ if ($oracle -ne $null -and $oracle -lt 90 -and $detected.Count -gt 0) {
     $reason = 'oracle score is missing, but transferable workflow gate gaps were detected.'
 }
 
-$enforcementNeeded = @($detected | Where-Object { $_.ActionClass -in @('workflow-gate-needs-evolution', 'already-covered-but-not-enforced') })
+$oracleGapDetected = $detected | Where-Object { $_.Flag -in @('plan_oracle_overlap_gap', 'plan_high_weight_oracle_overlap_gap') } | Select-Object -First 1
+if (-not $shouldEvolve -and $oracleGapDetected) {
+    $shouldEvolve = $true
+    $reason = 'plan oracle overlap gap detected from PLAN_CONTRACT_VERIFY.json'
+}
+
+$enforcementNeeded = @($detected | Where-Object { $_.ActionClass -in @('workflow-gate-needs-evolution', 'already-covered-but-not-enforced', 'tooling-evolution-needed') })
 
 $detectedRows = if ($detected.Count -gt 0) {
     ($detected | Sort-Object Gate, Flag | ForEach-Object { "| $($_.Gate) | $($_.Flag) | $($_.Count) | $($_.ActionClass) | $($_.Recommendation) |" }) -join "`n"

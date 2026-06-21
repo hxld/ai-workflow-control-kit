@@ -59,6 +59,61 @@ function Expand-Template {
     return $output
 }
 
+function Write-Phase1InitFailure {
+    param(
+        [string]$ReplayRoot,
+        [string]$LogsRoot,
+        [string]$RunnerContractPath,
+        [string]$ProgressPath,
+        [int]$MaxSlices,
+        [string]$Reason,
+        [string]$EvidencePath = ''
+    )
+
+    if (-not (Test-Path -LiteralPath $ReplayRoot -PathType Container)) {
+        return
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogsRoot)) {
+        New-Item -ItemType Directory -Force -Path $LogsRoot | Out-Null
+    }
+
+    $failurePath = Join-Path $ReplayRoot 'PHASE1_INIT_FAILURE.json'
+    $failureMd = Join-Path $ReplayRoot 'PHASE1_INIT_FAILURE.md'
+    $payload = [ordered]@{
+        schema = 'phase1_init_failure.v1'
+        status = 'BLOCKED'
+        stage = 'phase1_init'
+        reason = $Reason
+        evidence_path = $EvidencePath
+        replay_root = $ReplayRoot
+        logs_root = $LogsRoot
+        generated_at = (Get-Date).ToString('s')
+    }
+    $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $failurePath -Encoding UTF8
+    @(
+        '# Phase1 Init Failure',
+        '',
+        "- status: BLOCKED",
+        "- reason: $Reason",
+        "- evidence: $EvidencePath",
+        "- logs_root: $LogsRoot"
+    ) -join "`n" | Set-Content -LiteralPath $failureMd -Encoding UTF8
+
+    if (-not [string]::IsNullOrWhiteSpace($RunnerContractPath)) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| phase1 init failure | phase1-init | runner_diagnostic | phase1_init_failure | reason={0}; evidence={1}. |" -f (($Reason -replace '\|', '/')), (($EvidencePath -replace '\|', '/')))
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ProgressPath)) {
+        [ordered]@{
+            replay_root = $ReplayRoot
+            max_slices = $MaxSlices
+            completed = @()
+            stopped = $true
+            stop_reason = "phase1_init_failure:$Reason"
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ProgressPath -Encoding UTF8
+    }
+}
+
 function Get-MavenArgumentList {
     param([string]$MavenSettings)
     if ([string]::IsNullOrWhiteSpace($MavenSettings)) { return @() }
@@ -3625,7 +3680,10 @@ $logsRoot = Join-Path $replayRootFull 'logs\phase1-slices'
 
 $required = @($replayRootFull, $worktreeFull, $requirementSourceFull, $baselineIndexFull, $contextManifestFull, $sliceTemplatePath, $synthesisTemplatePath)
 foreach ($path in $required) {
-    if (-not (Test-Path -LiteralPath $path)) { throw "Required path missing: $path" }
+    if (-not (Test-Path -LiteralPath $path)) {
+        Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "required_path_missing:$path" -EvidencePath $path
+        exit 95
+    }
 }
 
 if ($MaxSlices -lt 1) { $MaxSlices = 1 }
@@ -3656,7 +3714,8 @@ if (-not (Test-Path -LiteralPath $featureClassificationPath)) {
             -RequirementSource $requirementSourceFull `
             -OutPath $featureClassificationPath | Out-Null
         if ($LASTEXITCODE -ne 0) {
-            throw "Classify-Feature failed for $replayRootFull"
+            Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "classify_feature_failed:exit_$LASTEXITCODE" -EvidencePath $featureClassificationPath
+            exit 95
         }
     }
 }
@@ -3672,7 +3731,8 @@ if (Apply-FamilyScopeFilter -Ledger $initialLedger -RequirementSource $requireme
 if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRootFull -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Plan schema validation failed. Inspect $(Join-Path $replayRootFull 'PLAN_SCHEMA_FAILFAST.json')"
+        Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "plan_schema_validation_failed:exit_$LASTEXITCODE" -EvidencePath (Join-Path $replayRootFull 'PLAN_SCHEMA_FAILFAST.json')
+        exit 95
     }
 }
 
@@ -3680,7 +3740,8 @@ if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
 if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PreExecutionConstraintCheck.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') -BaselineRoot $projectRootFull -FeatureClassificationPath $featureClassificationPath | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Pre-execution constraint check failed. Inspect $(Join-Path $replayRootFull 'PRE_EXECUTION_CONSTRAINT_CHECK.json')"
+        Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "pre_execution_constraint_check_failed:exit_$LASTEXITCODE" -EvidencePath (Join-Path $replayRootFull 'PRE_EXECUTION_CONSTRAINT_CHECK.json')
+        exit 95
     }
 }
 
@@ -3697,7 +3758,8 @@ Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlic
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'ReplayDryRunGate.ps1') -ReplayRoot $replayRootFull -Mode FirstSliceProofPlan -ExpectStatus ALLOW | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    throw "First-slice dry-run did not allow implementation. Inspect $(Join-Path $replayRootFull 'DRY_RUN_GATE.json')"
+    Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "first_slice_dry_run_denied:exit_$LASTEXITCODE" -EvidencePath (Join-Path $replayRootFull 'DRY_RUN_GATE.json')
+    exit 95
 }
 
 $sliceTemplate = Get-Content -LiteralPath $sliceTemplatePath -Raw -Encoding UTF8

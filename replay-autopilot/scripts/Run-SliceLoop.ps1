@@ -1951,8 +1951,23 @@ function Invoke-Phase0PrecheckGate {
         return [pscustomobject]@{ CanProceed = $true; ResultPath = ''; Blocker = '' }
     }
 
-    $stdoutText = & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -ReplayRoot $ReplayRoot -Worktree $Worktree -MavenSettings $MavenSettings -SliceIndex $SliceIndex 2>&1 | Out-String
+    $phase0Args = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $gateScript,
+        '-ReplayRoot', $ReplayRoot,
+        '-Worktree', $Worktree,
+        '-SliceIndex', $SliceIndex
+    )
+    if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) {
+        $phase0Args += @('-MavenSettings', $MavenSettings)
+    }
+
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $stdoutText = & powershell @phase0Args 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldPreference
 
     $result.exit_code = $exitCode
     $result.stdout_log = $stdoutPath
@@ -4311,6 +4326,23 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     if (-not [bool]$v348Gate.CanProceed) {
         Write-Host "v348 slice quality gate failed for slice ${i}: $($v348Gate.Blocker)"
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "v348_slice_quality_gate: $($v348Gate.Blocker)"
+        break
+    }
+    if ($blockedBeforeExecutor) {
+        $blockedVerify = if (Test-Path -LiteralPath $sliceVerify) { Read-JsonObject -Path $sliceVerify } else { $null }
+        $blockedReasons = @()
+        if ($null -ne $blockedVerify) {
+            $blockedReasons = @(
+                @(Get-StringArray $blockedVerify.authorization_blockers) +
+                @(Get-StringArray $blockedVerify.gap_flags) +
+                @(Get-StringArray $blockedVerify.warnings)
+            ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+        }
+        if ($blockedReasons.Count -eq 0) {
+            $blockedReasons = @('blocked_before_executor')
+        }
+        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} blocked-before-executor synthesis stop | {1} | {2} | local_gate_blocked_before_executor | reasons={3}; slice_result={4}. |" -f $i, $forced.family_id, $forced.slice_type, (($blockedReasons -join ',') -replace '\|', '/'), $sliceResult)
+        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "blocked_before_executor: $($blockedReasons -join ',')"
         break
     }
     # v431: Layer validation gate (pre-flight check)

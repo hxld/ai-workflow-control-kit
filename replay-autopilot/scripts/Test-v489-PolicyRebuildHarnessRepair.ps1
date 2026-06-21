@@ -71,6 +71,13 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("policy-rebuild-harness
 
 try {
     $runLoopText = Get-Content -LiteralPath $runLoop -Raw -Encoding UTF8
+    $mavenSettingsHelper = [regex]::Match(
+        $runLoopText,
+        '(?s)function Get-MavenSettingsCommandSegment.+?(?=function Get-Sha256Hex)'
+    ).Value
+    Assert-True 'runner_maven_settings_helper_extractable' (-not [string]::IsNullOrWhiteSpace($mavenSettingsHelper))
+    Invoke-Expression $mavenSettingsHelper
+
     $functionBlock = [regex]::Match(
         $runLoopText,
         '(?s)function Resolve-ReplayEvidencePath.+?(?=function Repair-Phase0ManualOracleWaitText)'

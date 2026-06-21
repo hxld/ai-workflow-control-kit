@@ -728,7 +728,10 @@ function Test-PolicyRebuildPlanText {
     if ([string]::IsNullOrWhiteSpace($PlanText)) {
         return $false
     }
-    return ($PlanText -match '(?i)policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor')
+    $hasPolicyNum = $PlanText -match '(?i)(policyNum|policy_num)'
+    $hasInsureNum = $PlanText -match '(?i)(insureNum|insure_num)'
+    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
+    return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)
 }
 
 function Write-PlanTestCompileEvidencePolicyGate {

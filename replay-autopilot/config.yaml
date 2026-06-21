@@ -74,6 +74,7 @@ knowledge_backup_auto_push: false
 knowledge_backup_evidence_mode: Milestone
 knowledge_backup_push_retries: 2
 knowledge_backup_push_retry_delay_seconds: 60
+knowledge_backup_push_timeout_seconds: 60
 knowledge_backup_push_failure_is_blocking: false
 golden_sample_auto_mine: false
 golden_sample_auto_apply: false

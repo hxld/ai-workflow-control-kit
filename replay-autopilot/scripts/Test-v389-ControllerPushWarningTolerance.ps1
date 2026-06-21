@@ -23,6 +23,7 @@ Assert-True -Name 'controller_push_redirects_stderr' -Condition ($controllerText
 Assert-True -Name 'controller_push_uses_exit_code_only' -Condition ($controllerText -match '\$pushExitCode\s*=\s*\$pushProcess\.ExitCode')
 Assert-True -Name 'controller_push_logs_paths' -Condition ($controllerText -match 'knowledge_backup_push_stdout=\$pushStdout stderr=\$pushStderr exit=\$pushExitCode attempt=\$attempt')
 Assert-True -Name 'controller_push_status_records_logs' -Condition ($controllerText -match 'stdout\s*=\s*\$pushStdout' -and $controllerText -match 'stderr\s*=\s*\$pushStderr')
+Assert-True -Name 'controller_push_timeout_guard' -Condition ($controllerText -match 'knowledge_backup_push_timeout_seconds' -and $controllerText -match 'WaitForExit\(\$pushTimeoutSeconds \* 1000\)' -and $controllerText -match 'Stop-Process -Id \$pushProcess\.Id')
 Assert-True -Name 'controller_push_no_2to1_capture' -Condition ($controllerText -notmatch '\$pushOutput\s*=\s*& git -C \$knowledgeRepoForPush push origin \$branch 2>&1')
 
 Write-Host 'PASS: v389 controller push warning tolerance'

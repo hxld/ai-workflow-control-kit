@@ -152,6 +152,7 @@ function Write-SimpleYaml {
         'knowledge_backup_evidence_mode',
         'knowledge_backup_push_retries',
         'knowledge_backup_push_retry_delay_seconds',
+        'knowledge_backup_push_timeout_seconds',
         'knowledge_backup_push_failure_is_blocking'
     )
 
@@ -482,12 +483,27 @@ function Invoke-KnowledgeBackupSyncSafe {
     if ($maxRetries -lt 0) { $maxRetries = 0 }
     $retryDelaySeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_retry_delay_seconds' -DefaultValue '60') -DefaultValue 60
     if ($retryDelaySeconds -lt 0) { $retryDelaySeconds = 0 }
+    $pushTimeoutSeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_timeout_seconds' -DefaultValue '60') -DefaultValue 60
+    if ($pushTimeoutSeconds -lt 1) { $pushTimeoutSeconds = 60 }
     $attemptLimit = $maxRetries + 1
     $pushExitCode = 0
+    $pushTimedOut = $false
 
     for ($attempt = 1; $attempt -le $attemptLimit; $attempt++) {
-        & git -C $knowledgeRepo push origin $branch
-        $pushExitCode = $LASTEXITCODE
+        $pushProcess = Start-Process -FilePath git `
+            -ArgumentList @('-C', $knowledgeRepo, 'push', 'origin', $branch) `
+            -WorkingDirectory $knowledgeRepo `
+            -WindowStyle Hidden `
+            -PassThru
+        $completed = $pushProcess.WaitForExit($pushTimeoutSeconds * 1000)
+        if ($completed) {
+            $pushExitCode = $pushProcess.ExitCode
+        } else {
+            $pushTimedOut = $true
+            $pushExitCode = -1
+            Stop-Process -Id $pushProcess.Id -Force -ErrorAction SilentlyContinue
+            Write-Warning "Knowledge backup push timed out after $pushTimeoutSeconds seconds on attempt $attempt; recorded pending push and continuing when non-blocking."
+        }
         if ($pushExitCode -eq 0) {
             if (-not [string]::IsNullOrWhiteSpace($evidenceRoot)) {
                 $statusDir = Join-Path $evidenceRoot '_control'
@@ -521,6 +537,8 @@ function Invoke-KnowledgeBackupSyncSafe {
             branch = $branch
             attempts = $attemptLimit
             exit_code = $pushExitCode
+            timed_out = $pushTimedOut
+            timeout_seconds = $pushTimeoutSeconds
             blocking = $blockingPushFailure
             recovery = "Run git -C `"$knowledgeRepo`" push origin $branch or rerun Sync-KnowledgeBackup.ps1 -Push."
         }

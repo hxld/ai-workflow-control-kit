@@ -345,8 +345,11 @@ function Invoke-KnowledgeBackupSyncSafe {
     if ($maxRetries -lt 0) { $maxRetries = 0 }
     $retryDelaySeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_retry_delay_seconds' -DefaultValue '60') -DefaultValue 60
     if ($retryDelaySeconds -lt 0) { $retryDelaySeconds = 0 }
+    $pushTimeoutSeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_timeout_seconds' -DefaultValue '60') -DefaultValue 60
+    if ($pushTimeoutSeconds -lt 1) { $pushTimeoutSeconds = 60 }
     $attemptLimit = $maxRetries + 1
     $pushExitCode = 0
+    $pushTimedOut = $false
 
     for ($attempt = 1; $attempt -le $attemptLimit; $attempt++) {
         $pushStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -358,9 +361,18 @@ function Invoke-KnowledgeBackupSyncSafe {
             -RedirectStandardOutput $pushStdout `
             -RedirectStandardError $pushStderr `
             -WindowStyle Hidden `
-            -PassThru `
-            -Wait
-        $pushExitCode = $pushProcess.ExitCode
+            -PassThru
+        $completed = $pushProcess.WaitForExit($pushTimeoutSeconds * 1000)
+        if ($completed) {
+            $pushExitCode = $pushProcess.ExitCode
+        } else {
+            $pushTimedOut = $true
+            $pushExitCode = -1
+            Stop-Process -Id $pushProcess.Id -Force -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+                Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "$(Get-Date -Format s) knowledge_backup_push_timeout_seconds=$pushTimeoutSeconds attempt=$attempt pid=$($pushProcess.Id)"
+            }
+        }
         if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
             Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "$(Get-Date -Format s) knowledge_backup_push_stdout=$pushStdout stderr=$pushStderr exit=$pushExitCode attempt=$attempt"
         }
@@ -398,6 +410,8 @@ function Invoke-KnowledgeBackupSyncSafe {
             branch = $branch
             attempts = $attemptLimit
             exit_code = $pushExitCode
+            timed_out = $pushTimedOut
+            timeout_seconds = $pushTimeoutSeconds
             blocking = $blockingPushFailure
             recovery = "Run git -C `"$knowledgeRepoForPush`" push origin $branch or rerun Sync-KnowledgeBackup.ps1 -Push."
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $statusDir 'KNOWLEDGE_BACKUP_PENDING.json') -Encoding UTF8

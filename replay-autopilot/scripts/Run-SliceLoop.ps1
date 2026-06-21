@@ -3677,6 +3677,28 @@ $roundResultPath = Join-Path $replayRootFull 'ROUND_RESULT.md'
 $surfaceCarrierScanPath = Join-Path $replayRootFull 'SURFACE_CARRIER_SCAN.md'
 $featureClassificationPath = Join-Path $replayRootFull 'FEATURE_CLASSIFICATION.json'
 $logsRoot = Join-Path $replayRootFull 'logs\phase1-slices'
+$phase1InitGateActive = $true
+$phase1InitExceptionPath = Join-Path $replayRootFull 'PHASE1_INIT_EXCEPTION.txt'
+
+trap {
+    if ($phase1InitGateActive) {
+        $message = [string]$_.Exception.Message
+        $position = if ($null -ne $_.InvocationInfo) { [string]$_.InvocationInfo.PositionMessage } else { '' }
+        $detail = @(
+            "message: $message",
+            '',
+            $position
+        ) -join "`n"
+        try {
+            $detail | Set-Content -LiteralPath $phase1InitExceptionPath -Encoding UTF8
+            Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "phase1_init_exception:$message" -EvidencePath $phase1InitExceptionPath
+        } catch {
+            # If diagnostic writing itself fails, keep the stable exit code.
+        }
+        exit 95
+    }
+    break
+}
 
 $required = @($replayRootFull, $worktreeFull, $requirementSourceFull, $baselineIndexFull, $contextManifestFull, $sliceTemplatePath, $synthesisTemplatePath)
 foreach ($path in $required) {
@@ -3764,6 +3786,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $sliceTemplate = Get-Content -LiteralPath $sliceTemplatePath -Raw -Encoding UTF8
 $synthesisTemplate = Get-Content -LiteralPath $synthesisTemplatePath -Raw -Encoding UTF8
+$phase1InitGateActive = $false
 
 for ($i = 1; $i -le $MaxSlices; $i++) {
     $sliceId = 'slice{0:D2}' -f $i

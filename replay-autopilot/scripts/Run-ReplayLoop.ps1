@@ -5342,8 +5342,19 @@ Do not create new production files, test files, or worktree changes.
         New-Item -ItemType Directory -Force -Path $phase1WrapperLogDir | Out-Null
         $phase1WrapperStdout = Join-Path $phase1WrapperLogDir 'phase1-wrapper.stdout.log'
         $phase1WrapperStderr = Join-Path $phase1WrapperLogDir 'phase1-wrapper.stderr.log'
-        & powershell @phase1Args > $phase1WrapperStdout 2> $phase1WrapperStderr
-        $phase1ExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        $phase1InvocationError = ''
+        $oldPhase1ErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & powershell @phase1Args > $phase1WrapperStdout 2> $phase1WrapperStderr
+            $phase1ExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        } catch {
+            $phase1InvocationError = [string]$_.Exception.Message
+            $phase1ExitCode = if ($null -eq $LASTEXITCODE) { 1 } else { [int]$LASTEXITCODE }
+            Add-Content -LiteralPath $phase1WrapperStderr -Encoding UTF8 -Value ("wrapper_invocation_error: {0}" -f $phase1InvocationError)
+        } finally {
+            $ErrorActionPreference = $oldPhase1ErrorActionPreference
+        }
         [ordered]@{
             schema = 'phase1_wrapper_exec.v1'
             stage = 'phase1'
@@ -5352,6 +5363,7 @@ Do not create new production files, test files, or worktree changes.
             args = @($phase1Args)
             stdout_log = $phase1WrapperStdout
             stderr_log = $phase1WrapperStderr
+            invocation_error = $phase1InvocationError
             failure_category = if ($phase1ExitCode -eq 95) { 'phase1_init_failure' } else { '' }
             generated_at = (Get-Date).ToString('s')
         } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $phase1WrapperLogDir 'phase1.exec.json') -Encoding UTF8

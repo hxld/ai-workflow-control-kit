@@ -81,15 +81,24 @@ function parseArgs(argv) {
 
 // ── 工具函数 ──────────────────────────────────────────────────
 
-function exec(cmd, opts = {}) {
-  const defaults = { stdio: opts.dryRun ? 'pipe' : 'pipe', encoding: 'utf-8', timeout: 30000 };
+function execFile(command, args = [], opts = {}) {
+  const defaults = { stdio: 'pipe', encoding: 'utf-8', timeout: 30000, windowsHide: true };
   const merged = { ...defaults, ...opts };
   try {
-    const r = childProcess.execSync(cmd, merged);
+    const r = childProcess.execFileSync(command, args, merged);
     return { ok: true, stdout: (r || '').toString().trim(), stderr: '' };
   } catch (e) {
     return { ok: false, stdout: (e.stdout || '').toString().trim(), stderr: (e.stderr || '').toString().trim() };
   }
+}
+
+function requireGit(args, detail) {
+  const result = execFile('git', args);
+  if (!result.ok) {
+    const message = result.stderr || result.stdout || 'unknown git failure';
+    throw new Error(`${detail}: ${message}`);
+  }
+  return result;
 }
 
 function dryRunLog(msg) {
@@ -265,31 +274,33 @@ ${services.map((s) => `- ${s}`).join('\n')}
         }
 
         // 检查 git repo
-        const gitCheck = exec(`git -C "${svcPath}" rev-parse --git-dir`);
+        const gitCheck = execFile('git', ['-C', svcPath, 'rev-parse', '--git-dir']);
         if (!gitCheck.ok) {
           log('warn', `不是 git 仓库: ${svcPath}，跳过 worktree`);
           continue;
         }
 
         // 检查分支是否已存在
-        const branchCheck = exec(`git -C "${svcPath}" rev-parse --verify "${branchName}"`, { dryRun: false });
+        const branchCheck = execFile('git', ['-C', svcPath, 'rev-parse', '--verify', branchName]);
         const svcWorktreeDir = path.join(servicesDir, svc);
+        if (fs.existsSync(svcWorktreeDir)) {
+          throw new Error(`worktree 目标目录已存在: ${svcWorktreeDir}`);
+        }
 
         if (branchCheck.ok) {
           // 分支已存在 → add worktree
           log('ok', `  分支 ${branchName} 已存在于 ${svc}，添加 worktree`);
-          exec(`git -C "${svcPath}" worktree add "${svcWorktreeDir}" "${branchName}"`);
+          requireGit(['-C', svcPath, 'worktree', 'add', svcWorktreeDir, branchName], `添加 worktree 失败: ${svc}`);
         } else {
-          // 分支不存在 → 从当前分支创建
-          log('ok', `  从当前分支创建 ${branchName} 于 ${svc}，添加 worktree`);
-          exec(`git -C "${svcPath}" checkout -b "${branchName}"`);
-          exec(`git -C "${svcPath}" worktree add "${svcWorktreeDir}" "${branchName}"`);
+          // 分支不存在 → worktree add -b 在隔离目录创建，避免污染主工作区当前分支。
+          const head = requireGit(['-C', svcPath, 'rev-parse', '--verify', 'HEAD'], `读取基线提交失败: ${svc}`).stdout;
+          log('ok', `  从当前 HEAD 创建 ${branchName} 于 ${svc}，添加 worktree`);
+          requireGit(['-C', svcPath, 'worktree', 'add', '-b', branchName, svcWorktreeDir, head], `创建分支和 worktree 失败: ${svc}`);
         }
 
         log('ok', `  worktree: ${svcWorktreeDir}`);
       } else {
-        dryRunLog(`git -C "${svcPath}" checkout -b "${branchName}"`);
-        dryRunLog(`git -C "${svcPath}" worktree add "${servicesDir}/${svc}" "${branchName}"`);
+        dryRunLog(`git -C "${svcPath}" worktree add -b "${branchName}" "${servicesDir}/${svc}" HEAD`);
       }
     }
   } else {

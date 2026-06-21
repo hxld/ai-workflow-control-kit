@@ -32,6 +32,18 @@ def run_command(cmd: List[str], cwd: str, timeout: int = 60) -> Tuple[int, str, 
         return -1, "", str(e)
 
 
+def simple_java_name(name: str) -> str:
+    """Return the simple Java class/type name without package or generic detail."""
+    if not name:
+        return ""
+    cleaned = re.sub(r'<[^>]+>', '', name).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    if " " in cleaned:
+        cleaned = cleaned.split(" ", 1)[0]
+    cleaned = cleaned.replace("[]", "").strip()
+    return cleaned.split(".")[-1]
+
+
 class MethodSignature:
     """Represents a Java method signature."""
 
@@ -122,7 +134,7 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     # Pattern for method declaration
     # Matches: public/private/protected/package-private [static] [final] ReturnType methodName(params) [throws ...]
     pattern = re.compile(
-        r'^(?:public|private|protected|)?\s*(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
+        r'^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
         re.escape(method_name) +
         r'\s*\(([^)]*)\)\s*(?:throws\s+[^{]+)?',
         re.MULTILINE
@@ -158,35 +170,53 @@ def search_method_in_worktree(worktree: str, class_name: str, method_name: str) 
     Returns dict with 'file_path' and 'source' if found.
     """
     # Search for the class file
-    search_cmd = ["rg", "--type", "java", f"class {class_name}"]
+    search_class_name = simple_java_name(class_name)
+    search_cmd = ["rg", "--type", "java", "--files-with-matches", rf"\bclass\s+{re.escape(search_class_name)}\b"]
+    candidate_paths: List[Path] = []
 
     returncode, stdout, stderr = run_command(search_cmd, worktree, timeout=30)
-    if returncode != 0 or not stdout.strip():
-        return None
+    if returncode == 0 and stdout.strip():
+        # Use --files-with-matches so Windows drive letters like D:\ are not
+        # confused with rg's normal match separators.
+        for line in stdout.strip().split("\n"):
+            file_path_text = line.strip()
+            if file_path_text:
+                candidate_path = Path(file_path_text)
+                if not candidate_path.is_absolute():
+                    candidate_path = Path(worktree) / candidate_path
+                candidate_paths.append(candidate_path)
 
-    # Get file path from first match
-    for line in stdout.strip().split("\n")[:5]:
-        if line.strip():
-            file_path = line.split(":")[0]
-            break
-    else:
-        return None
+    # rg can be missing from PATH or behave differently in nested executor
+    # environments. A pure Python scan is slower but deterministic for gates.
+    if not candidate_paths:
+        class_pattern = re.compile(rf"\bclass\s+{re.escape(search_class_name)}\b")
+        for java_path in Path(worktree).rglob("*.java"):
+            try:
+                source = java_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                source = java_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if class_pattern.search(source):
+                candidate_paths.append(java_path)
 
-    # Read the file to extract method signature
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            source = f.read()
-    except:
-        return None
+    for candidate_path in candidate_paths[:20]:
+        try:
+            source = candidate_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = candidate_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
 
-    # Verify method exists in class
-    if method_name not in source:
-        return None
+        if method_name not in source:
+            continue
 
-    return {
-        "file_path": file_path,
-        "source": source
-    }
+        return {
+            "file_path": str(candidate_path),
+            "source": source
+        }
+
+    return None
 
 
 def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bool:
@@ -199,7 +229,7 @@ def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bo
         return False
 
     # Class name must match
-    if plan_sig.class_name != impl_sig.class_name:
+    if simple_java_name(plan_sig.class_name) != simple_java_name(impl_sig.class_name):
         return False
 
     # Method name must match
@@ -213,14 +243,14 @@ def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bo
     # Parameter types must match (order matters)
     for p1, p2 in zip(plan_sig.parameters, impl_sig.parameters):
         # Normalize for comparison (remove generics for basic check)
-        p1_clean = re.sub(r'<[^>]+>', '', p1).strip()
-        p2_clean = re.sub(r'<[^>]+>', '', p2).strip()
+        p1_clean = simple_java_name(p1)
+        p2_clean = simple_java_name(p2)
         if p1_clean != p2_clean:
             return False
 
     # Return type must match
-    plan_return_clean = re.sub(r'<[^>]+>', '', plan_sig.return_type).strip()
-    impl_return_clean = re.sub(r'<[^>]+>', '', impl_sig.return_type).strip()
+    plan_return_clean = simple_java_name(plan_sig.return_type)
+    impl_return_clean = simple_java_name(impl_sig.return_type)
     if plan_return_clean != impl_return_clean:
         return False
 

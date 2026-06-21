@@ -61,7 +61,7 @@
 5. 读取 `{{SURFACE_CARRIER_SCAN}}`，把 required family 的候选生产承载点纳入候选计划。
 6. 若上述文件缺失，写 `PLAN_RESULT.md`，`plan_status=BLOCKED`。
 
-【Oracle Feature Domain Compatibility Check (MANDATORY v347)】
+【Oracle Feature Domain Compatibility Check (MANDATORY v347/v578)】
 
 在执行 "Oracle-Constrained Planning" 之前，必须先检查 oracle 与需求的功能域是否兼容。
 
@@ -81,20 +81,23 @@
    - 统计 oracle 文件中各功能域的文件数量
    - 确定主功能域：文件数量最多的域
    - 计算非主功能域文件比例：`foreign_ratio = non_primary_count / total_oracle_files`
-   - 如果 `foreign_ratio > 30%` → `domain_compatibility: MISMATCH`
-   - 如果 oracle 主功能域与需求主功能域不同 → `domain_compatibility: MISMATCH`
-   - 否则 → `domain_compatibility: COMPATIBLE`
+   - 如果 oracle 主功能域与需求主功能域明确不同 → `domain_compatibility: MISMATCH`
+   - 如果 oracle 主功能域与需求主功能域一致，但 `foreign_ratio > 30%` → `domain_compatibility: COMPATIBLE`，并设置 `supporting_domain_review_required: true`
+   - 高 `foreign_ratio` 只能表示跨支撑面较多，不能单独作为 BLOCK 理由。必须继续执行 Domain-Aware Oracle Overlap Calculation，并用 domain-filtered oracle files、Expected Diff Matrix、Side Effect Ledger 和 Test Charter 约束计划范围。
+   - 如果主功能域无法可靠提取 → `domain_compatibility: UNCERTAIN`，继续规划但必须写出 `domain_uncertainty_reason` 和保守的 domain-filtered overlap 计算。
 
 4. **在 `PLAN_RESULT.md` 中必须包含**：
    - `oracle_primary_domain:` <提取的oracle主功能域>
    - `requirement_primary_domain:` <提取的需求主功能域>
    - `domain_compatibility:` COMPATIBLE | MISMATCH | UNCERTAIN
    - `foreign_domain_ratio:` <非主功能域文件百分比>
+   - `supporting_domain_review_required:` true | false
+   - `supporting_domain_ledger:` 当 `supporting_domain_review_required=true` 时，列出 supporting domain、为何是支撑面、是否纳入本轮 expected diff/test，或为何延后且不影响 first executable slice。
 
-5. 如果 `domain_compatibility: MISMATCH`，禁止生成候选计划，直接写 `PLAN_RESULT.md` 并设置：
+5. 只有当 `domain_compatibility: MISMATCH` 时，禁止生成候选计划，直接写 `PLAN_RESULT.md` 并设置：
    - `plan_status=BLOCKED`
    - `blocker: oracle_feature_domain_mismatch`
-   - 在 `PLAN_RESULT.md` 中说明冲突文件列表和冲突原因
+   - 在 `PLAN_RESULT.md` 中说明主域冲突证据。不得因为 `foreign_ratio > 30%` 但主域一致而设置此 blocker。
 
 【Oracle-Constrained Planning (MANDATORY)】
 

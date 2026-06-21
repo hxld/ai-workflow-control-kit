@@ -2,10 +2,12 @@
 #
 # Purpose: Early detection of oracle-feature domain mismatch before planning starts.
 # Gate: Oracle Isolation Gate
-# Version: v347
+# Version: v347/v578
 #
 # This script analyzes oracle file paths and requirement content to detect
 # feature domain incompatibilities BEFORE the plan tournament begins.
+# High supporting-domain ratios are reported for domain-filtered planning; they
+# are not a mismatch by themselves when the primary requirement domain matches.
 #
 # Usage:
 #   Invoke-OracleFeatureDomainCheck.ps1 -OracleDiffAnalysis <path> -RequirementSource <path> -OutPath <path>
@@ -139,16 +141,24 @@ if ($oracleTotalFiles -eq 0) {
     $foreignRatio = [math]::Round(($nonPrimaryCount / $oracleTotalFiles) * 100, 1)
 }
 
-# Determine compatibility
+# Determine compatibility. Only a clear primary-domain mismatch blocks. A high
+# non-primary ratio often means the feature crosses supporting integration
+# surfaces, so downstream domain-filtered overlap and side-effect ledgers must
+# control scope instead of stopping before planning.
 $domainCompatibility = 'COMPATIBLE'
 $reason = ""
+$supportingDomainReviewRequired = $false
 
-if ($foreignRatio -gt 30) {
-    $domainCompatibility = 'MISMATCH'
-    $reason = "Oracle has $foreignRatio% files from non-primary domains"
-} elseif ($oraclePrimaryDomain -ne 'unknown' -and $requirementPrimaryDomain -ne 'unknown' -and $oraclePrimaryDomain -ne $requirementPrimaryDomain) {
+if ($oraclePrimaryDomain -ne 'unknown' -and $requirementPrimaryDomain -ne 'unknown' -and $oraclePrimaryDomain -ne $requirementPrimaryDomain) {
     $domainCompatibility = 'MISMATCH'
     $reason = "Oracle primary domain ($oraclePrimaryDomain) does not match requirement domain ($requirementPrimaryDomain)"
+} elseif ($oraclePrimaryDomain -eq 'unknown' -or $requirementPrimaryDomain -eq 'unknown') {
+    $domainCompatibility = 'UNCERTAIN'
+    $reason = "Primary domain could not be reliably extracted; continue with conservative domain-filtered planning"
+    $supportingDomainReviewRequired = ($foreignRatio -gt 30)
+} elseif ($foreignRatio -gt 30) {
+    $supportingDomainReviewRequired = $true
+    $reason = "Oracle has $foreignRatio% non-primary-domain files; treat them as supporting-domain surfaces unless the coverage ledger proves otherwise"
 }
 
 # Collect mismatch evidence
@@ -166,6 +176,21 @@ if ($domainCompatibility -eq 'MISMATCH') {
     }
 }
 
+$supportingDomainEvidence = @()
+if ($supportingDomainReviewRequired) {
+    foreach ($file in $oracleFiles) {
+        $domain = Get-DomainFromPath -Path $file.path
+        if ($domain -ne $oraclePrimaryDomain -and $domain -ne 'unknown') {
+            $supportingDomainEvidence += [ordered]@{
+                path = $file.path
+                domain = $domain
+                layer = $file.layer
+                weight = $file.weight
+            }
+        }
+    }
+}
+
 # Build result
 $result = [ordered]@{
     check_status = 'PASS'
@@ -173,8 +198,10 @@ $result = [ordered]@{
     requirement_primary_domain = $requirementPrimaryDomain
     domain_compatibility = $domainCompatibility
     foreign_domain_ratio = $foreignRatio
+    supporting_domain_review_required = $supportingDomainReviewRequired
     domain_breakdown = $domainCounts
     mismatch_evidence = $mismatchedFiles
+    supporting_domain_evidence = $supportingDomainEvidence
     reason = $reason
     generated_at = (Get-Date).ToString('s')
 }

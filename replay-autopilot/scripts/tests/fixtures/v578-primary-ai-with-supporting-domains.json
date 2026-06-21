@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "files": [
+        {"path": "service/ai/AiTaskProcessor.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "service/ai/AiModuleConfigService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "domain/ai/AiModuleConfigDto.java", "layer": "DTO", "weight": "LOW", "is_production": true},
+        {"path": "service/examine/ExamineFlowService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "service/push/ExternalPushService.java", "layer": "Service", "weight": "HIGH", "is_production": true},
+        {"path": "service/route/RouteService.java", "layer": "Service", "weight": "MEDIUM", "is_production": true},
+        {"path": "service/refund/RefundTicketService.java", "layer": "Service", "weight": "MEDIUM", "is_production": true}
+    ]
+}

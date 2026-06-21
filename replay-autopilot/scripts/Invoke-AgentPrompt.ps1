@@ -14,6 +14,7 @@ param(
     [int]$TimeoutMinutes = 240,
     [string]$CompletionPath = '',
     [int]$CompletionQuietSeconds = 90,
+    [int]$SilentNoOutputTimeoutSeconds = 0,
     [string]$Name = 'agent',
     [switch]$ValidateOnly
 )
@@ -417,10 +418,15 @@ function Receive-JobWithTimeout {
         [string]$WorkDir = '',
         [string]$ProtectedRoot = '',
         [string]$ProtectedRootStatusBefore = '',
+        [string]$StdoutLogPath = '',
+        [string]$StderrLogPath = '',
+        [string]$LastMessagePath = '',
+        [int]$SilentNoOutputTimeoutSeconds = 0,
         [string]$GuardLogPath = ''
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $watchStartedUtc = (Get-Date).ToUniversalTime()
     $completionFull = ''
     if (-not [string]::IsNullOrWhiteSpace($CompletionPath)) {
         $completionFull = [System.IO.Path]::GetFullPath($CompletionPath)
@@ -428,10 +434,47 @@ function Receive-JobWithTimeout {
     $lastCompletionSignature = ''
     $completionStableSince = $null
     $quietSeconds = [Math]::Max(15, $CompletionQuietSeconds)
+    $silentTimeout = [Math]::Max(0, $SilentNoOutputTimeoutSeconds)
 
     function Test-CompletionFileReady {
         param([string]$Path)
         return (Test-AgentCompletionFileReady -Path $Path)
+    }
+
+    function Get-OutputActivitySignature {
+        $parts = New-Object System.Collections.ArrayList
+        foreach ($path in @($StdoutLogPath, $StderrLogPath, $LastMessagePath, $completionFull)) {
+            if ([string]::IsNullOrWhiteSpace($path)) {
+                continue
+            }
+            $fullPath = [System.IO.Path]::GetFullPath($path)
+            if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+                $item = Get-Item -LiteralPath $fullPath
+                if ($item.Length -gt 8) {
+                    [void]$parts.Add(('{0}|{1}|{2}' -f $item.FullName, $item.Length, $item.LastWriteTimeUtc.Ticks))
+                }
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($completionFull)) {
+            $completionParent = Split-Path -Parent $completionFull
+            if (-not [string]::IsNullOrWhiteSpace($completionParent) -and (Test-Path -LiteralPath $completionParent -PathType Container)) {
+                $recentArtifacts = @(Get-ChildItem -LiteralPath $completionParent -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -gt $watchStartedUtc } |
+                    Sort-Object FullName)
+                foreach ($artifact in $recentArtifacts) {
+                    [void]$parts.Add(('{0}|{1}|{2}' -f $artifact.FullName, $artifact.Length, $artifact.LastWriteTimeUtc.Ticks))
+                }
+            }
+        }
+
+        return (@($parts) -join "`n")
+    }
+
+    $lastOutputActivitySignature = ''
+    $lastOutputActivityAt = Get-Date
+    if ($silentTimeout -gt 0) {
+        $lastOutputActivitySignature = Get-OutputActivitySignature
     }
 
     function Get-ResultExitCode {
@@ -590,6 +633,25 @@ function Receive-JobWithTimeout {
                 }
             }
         }
+
+        if ($silentTimeout -gt 0 -and -not (Test-CompletionFileReady $completionFull)) {
+            $currentOutputActivitySignature = Get-OutputActivitySignature
+            if ($currentOutputActivitySignature -ne $lastOutputActivitySignature) {
+                $lastOutputActivitySignature = $currentOutputActivitySignature
+                $lastOutputActivityAt = Get-Date
+            } elseif (((Get-Date) - $lastOutputActivityAt).TotalSeconds -ge $silentTimeout) {
+                Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
+                Stop-Job -Job $Job | Out-Null
+                Remove-Job -Job $Job -Force | Out-Null
+                [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+                return [pscustomobject]@{
+                    ExitCode = 88
+                    CompletionMode = 'silent_no_output_timeout'
+                    SilentNoOutputTimeoutSeconds = $silentTimeout
+                    CompletionPath = $completionFull
+                }
+            }
+        }
     }
 
     $completionReadyAfterExit = Test-CompletionFileReady $completionFull
@@ -647,6 +709,15 @@ if ($Executor -ne 'manual') {
     $commandSource = Resolve-ExecutorCommand $Executor
 }
 
+$timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
+$effectiveSilentNoOutputTimeoutSeconds = [Math]::Max(0, $SilentNoOutputTimeoutSeconds)
+if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and $env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS -match '^\d+$') {
+    $effectiveSilentNoOutputTimeoutSeconds = [int]$env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS
+}
+if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and $timeoutSeconds -gt 1200) {
+    $effectiveSilentNoOutputTimeoutSeconds = 900
+}
+
 if ($ValidateOnly -or $Executor -eq 'manual') {
     [pscustomobject]@{
         Executor = $Executor
@@ -658,13 +729,13 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         ReasoningEffort = $ReasoningEffort
         CompletionPath = $CompletionPath
         CompletionQuietSeconds = $CompletionQuietSeconds
+        SilentNoOutputTimeoutSeconds = $effectiveSilentNoOutputTimeoutSeconds
         Status = if ($Executor -eq 'manual') { 'MANUAL_PROMPT_READY' } else { 'VALID' }
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Get-Content -LiteralPath $metaPath -Encoding UTF8
     exit 0
 }
 
-$timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
 $started = Get-Date
 $reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
 $allowedPom = Join-Path $workDirFull 'pom.xml'
@@ -747,7 +818,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } elseif ($Executor -eq 'claude') {
     $args = @('--print', '--permission-mode', 'bypassPermissions', '--output-format', 'text', '--max-turns', '200')
@@ -796,17 +867,34 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } else {
     throw "Unsupported executor: $Executor"
 }
 
 $ended = Get-Date
+$stdoutLength = if (Test-Path -LiteralPath $stdoutLog -PathType Leaf) { (Get-Item -LiteralPath $stdoutLog).Length } else { 0 }
+$stderrLength = if (Test-Path -LiteralPath $stderrLog -PathType Leaf) { (Get-Item -LiteralPath $stderrLog).Length } else { 0 }
+$lastMessageExists = Test-Path -LiteralPath $lastMessage -PathType Leaf
+$lastMessageLength = if ($lastMessageExists) { (Get-Item -LiteralPath $lastMessage).Length } else { 0 }
+$executorProducedNoOutput = (
+    $result.CompletionMode -eq 'silent_no_output_timeout' -or
+    (
+        $result.CompletionMode -eq 'process_exit' -and
+        -not (Test-AgentCompletionFileReady $CompletionPath) -and
+        $stdoutLength -le 8 -and
+        $stderrLength -le 8 -and
+        (-not $lastMessageExists -or $lastMessageLength -le 8)
+    )
+)
 $failureCategory = ''
-if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and -not (Test-AgentCompletionFileReady $CompletionPath)) {
+if ($result.CompletionMode -eq 'silent_no_output_timeout') {
     $exitCode = 88
-    $failureCategory = 'missing_completion'
+    $failureCategory = 'executor_silent_no_output'
+} elseif ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and -not (Test-AgentCompletionFileReady $CompletionPath)) {
+    $exitCode = 88
+    $failureCategory = if ($executorProducedNoOutput) { 'executor_silent_no_output' } else { 'missing_completion' }
 }
 if ($exitCode -eq 93 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
     $failureCategory = 'command_guard_violation'
@@ -874,7 +962,13 @@ $meta = [ordered]@{
     timeout_minutes = $TimeoutMinutes
     completion_path = $CompletionPath
     completion_quiet_seconds = $CompletionQuietSeconds
+    silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
     completion_mode = $result.CompletionMode
+    stdout_length = $stdoutLength
+    stderr_length = $stderrLength
+    last_message_exists = $lastMessageExists
+    last_message_length = $lastMessageLength
+    executor_produced_no_output = $executorProducedNoOutput
     command_guard_reasons = if ($null -ne $result.PSObject.Properties['GuardReasons']) { $result.GuardReasons } else { '' }
     exit_code = $exitCode
     executor_exit_code = if ($null -ne $result.PSObject.Properties['ExecutorExitCode']) { $result.ExecutorExitCode } else { $exitCode }
@@ -901,6 +995,10 @@ if ($exitCode -ne 0) {
     }
     if ($failureCategory -eq 'missing_completion') {
         Write-Host "$Executor exited successfully but did not write required completion file: $CompletionPath. See $stdoutLog"
+        exit 88
+    }
+    if ($failureCategory -eq 'executor_silent_no_output') {
+        Write-Host "$Executor produced no output or stage artifacts before the silent watchdog expired: $CompletionPath. See $stdoutLog"
         exit 88
     }
     if ($failureCategory -eq 'command_guard_violation') {

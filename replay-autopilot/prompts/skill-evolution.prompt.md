@@ -3,6 +3,7 @@
 【输入】
 - replay root: {{REPLAY_ROOT}}
 - evolution proposal: {{EVOLUTION_PROPOSAL}}
+- verifiable rules: {{VERIFIABLE_RULES}}
 - skill source root: {{SKILL_SOURCE_ROOT}}
 - replay autopilot root: {{AUTOPILOT_ROOT}}
 - knowledge repo: {{KNOWLEDGE_REPO}}
@@ -30,6 +31,7 @@
 
 【任务】
 1. 阅读 evolution proposal。
+1.1 如果 `verifiable rules` 文件存在，必须阅读并逐条处理 `must_fix=true` 的 rule；成功结果必须在 `EVOLUTION_RESULT.md` 中明确引用对应 `machine_gate`、回归验证和下一步验证证据。
 2. 先把每个 gap 归入 8 个产品化门禁之一：
    - Source-of-Truth Gate
    - Oracle Isolation Gate
@@ -82,6 +84,7 @@ Runner completion artifact:
   - `- stop_and_evolve_satisfied: true` only after the required experiments or equivalent enforcement are implemented and validated
   - `- verification_results: PASS` only after regression/eval commands pass
   - `- changed_files: ...` must list actual changed replay-autopilot files, not only knowledge repo history files
+  - `- closed_machine_gates: ...` must list machine_gate values from verifiable rules that were actually closed
   - `- pushed_commit: ...` must contain the pushed knowledge repo commit hash
   - `- actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` must match the real latest knowledge version after push
 - Write this file only after the evolution side effects are complete, so the unattended runner can treat it as the completion signal.

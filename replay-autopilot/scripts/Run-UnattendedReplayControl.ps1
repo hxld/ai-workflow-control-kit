@@ -642,6 +642,10 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
     $reflectionGateStatus = 'not_run'
     $reflectionGateExitCode = 0
     $reflectionGateFailed = $false
+    $ruleClosureStatus = 'not_run'
+    $ruleClosureExitCode = 0
+    $ruleClosureFailed = $false
+    $ruleClosurePath = ''
     $reflectionGateScript = Join-Path $PSScriptRoot 'Invoke-ReflectionSufficiencyGate.ps1'
     if ($reflectionGateEnabled -and (@('EVOLVE', 'UPGRADE') -contains $decisionKind) -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot) -and (Test-Path -LiteralPath $reflectionGateScript)) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $reflectionGateScript -ReplayRoot $lastReplayRoot | Out-Null
@@ -662,14 +666,34 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
         $reflectionGateStatus = 'skipped_missing_script_or_root'
         $reflectionGateFailed = $true
     }
-    $shouldContinue = $hasNextCycle -and $continuableDecision -and -not $targetReached -and -not $stoplineBlocked -and -not $zeroCapStopTriggered -and -not $evolveWithoutVersionAdvance -and -not $reflectionGateFailed
+    $ruleClosureScript = Join-Path $PSScriptRoot 'Validate-VerifiableRuleClosure.ps1'
+    if ((@('EVOLVE', 'UPGRADE') -contains $decisionKind) -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot) -and (Test-Path -LiteralPath $ruleClosureScript)) {
+        $ruleClosurePath = Join-Path $lastReplayRoot 'VERIFIABLE_RULE_CLOSURE.json'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ruleClosureScript -ReplayRoot $lastReplayRoot -ControlRoot (Join-Path $evidenceRoot '_control') | Out-Null
+        $ruleClosureExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        if (Test-Path -LiteralPath $ruleClosurePath) {
+            try {
+                $ruleClosureJson = Get-Content -LiteralPath $ruleClosurePath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $ruleClosureStatus = [string]$ruleClosureJson.status
+            } catch {
+                $ruleClosureStatus = "parse_error:$($_.Exception.Message)"
+            }
+        } else {
+            $ruleClosureStatus = "missing_result_exit_$ruleClosureExitCode"
+        }
+        $ruleClosureFailed = $ruleClosureExitCode -ne 0 -or $ruleClosureStatus -ne 'PASS'
+    } elseif (@('EVOLVE', 'UPGRADE') -contains $decisionKind) {
+        $ruleClosureStatus = 'skipped_missing_script_or_root'
+        $ruleClosureFailed = $true
+    }
+    $shouldContinue = $hasNextCycle -and $continuableDecision -and -not $targetReached -and -not $stoplineBlocked -and -not $zeroCapStopTriggered -and -not $evolveWithoutVersionAdvance -and -not $reflectionGateFailed -and -not $ruleClosureFailed
 
     if ($zeroCapEvolutionContinue -and $zeroCapNextAction -eq 'golden_slice' -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot)) {
         $goldenRecoveryStatus = Invoke-GoldenSliceRecoverySafe -Config $config -ReplayRootBase $cycleReplayRootBase -LatestReplayRoot $lastReplayRoot -Reason 'zero_cap_evolved_continue' -LogPath $logPath
         Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) zero_cap_recovery=$goldenRecoveryStatus zero_cap_stop_suppressed=true version_before=$($beforeVersion.Version) version_after=$($afterVersion.Version)"
     }
 
-    Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_DECISION cycle=$cycle decision=$decisionKind cap=$latestCap oracle=$latestCoverage zero_cap_streak=$zeroCapStreak zero_cap_stop_raw=$zeroCapStopTriggeredRaw zero_cap_stop=$zeroCapStopTriggered zero_cap_evolution_continue=$zeroCapEvolutionContinue zero_cap_evolution_continue_limit=$zeroCapEvolutionContinueLimit evolve_without_version_advance=$evolveWithoutVersionAdvance evolve_without_latest_root_advance=$evolveWithoutLatestRootAdvance reflection_gate=$reflectionGateStatus reflection_gate_failed=$reflectionGateFailed latest_root=$lastReplayRoot latest_root_version=$latestRootVersionNumber version_after=$($afterVersion.Version)"
+    Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_DECISION cycle=$cycle decision=$decisionKind cap=$latestCap oracle=$latestCoverage zero_cap_streak=$zeroCapStreak zero_cap_stop_raw=$zeroCapStopTriggeredRaw zero_cap_stop=$zeroCapStopTriggered zero_cap_evolution_continue=$zeroCapEvolutionContinue zero_cap_evolution_continue_limit=$zeroCapEvolutionContinueLimit evolve_without_version_advance=$evolveWithoutVersionAdvance evolve_without_latest_root_advance=$evolveWithoutLatestRootAdvance reflection_gate=$reflectionGateStatus reflection_gate_failed=$reflectionGateFailed rule_closure=$ruleClosureStatus rule_closure_failed=$ruleClosureFailed latest_root=$lastReplayRoot latest_root_version=$latestRootVersionNumber version_after=$($afterVersion.Version)"
     Write-JsonStatus -Path $statusPath -Data ([ordered]@{
         schema = 'unattended_replay_control_status.v1'
         status = 'CYCLE_DONE'
@@ -696,6 +720,10 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
         reflection_gate_status = $reflectionGateStatus
         reflection_gate_exit_code = $reflectionGateExitCode
         reflection_gate_failed = $reflectionGateFailed
+        rule_closure_status = $ruleClosureStatus
+        rule_closure_exit_code = $ruleClosureExitCode
+        rule_closure_failed = $ruleClosureFailed
+        rule_closure_path = $ruleClosurePath
         evolve_without_version_advance = $evolveWithoutVersionAdvance
         evolve_without_latest_root_advance = $evolveWithoutLatestRootAdvance
         will_continue = $shouldContinue
@@ -725,6 +753,28 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
             updated_at = (Get-Date).ToString('s')
         })
         Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) STOP reflection_sufficiency_failed decision=$decisionKind reflection_gate=$reflectionGateStatus latest_root=$lastReplayRoot"
+        break
+    }
+    if ($ruleClosureFailed) {
+        $stopReason = 'verifiable_rule_closure_required'
+        Write-JsonStatus -Path $statusPath -Data ([ordered]@{
+            schema = 'unattended_replay_control_status.v1'
+            status = 'RULE_CLOSURE_REQUIRED'
+            run_id = $runId
+            cycle = $cycle
+            max_cycles = $maxCyclesActual
+            stop_reason = $stopReason
+            decision_kind = $decisionKind
+            latest_replay_root = $lastReplayRoot
+            verification_capped_coverage = $latestCap
+            oracle_adjusted_coverage = $latestCoverage
+            rule_closure_status = $ruleClosureStatus
+            rule_closure_exit_code = $ruleClosureExitCode
+            rule_closure_path = $ruleClosurePath
+            will_continue = $false
+            updated_at = (Get-Date).ToString('s')
+        })
+        Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) STOP verifiable_rule_closure_required decision=$decisionKind rule_closure=$ruleClosureStatus latest_root=$lastReplayRoot"
         break
     }
     if ($zeroCapStopTriggered) {

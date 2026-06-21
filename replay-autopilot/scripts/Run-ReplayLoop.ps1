@@ -189,6 +189,14 @@ function Expand-Template {
     return $output
 }
 
+function Get-VerifiableRulesPath {
+    param([string]$ReplayRoot)
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot)) {
+        return ''
+    }
+    return Join-Path $ReplayRoot 'VERIFIABLE_RULES.json'
+}
+
 function Convert-ToBool {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
@@ -2325,6 +2333,7 @@ Fix the failing prompt, verifier, executor logging, retry behavior, or runner ar
         $values = @{
             REPLAY_ROOT = $ReplayRoot
             EVOLUTION_PROPOSAL = $proposalPath
+            VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $ReplayRoot
             SKILL_SOURCE_ROOT = $SkillSourceRoot
             KNOWLEDGE_REPO = $KnowledgeRepo
             PROJECT_ROOT = $ProjectRoot
@@ -3144,6 +3153,7 @@ Inspect PHASE0_RESULT.md to identify the new format, then add a matching regex t
             $values = @{
                 REPLAY_ROOT = $replayRoot
                 EVOLUTION_PROPOSAL = $proposalPath
+                VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
                 SKILL_SOURCE_ROOT = $skillSourceRoot
                 KNOWLEDGE_REPO = $knowledgeRepo
                 PROJECT_ROOT = $projectRoot
@@ -3404,6 +3414,7 @@ $phase0Text
             $values = @{
                 REPLAY_ROOT = $replayRoot
                 EVOLUTION_PROPOSAL = $proposalPath
+                VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
                 SKILL_SOURCE_ROOT = $skillSourceRoot
                 KNOWLEDGE_REPO = $knowledgeRepo
                 PROJECT_ROOT = $projectRoot
@@ -3482,6 +3493,7 @@ Review PHASE0_RESULT.md. If the rejection is valid, adjust the next replay promp
             $values = @{
                 REPLAY_ROOT = $replayRoot
                 EVOLUTION_PROPOSAL = $proposalPath
+                VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
                 SKILL_SOURCE_ROOT = $skillSourceRoot
                 KNOWLEDGE_REPO = $knowledgeRepo
                 PROJECT_ROOT = $projectRoot
@@ -4399,6 +4411,7 @@ Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If reject
             $values = @{
                 REPLAY_ROOT = $replayRoot
                 EVOLUTION_PROPOSAL = $proposalPath
+                VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
                 SKILL_SOURCE_ROOT = $skillSourceRoot
                 KNOWLEDGE_REPO = $knowledgeRepo
                 PROJECT_ROOT = $projectRoot
@@ -5400,6 +5413,7 @@ Do not create new production files, test files, or worktree changes.
             $values = @{
                 REPLAY_ROOT = $replayRoot
                 EVOLUTION_PROPOSAL = $proposal
+                VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
                 SKILL_SOURCE_ROOT = $skillSourceRoot
                 KNOWLEDGE_REPO = $knowledgeRepo
                 PROJECT_ROOT = $projectRoot
@@ -5565,6 +5579,7 @@ Do not create new production files, test files, or worktree changes.
     $values = @{
         REPLAY_ROOT = $replayRoot
         EVOLUTION_PROPOSAL = $proposal
+        VERIFIABLE_RULES = Get-VerifiableRulesPath -ReplayRoot $replayRoot
         SKILL_SOURCE_ROOT = $skillSourceRoot
         KNOWLEDGE_REPO = $knowledgeRepo
         PROJECT_ROOT = $projectRoot

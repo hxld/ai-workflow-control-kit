@@ -357,6 +357,7 @@ node scripts/install-cc-switch-common-config.js
 | `scripts/install-ai-workflow-kit.js` | 安装适配器、技能、hooks、cc-switch 通用配置和 replay-autopilot。 |
 | `scripts/install-cc-switch-common-config.js` | 从模板更新 cc-switch 通用配置。 |
 | `scripts/verify-ai-workflow-kit.js` | 验证实时的宿主配置、链接、hooks 和 replay 控制器存在性。 |
+| `scripts/verify-control-contracts.js` | 验证仓库内 GoalSpec 和 skill lock 等控制契约，默认兼容历史 lock，严格模式可要求 hash 完整性。 |
 | `scripts/diagnose-powershell-r6016.js` | 将正在运行的 `powershell.exe` 进程分类为 Codex AST 解析器、RTK 包装器、构建命令或未知来源。 |
 | `scripts/test-no-secrets.js` | 在提交或推送前扫描仓库中的凭证和运行时状态。 |
 

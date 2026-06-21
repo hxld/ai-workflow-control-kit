@@ -1,0 +1,27 @@
+# GoalSpec for unattended or cloud executor runs.
+#
+# Keep this file machine-checkable. Validate with:
+#   node scripts/verify-control-contracts.js
+
+target: "<requirement-or-task-id>"
+desired_outcome: "mr_draft"
+
+success_criteria:
+  - "Implementation or analysis reaches the requested outcome."
+  - "Required verification commands are executed and recorded."
+  - "Review handoff contains changed files, evidence, and remaining risks."
+
+stop_policy:
+  ask_on_high_risk: true
+  ask_before_schema_change: true
+  ask_on_credentials_or_secrets: true
+  no_merge: true
+
+budget:
+  max_minutes: 60
+  max_steps: 20
+
+audit:
+  record_decisions: true
+  record_verification: true
+  record_stop_reason: true

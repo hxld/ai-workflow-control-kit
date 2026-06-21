@@ -154,10 +154,19 @@ GoalSpec 只说"要什么"和"边界在哪"，怎么推进 Agent 自己决定。
 | 发布流水线 | main → release，含 CHANGELOG 与制品 | [templates/goal-release.yaml](./templates/goal-release.yaml) |
 | 数据清理 | 幂等、可追溯、异常隔离机制 | [templates/goal-cleanup.yaml](./templates/goal-cleanup.yaml) |
 | 测试修复 | 红转绿 + 回归护栏 | [templates/goal-test-fix.yaml](./templates/goal-test-fix.yaml) |
+| 无人值守 GoalSpec | 云端/自动执行器目标契约 | [templates/goalspec-autonomous-task.yaml](./templates/goalspec-autonomous-task.yaml) |
 | 依赖升级 | 安全基线 + 兼容性报告 + 回滚指南 | [templates/goal-upgrade.yaml](./templates/goal-upgrade.yaml) |
 | 内容创作 | brief → 博文/文档，含元信息 | [templates/goal-content.yaml](./templates/goal-content.yaml) |
 
 使用方式：复制对应模板，填充 `inputs`、`constraints`、`success_criteria` 和 `common_failure_modes` 后执行。
+
+无人值守或云端执行前，先运行：
+
+```bash
+node scripts/verify-control-contracts.js
+```
+
+该校验会确保 GoalSpec 至少包含可观察成功标准、停线策略、预算和审计字段；治理层只保留否决权，执行层由 Agent 在这些边界内推进。
 
 ---
 

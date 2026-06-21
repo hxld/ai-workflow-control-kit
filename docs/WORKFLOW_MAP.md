@@ -217,6 +217,7 @@
 - 用途：将长程任务封装为结构化 Goal，定义 title/inputs/constraints/success_criteria/failure_modes/deliverables
 - 位置在工作流中：可以在任何阶段启动 —— 一个复杂需求可以用 Goal 封装后由 Agent 自主执行
 - 与 BDD/TDD 的关系：BDD 定方向、TDD 定质量、Goal 定执行
+- 机器校验：`node scripts/verify-control-contracts.js` 会检查无人值守 GoalSpec 模板是否包含成功标准、停线策略、预算和审计字段
 
 ### PRD 质量流水线（`requirement-assessment` 的增强）
 - 用途：在需求评估阶段对 PRD 执行三层体检（规范层/完备层/自洽层）

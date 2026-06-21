@@ -98,6 +98,7 @@ node scripts/install-ai-workflow-kit.js --backup-existing
 
 ```bash
 node scripts/verify-ai-workflow-kit.js
+node scripts/verify-control-contracts.js
 ```
 
 ## 自定义路径和团队扩展
@@ -163,6 +164,19 @@ PowerShell 脚本作为兼容和遗留回放入口保留。不要把 Windows Pow
 node scripts/diagnose-powershell-r6016.js
 ```
 
+## 控制契约校验
+
+Kit 包含一个轻量控制契约校验器，用来把 Goal 模式和 skill lock 从说明文档提升为机器可检查的交付约束：
+
+```bash
+node scripts/verify-control-contracts.js
+```
+
+默认会校验：
+
+- `agents/skills/goal-mode/templates/goalspec-autonomous-task.yaml` 的 GoalSpec 结构、预算、停线策略和审计字段。
+- `agents/.skill-lock.json` 的来源、路径和 hash 账本。历史 lock 中缺失 hash 的条目默认给 `WARN`，用于兼容现有安装；迁移或 CI 可加 `--strict-skill-lock` 收紧为失败。
+
 ## Replay Autopilot
 
 `replay-autopilot` 是 AI 工作流评估的控制平面。它支持：
@@ -204,6 +218,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\T
 
 ```bash
 node scripts/test-no-secrets.js
+node scripts/verify-control-contracts.js
 ```
 
 仓库应当只包含模板和占位符。真实凭据必须在安装后于本地恢复。

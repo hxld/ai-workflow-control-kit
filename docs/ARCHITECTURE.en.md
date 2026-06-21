@@ -91,6 +91,7 @@ scripts/
   install-ai-workflow-kit.js
   install-cc-switch-common-config.js
   verify-ai-workflow-kit.js
+  verify-control-contracts.js
   test-no-secrets.js
 ```
 
@@ -357,6 +358,7 @@ The default operational scripts are Node-first:
 | `scripts/install-ai-workflow-kit.js` | Install adapters, skills, hooks, cc-switch common config, and replay-autopilot. |
 | `scripts/install-cc-switch-common-config.js` | Update cc-switch common config from templates. |
 | `scripts/verify-ai-workflow-kit.js` | Verify live host config, links, hooks, and replay controller presence. |
+| `scripts/verify-control-contracts.js` | Verify repository GoalSpec and skill lock control contracts; legacy empty hashes warn by default and fail in strict mode. |
 | `scripts/diagnose-powershell-r6016.js` | Classify live `powershell.exe` processes as Codex AST parser, RTK wrapper, build command, or unknown source. |
 | `scripts/test-no-secrets.js` | Scan the repository for credentials and runtime state before commit or push. |
 

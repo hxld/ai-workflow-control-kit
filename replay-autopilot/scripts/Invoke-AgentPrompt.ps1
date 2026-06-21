@@ -200,11 +200,19 @@ function Get-GitStatusText {
     if ([string]::IsNullOrWhiteSpace($Repo) -or -not (Test-Path -LiteralPath $Repo)) {
         return ''
     }
-    $status = & git -C $Repo status --short 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $oldErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $status = & git -C $Repo status --short 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return ''
+        }
+        return (($status | Sort-Object) -join "`n")
+    } catch {
         return ''
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
     }
-    return (($status | Sort-Object) -join "`n")
 }
 
 function Resolve-ExecutorCommand {

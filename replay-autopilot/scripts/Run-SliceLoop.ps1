@@ -530,6 +530,151 @@ function Invoke-SliceExecutorWithRetry {
     }
 }
 
+function ConvertTo-ReplayRelativePath {
+    param(
+        [string]$Worktree,
+        [string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $value = ([string]$Path).Trim().Trim('"').Trim("'")
+    if ([string]::IsNullOrWhiteSpace($value)) { return '' }
+
+    try {
+        if ([System.IO.Path]::IsPathRooted($value)) {
+            $worktreeFull = [System.IO.Path]::GetFullPath($Worktree).TrimEnd('\', '/')
+            $pathFull = [System.IO.Path]::GetFullPath($value)
+            if ($pathFull.StartsWith($worktreeFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $relative = $pathFull.Substring($worktreeFull.Length).TrimStart('\', '/')
+                return ($relative -replace '\\', '/')
+            }
+        }
+    } catch {
+        # Fall through to textual normalization.
+    }
+
+    return ($value -replace '\\', '/')
+}
+
+function Get-WorktreeChangedFiles {
+    param([string]$Worktree)
+
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or -not (Test-Path -LiteralPath $Worktree -PathType Container)) {
+        return @()
+    }
+
+    $files = New-Object System.Collections.Generic.List[string]
+    $commands = @(
+        @('diff', '--name-only'),
+        @('diff', '--cached', '--name-only'),
+        @('ls-files', '--others', '--exclude-standard')
+    )
+
+    foreach ($command in $commands) {
+        $output = @()
+        try {
+            $output = @(& git -C $Worktree @command 2>$null)
+        } catch {
+            $output = @()
+        }
+        if ($LASTEXITCODE -ne 0) { continue }
+        foreach ($line in $output) {
+            $relative = ConvertTo-ReplayRelativePath -Worktree $Worktree -Path ([string]$line)
+            if (-not [string]::IsNullOrWhiteSpace($relative)) {
+                $files.Add($relative) | Out-Null
+            }
+        }
+    }
+
+    return @($files | Sort-Object -Unique)
+}
+
+function Write-PartialWorktreeDiffAudit {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [string]$Stage = 'after_retry',
+        [string]$SliceLogDir = '',
+        [int]$ExitCode = 0
+    )
+
+    $safeStage = if ([string]::IsNullOrWhiteSpace($Stage)) { 'after_retry' } else { ([string]$Stage -replace '[^A-Za-z0-9_.-]', '_') }
+    $suffix = if ($safeStage -eq 'after_retry') { '' } else { "_$safeStage" }
+    $jsonPath = Join-Path $ReplayRoot ('PARTIAL_WORKTREE_DIFF_{0:D2}{1}.json' -f $SliceIndex, $suffix)
+    $mdPath = Join-Path $ReplayRoot ('PARTIAL_WORKTREE_DIFF_{0:D2}{1}.md' -f $SliceIndex, $suffix)
+
+    $statusLines = @()
+    $diffStatLines = @()
+    try { $statusLines = @(& git -C $Worktree status --short 2>$null) } catch { $statusLines = @() }
+    try { $diffStatLines = @(& git -C $Worktree diff --stat 2>$null) } catch { $diffStatLines = @() }
+
+    $changedFiles = @(Get-WorktreeChangedFiles -Worktree $Worktree)
+    $productionFiles = @($changedFiles | Where-Object { $_ -match '(?i)(^|/)src/main/(java|resources)/' })
+    $testFiles = @($changedFiles | Where-Object { $_ -match '(?i)(^|/)src/test/(java|resources)/' })
+
+    $payload = [ordered]@{
+        schema = 'partial_worktree_diff_audit.v1'
+        status = if ($changedFiles.Count -gt 0) { 'PARTIAL_DIFF_DETECTED' } else { 'NO_DIFF_DETECTED' }
+        slice_index = $SliceIndex
+        stage = $safeStage
+        replay_root = $ReplayRoot
+        worktree = $Worktree
+        slice_log_dir = $SliceLogDir
+        executor_exit_code = $ExitCode
+        changed_file_count = $changedFiles.Count
+        changed_files = @($changedFiles)
+        production_files = @($productionFiles)
+        test_files = @($testFiles)
+        git_status_short = @($statusLines)
+        git_diff_stat = @($diffStatLines)
+        generated_at = (Get-Date).ToString('s')
+    }
+    $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+
+    $md = New-Object System.Collections.Generic.List[string]
+    $md.Add('# Partial Worktree Diff Audit') | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add(('- status: {0}' -f $payload.status)) | Out-Null
+    $md.Add(('- slice_index: {0}' -f $SliceIndex)) | Out-Null
+    $md.Add(('- stage: {0}' -f $safeStage)) | Out-Null
+    $md.Add(('- executor_exit_code: {0}' -f $ExitCode)) | Out-Null
+    $md.Add(('- changed_file_count: {0}' -f $changedFiles.Count)) | Out-Null
+    $md.Add(('- json: {0}' -f $jsonPath)) | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add('## Changed Files') | Out-Null
+    if ($changedFiles.Count -gt 0) {
+        foreach ($file in $changedFiles) { $md.Add(("- $file")) | Out-Null }
+    } else {
+        $md.Add('- none') | Out-Null
+    }
+    $md.Add('') | Out-Null
+    $md.Add('## Git Status') | Out-Null
+    $md.Add('```text') | Out-Null
+    $statusText = if ($statusLines.Count -gt 0) { ($statusLines -join "`n") } else { '(clean or unavailable)' }
+    $md.Add($statusText) | Out-Null
+    $md.Add('```') | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add('## Diff Stat') | Out-Null
+    $md.Add('```text') | Out-Null
+    $diffStatText = if ($diffStatLines.Count -gt 0) { ($diffStatLines -join "`n") } else { '(no tracked diff stat)' }
+    $md.Add($diffStatText) | Out-Null
+    $md.Add('```') | Out-Null
+    $md -join "`n" | Set-Content -LiteralPath $mdPath -Encoding UTF8
+
+    return [pscustomobject]@{
+        HasDiff = ($changedFiles.Count -gt 0)
+        JsonPath = $jsonPath
+        MdPath = $mdPath
+        ChangedFiles = @($changedFiles)
+        ProductionFiles = @($productionFiles)
+        TestFiles = @($testFiles)
+        Status = [string]$payload.status
+    }
+}
+
 function Set-ObjectProperty {
     param(
         [Parameter(Mandatory = $true)]
@@ -3517,12 +3662,24 @@ function Write-ExecutorBlockedSliceResult {
         [int]$ExitCode,
         [string]$Reason = 'executor failed before completing slice',
         [string]$FailureCategory = '',
-        [string]$ExecutorDiagnostic = ''
+        [string]$ExecutorDiagnostic = '',
+        $PartialDiffAudit = $null
     )
 
     $sliceId = 'S{0}' -f $SliceIndex
     $forcedFamily = [string]$ForcedDecision.family_id
     $gapFlags = @('tooling_executor_failed', 'no_progress_slice')
+    $partialChangedFiles = @()
+    $partialAuditJson = ''
+    $partialAuditMd = ''
+    if ($null -ne $PartialDiffAudit) {
+        $partialChangedFiles = @(Get-StringArray $PartialDiffAudit.ChangedFiles)
+        $partialAuditJson = [string]$PartialDiffAudit.JsonPath
+        $partialAuditMd = [string]$PartialDiffAudit.MdPath
+        if ($partialChangedFiles.Count -gt 0) {
+            $gapFlags += 'partial_worktree_diff_detected'
+        }
+    }
     if (-not [string]::IsNullOrWhiteSpace($FailureCategory)) {
         $gapFlags += $FailureCategory
         if (@('executor_credit_required', 'usage_limit', 'auth') -contains $FailureCategory) {
@@ -3542,12 +3699,12 @@ function Write-ExecutorBlockedSliceResult {
         coverage_delta = 0
         target_subsurface_or_carrier = 'executor:blocker'
         required_sibling_surfaces = @()
-        production_boundary = 'none - executor failed before production boundary could be changed'
-        proof_kind = 'static_contract'
+        production_boundary = $(if ($partialChangedFiles.Count -gt 0) { 'partial worktree diff exists but executor failed before proof artifact' } else { 'none - executor failed before production boundary could be changed' })
+        proof_kind = $(if ($partialChangedFiles.Count -gt 0) { 'partial_worktree_diff_audit' } else { 'static_contract' })
         red_expectation = 'not executed - executor failed before RED could run'
         implemented_files = @()
-        current_slice_changed_files = @()
-        round_changed_files_snapshot = @()
+        current_slice_changed_files = @($partialChangedFiles)
+        round_changed_files_snapshot = @($partialChangedFiles)
         tests = @(
             [ordered]@{
                 command = "Invoke-AgentPrompt.ps1"
@@ -3559,11 +3716,15 @@ function Write-ExecutorBlockedSliceResult {
         closed_assertions = @()
         must_not_assertions = @()
         remaining_gaps = @(
-            "$Reason. Forced family: $forcedFamily"
+            "$Reason. Forced family: $forcedFamily",
+            $(if ($partialChangedFiles.Count -gt 0) { "Partial worktree diff requires recovery or cleanup before the next slice. Audit: $partialAuditJson" } else { "No partial worktree diff was detected." })
         )
         gap_flags = $gapFlags
         executor_failure_category = $FailureCategory
         executor_diagnostic = $ExecutorDiagnostic
+        partial_worktree_diff_detected = ($partialChangedFiles.Count -gt 0)
+        partial_worktree_diff_audit = $partialAuditJson
+        partial_worktree_diff_report = $partialAuditMd
         executor_resource_blocker = (@('executor_credit_required', 'usage_limit', 'auth') -contains $FailureCategory)
         touched_requirement_families = @()
         closed_requirement_families = @()
@@ -4343,6 +4504,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             $retryLogDir = Join-Path $logsRoot ('{0}-retry' -f $sliceId)
             $lastMessagePath = Join-Path $sliceLogDir ('phase1-{0}.last-message.md' -f $sliceId)
             $lastMessage = Read-TextIfExists -Path $lastMessagePath
+            $partialBeforeRetry = Write-PartialWorktreeDiffAudit -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -Stage 'before_retry' -SliceLogDir $sliceLogDir -ExitCode $executorExitCode
             $guardGuidance = Get-CommandGuardRetryGuidance -LogDir $sliceLogDir
             $guardSection = ''
             if ([bool]$guardGuidance.HasCommandGuardViolation) {
@@ -4362,6 +4524,21 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                     ''
                 ) -join "`n"
             }
+            $partialDiffSection = ''
+            if ($null -ne $partialBeforeRetry -and [bool]$partialBeforeRetry.HasDiff) {
+                $partialDiffSection = @(
+                    'Partial worktree diff detected before retry:',
+                    "- audit_json: $($partialBeforeRetry.JsonPath)",
+                    "- audit_md: $($partialBeforeRetry.MdPath)",
+                    '- changed_files:',
+                    (($partialBeforeRetry.ChangedFiles | ForEach-Object { "  - $_" }) -join "`n"),
+                    '',
+                    'Mandatory partial-diff recovery:',
+                    '- Either complete these partial changes into a valid RED/GREEN slice and write the required SLICE_RESULT JSON, or write BLOCKED SLICE_RESULT JSON that cites the partial diff audit.',
+                    '- Do not leave modified or untracked worktree files invisible to the slice result.',
+                    ''
+                ) -join "`n"
+            }
             $retryPreamble = @(
                 'RECOVERY MODE: the previous slice executor exited without writing the required SLICE_RESULT JSON.',
                 '',
@@ -4371,6 +4548,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 'If you cannot safely continue, write a BLOCKED SLICE_RESULT JSON with the concrete blocker instead of ending with a question.',
                 '',
                 $guardSection,
+                $partialDiffSection,
                 'Previous last message excerpt:',
                 '```text',
                 ($lastMessage.Substring(0, [Math]::Min($lastMessage.Length, 2000))),
@@ -4427,8 +4605,10 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         } elseif ($null -ne $executorExitCode) {
             $finalExecutorExitCode = [int]$executorExitCode
         }
-        Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $finalExecutorExitCode -Reason "executor completed without writing required SLICE_RESULT after retry"
-        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor blocked | {1} | {2} | missing_slice_result_after_retry | exit_code={3}; blocked slice result generated for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $finalExecutorExitCode)
+        $partialAfterRetry = Write-PartialWorktreeDiffAudit -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -Stage 'after_retry' -SliceLogDir $sliceLogDir -ExitCode $finalExecutorExitCode
+        Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $finalExecutorExitCode -Reason "executor completed without writing required SLICE_RESULT after retry" -PartialDiffAudit $partialAfterRetry
+        $partialText = if ($null -ne $partialAfterRetry -and [bool]$partialAfterRetry.HasDiff) { "partial_diff=$($partialAfterRetry.JsonPath)" } else { 'partial_diff=none' }
+        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor blocked | {1} | {2} | missing_slice_result_after_retry | exit_code={3}; {4}; blocked slice result generated for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $finalExecutorExitCode, ($partialText -replace '\|', '/'))
     }
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null

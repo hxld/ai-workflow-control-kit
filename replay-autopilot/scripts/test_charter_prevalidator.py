@@ -32,9 +32,9 @@ class TestCharterValidator:
 
     # Required section patterns
     ENTRY_POINT_PATTERNS = [
-        MARKDOWN_LABEL_PREFIX + r'(?:Entry Point|Target Entry|Testing Entry|测试入口)' + MARKDOWN_LABEL_SUFFIX,
+        MARKDOWN_LABEL_PREFIX + r'(?:Entry Point|Target Entry|Testing Entry|测试入口|entry_point)' + MARKDOWN_LABEL_SUFFIX,
         MARKDOWN_LABEL_PREFIX + r'(?:Method to Test|Target Method)' + MARKDOWN_LABEL_SUFFIX,
-        r'Entry Point:|Target Entry:|Testing Entry:|测试入口:',
+        r'Entry Point:|Target Entry:|Testing Entry:|测试入口:|entry_point:',
         r'Method to Test:|Target Method:',
     ]
     DB_VERIFICATION_PATTERNS = [
@@ -113,8 +113,8 @@ class TestCharterValidator:
         """Check if test surface is at correct layer (Facade/Controller, not Service)."""
         # Extract test class pattern
         test_class_match = re.search(
-            self.MARKDOWN_LABEL_PREFIX + r'(?:Test Class|测试类|Target Test|test class)' + self.MARKDOWN_LABEL_SUFFIX
-            + r'|Test Class:|测试类:|Target Test:|test class:',
+            self.MARKDOWN_LABEL_PREFIX + r'(?:Test Class|测试类|Target Test|test class|test_class)' + self.MARKDOWN_LABEL_SUFFIX
+            + r'|Test Class:|测试类:|Target Test:|test class:|test_class:',
             self.content,
             re.IGNORECASE
         )

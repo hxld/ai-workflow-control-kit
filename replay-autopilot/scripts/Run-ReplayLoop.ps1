@@ -4480,6 +4480,26 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
             -BestOracleCoverage $bestOracleCoverage `
             -NoImprovementCount $noImprovementCount `
             -RunEvolutionActual $runEvolutionActual
+        if (Invoke-EarlyStopEvolutionAndRefresh `
+            -ReplayRoot $replayRoot `
+            -LogsRoot $logs `
+            -BlockerPath $blocker `
+            -ScriptRoot $scriptRoot `
+            -ProjectRoot $projectRoot `
+            -KnowledgeRepo $knowledgeRepo `
+            -Config $config `
+            -RunEvolutionActual $runEvolutionActual `
+            -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+            -Executor $executorActual `
+            -Sandbox $sandbox `
+            -Approval $approval `
+            -TimeoutMinutes $timeoutMinutes `
+            -EvolutionModel $evolutionModel `
+            -EvolutionReasoningEffort $evolutionReasoningEffort `
+            -RefreshReason 'plan schema fail-fast evolution') {
+            continue
+        }
+        "# Autopilot Blocker`n`n$reason`n`n$(Read-TextIfExists $schemaFailPath)" | Set-Content -LiteralPath $blocker -Encoding UTF8
         Write-Host "Plan machine contract failed, stopping: $reason"
         break
     }

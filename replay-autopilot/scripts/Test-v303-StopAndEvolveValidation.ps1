@@ -72,10 +72,50 @@ Required Before Next Round:
 - stop_and_evolve_satisfied: true
 - verification_results: PASS
 - changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1; replay-autopilot/prompts/skill-evolution.prompt.md
+- pushed_commit: abc1234def5678
 - actual_knowledge_version_after_push: v303
 '@
     & powershell -NoProfile -ExecutionPolicy Bypass -File $validator -ReplayRoot $validRoot | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'Validator should accept validated tooling evolution'
+
+    $knowledgeRoot = Join-Path $tmp 'knowledge-repo'
+    New-Item -ItemType Directory -Force -Path $knowledgeRoot | Out-Null
+    Write-Text (Join-Path $knowledgeRoot 'CURRENT_VERSION.md') @'
+# Current Knowledge Version
+
+**Version**: v303
+'@
+    git -C $knowledgeRoot init | Out-Null
+    git -C $knowledgeRoot add CURRENT_VERSION.md | Out-Null
+    git -C $knowledgeRoot -c user.name='Replay Test' -c user.email='replay@example.invalid' commit -m 'seed knowledge' | Out-Null
+    $localCommit = (git -C $knowledgeRoot rev-parse HEAD).Trim()
+
+    $localOnlyRoot = Join-Path $tmp 'local-only-knowledge'
+    New-Item -ItemType Directory -Force -Path $localOnlyRoot | Out-Null
+    Write-Text (Join-Path $localOnlyRoot 'STOP_OR_CONTINUE_DECISION.md') '## Decision: STOP_AND_EVOLVE'
+    Write-Text (Join-Path $localOnlyRoot 'NEXT_EXPERIMENT_PLAN.md') '## Experiment 1: Pre-Slice Cap Display'
+    Write-Text (Join-Path $localOnlyRoot 'EVOLUTION_PROMPT.md') @"
+# Evolution Prompt
+
+- knowledge repo: $knowledgeRoot
+- current knowledge version: v303
+- expected next knowledge version: v303
+"@
+    Write-Text (Join-Path $localOnlyRoot 'EVOLUTION_RESULT.md') @"
+# Evolution Result
+
+- final_status: VALIDATED_TOOLING_EVOLUTION
+- tooling_changes_applied: true
+- stop_and_evolve_satisfied: true
+- verification_results: PASS
+- changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1
+- pushed_commit: local-only:$localCommit
+- actual_knowledge_version_after_push: v303 (remote push failed)
+"@
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $validator -ReplayRoot $localOnlyRoot | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Validator should accept clean local knowledge commit when remote push failed'
+    $localOnlyVerify = Get-Content -LiteralPath (Join-Path $localOnlyRoot 'EVOLUTION_RESULT_VERIFY.json') -Raw -Encoding UTF8
+    Assert-True ($localOnlyVerify.Contains('knowledge_repo_push_failed_local_commit_accepted')) 'Validator should warn when accepting local-only knowledge commit'
 
     $runnerText = Get-Content -LiteralPath $runner -Raw -Encoding UTF8
     $untilRunnerText = Get-Content -LiteralPath $untilRunner -Raw -Encoding UTF8
@@ -90,11 +130,12 @@ Required Before Next Round:
 
 [ordered]@{
     status = 'PASS'
-    assertions = 8
+    assertions = 10
     cases = @(
         'no_stop_passes',
         'stop_and_evolve_noop_rejected',
         'stop_and_evolve_validated_tooling_passes',
+        'local_knowledge_commit_push_failure_passes',
         'run_replayloop_calls_validator',
         'run_until_calls_validator',
         'prompt_exposes_autopilot_root',

@@ -1167,6 +1167,8 @@ if ($Stage -eq 'Phase0') {
         '(?m)\|\s*new_service_created\s*\|\s*`?([^\r\n|]+?)`?\s*\|'
     )
     $newServiceJustification = Get-FirstText $combinedPlanArtifacts @(
+        # YAML folded blocks put the real justification on following indented lines.
+        '(?m)^\s*-?\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*[:=]\s*>\s*\r?\n((?:\s{2,}[^\r\n]*(?:\r?\n|$))+)',
         '(?m)^\s*-?\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*new_service_justification\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)\|\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*:\s*(.+?)\s*\|',

@@ -4359,7 +4359,37 @@ $(foreach ($a in $missingPlanArtifacts) { "- ``$replayRoot\$a``" })
 
 - SIDE_EFFECT_LEDGER.md: entry -> side effect -> state/task/transaction -> proof
 - TEST_CHARTER.md: RED/GREEN order, real entry tests, DB/transaction verification
-- FIRST_SLICE_PROOF_PLAN.md: Use the exact field schema (first_slice, selected_real_entry, real_carrier_kind, proof_kind, etc.)
+- FIRST_SLICE_PROOF_PLAN.md: The first non-heading content MUST be a machine-readable contract block with these exact single-line `key: value` fields. Do not rely on headings, bullets, narrative paragraphs, or Markdown tables as the only copy. Narrative explanation may follow only after this block:
+```text
+first_slice: <must match PLAN_RESULT.md first_slice exactly>
+golden_slice_binding: <must match PLAN_RESULT.md golden_slice_binding>
+highest_weight_open_gate: <highest pending family id such as core_entry/stateful_side_effect/wire_payload_api_contract>
+first_slice_family: <actual S1 family such as core_entry/config_policy_threshold/wire_payload_api_contract>
+first_red_test: <must match PLAN_RESULT.md first_red_test exactly>
+selected_real_entry: <Phase0 selected_real_entry exactly>
+public_entry_contract_coverage: <specific executable assertion or not_public_entry_with_reason>
+selected_carrier: <actual S1 production carrier>
+target_subsurface_or_carrier: <method/subsurface on selected_carrier>
+production_boundary: <production file/method touched by S1>
+proof_kind: <real_entry_behavior|stateful_side_effect|route_export_behavior|payload_shape_behavior|generated_artifact_behavior>
+real_carrier_kind: <production_entry_or_service|production_controller_or_route|production_mapper_or_query|production_payload_builder|production_template_or_artifact_renderer|production_lifecycle_cleanup|production_service_method|production_service|production_enum|production_dto>
+required_sibling_surfaces: <none or concrete siblings>
+minimum_side_effect_or_blocker: <minimum real side effect or concrete blocker>
+expected_production_diff: <non-NONE production file/method diff>
+red_expectation: <why RED fails before production change>
+green_minimum_implementation: <minimum production change in same S1>
+forbidden_substitute_check: passed
+forbidden_substitute_proof: <why this is not helper-only/static-only/test-only>
+fail_closed_condition: <condition that blocks if proof is not executable>
+coverage_cap_if_not_closed: <cap and reason>
+target_carrier_file_path: <exact production file path>
+target_carrier_line_number: <exact integer>
+expected_test_class: <test class>
+expected_test_method: <test method>
+expected_assertions: ["assertion 1","assertion 2","assertion 3"]
+expected_side_effects: [{"state":"...","operation":"...","proof":"..."}]
+```
+If S1 is a prerequisite slice while `core_entry` remains pending, keep `selected_real_entry` as the Phase0 entry, put the prerequisite carrier in `selected_carrier`, set `first_slice_family` to the prerequisite family, and schedule the real core tracer later. If S1 claims `first_slice_family: core_entry`, the selected carrier must satisfy the core-entry executable proof rules.
 - PLAN_RESULT.json: create this only if it is listed under Missing Artifacts. If it already exists, it is read-only. For a newly created PROCEED file include plan_status, target_carrier_file_path, target_carrier_line_number, expected_test_class, expected_test_method, side_effects, expected_assertions, and test_infrastructure_check { test_module_for_target, test_module_has_dependencies, test_harness_available, can_import_production_classes, compilation_dry_run_exit_code, compilation_dry_run_command, compilation_dry_run_evidence_file, blocker_reason }. For BLOCKED include plan_status and blocker. For INVALID_PLAN include plan_status and invalid_reason. The intended command must name the selected test module, -pl, -am, and test-compile, and must point at the isolated worktree root POM; the runner writes the real evidence file under the replay root.
 - EXPECTED_DIFF_MATRIX.md: requirement -> module -> file -> change type -> validation -> closure
 - IMPLEMENTATION_CONTRACT.md: Phase 1 execution contract with Selected Real Entries

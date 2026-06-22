@@ -34,12 +34,15 @@ function Get-FirstText {
     return ''
 }
 
-# v460: Get-KeyValueField supports table format (| Field | Value |) for v457 validation
+# v460/v596: Get-KeyValueField supports table format and Markdown bold-bullet
+# key lines such as "- **field**: value". Agents often produce that shape even
+# when prompts ask for key:value lines, so the verifier should parse it rather
+# than report false schema-missing issues.
 function Get-KeyValueField {
     param([string]$Text, [string]$Field)
     $escapedField = [regex]::Escape($Field)
     foreach ($line in ($Text -split "\r?\n")) {
-        $lineMatch = [regex]::Match($line.Trim(), '^(?:\*{0,2}\s*)?(?:[-*]\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*(.+?)\s*$')
+        $lineMatch = [regex]::Match($line.Trim(), '^(?:[-*]\s*)?(?:\*{0,2}\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*(.+?)\s*$')
         if ($lineMatch.Success) {
             return $lineMatch.Groups[1].Value.Trim()
         }
@@ -47,8 +50,8 @@ function Get-KeyValueField {
     # v460: Table format pattern at end handles Markdown tables (| **field** | value |)
     # v460: Fixed array syntax - wrap complex expressions in parentheses
     $patterns = @(
-        ('(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*([^\r\n]+?)\s*$'),
-        ('(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*\r?\n\s*:\s*([^\r\n]+?)\s*$'),
+        ('(?im)^\s*(?:[-*]\s*)?(?:\*{0,2}\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*([^\r\n]+?)\s*$'),
+        ('(?im)^\s*(?:[-*]\s*)?(?:\*{0,2}\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|][ \t]*\r?\n\s*:\s*([^\r\n]+?)\s*$'),
         ('(?im)\|\s*\*{0,2}' + $escapedField + '\*{0,2}\s*\|\s*`?([^\r\n|]+?)`?\s*\|')
     )
     foreach ($pattern in $patterns) {
@@ -1548,18 +1551,15 @@ if ($Stage -eq 'Phase0') {
         'fail_closed_condition'
     )
     foreach ($fieldName in $requiredProofFields) {
-        $fieldWithValuePattern = '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?' + [regex]::Escape($fieldName) + '\s*\*{0,2}\s*[:=|][ \t]*([^\r\n]+?)\s*$'
-        $fieldEmptyPattern = '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?' + [regex]::Escape($fieldName) + '\s*\*{0,2}\s*[:=|][ \t]*$'
-        $fieldDefinitionListPattern = '(?im)^\s*(?:\*{0,2}\s*)?' + [regex]::Escape($fieldName) + '\s*\*{0,2}\s*[:=|][ \t]*\r?\n\s*:\s*([^\r\n]+?)\s*$'
-        $fieldMatch = [regex]::Match($firstSliceProofText, $fieldWithValuePattern)
-        if (-not $fieldMatch.Success) { $fieldMatch = [regex]::Match($firstSliceProofText, $fieldDefinitionListPattern) }
+        $fieldValue = Get-KeyValueField -Text $firstSliceProofText -Field $fieldName
+        $fieldEmptyPattern = '(?im)^\s*(?:[-*]\s*)?(?:\*{0,2}\s*)?' + [regex]::Escape($fieldName) + '\s*\*{0,2}\s*[:=|][ \t]*$'
         $isEmptyMatch = [regex]::Match($firstSliceProofText, $fieldEmptyPattern)
-        if ($isEmptyMatch.Success -and -not $fieldMatch.Success) {
+        if ($isEmptyMatch.Success -and [string]::IsNullOrWhiteSpace($fieldValue)) {
             $issues.Add("first_slice_proof_schema_empty:$fieldName") | Out-Null
-        } elseif (-not $fieldMatch.Success) {
+        } elseif ([string]::IsNullOrWhiteSpace($fieldValue)) {
             $issues.Add("first_slice_proof_schema_missing:$fieldName") | Out-Null
         } else {
-            $fieldValue = $fieldMatch.Groups[1].Value.Trim()
+            $fieldValue = $fieldValue.Trim()
             if ([string]::IsNullOrWhiteSpace($fieldValue)) {
                 $issues.Add("first_slice_proof_schema_empty:$fieldName") | Out-Null
             } elseif ($fieldValue -match '(?i)^(TBD|unknown|N/A|placeholder|' + ([char]0x5F85 + [char]0x786E + [char]0x8BA4) + '|' + ([char]0x672A + [char]0x786E + [char]0x8BA4) + '|' + ([char]0x540E + [char]0x7EED + [char]0x786E + [char]0x8BA4) + ')$') {

@@ -1694,6 +1694,16 @@ if ($Stage -eq 'Phase0') {
     $expectedProductionDiffValue = Get-KeyValueField -Text $firstSliceProofText -Field 'expected_production_diff'
     $greenMinimumValue = Get-KeyValueField -Text $firstSliceProofText -Field 'green_minimum_implementation'
     $highestWeightOpenGateValue = Get-KeyValueField -Text $firstSliceProofText -Field 'highest_weight_open_gate'
+    $firstSliceFamilyValue = Get-KeyValueField -Text $firstSliceProofText -Field 'first_slice_family'
+    if ([string]::IsNullOrWhiteSpace($firstSliceFamilyValue)) {
+        $firstSliceFamilyValue = Get-KeyValueField -Text $firstSliceProofText -Field 'target_family'
+    }
+    if ([string]::IsNullOrWhiteSpace($firstSliceFamilyValue)) {
+        $firstSliceFamilyValue = Get-KeyValueField -Text $firstSliceProofText -Field 'slice_family'
+    }
+    if ([string]::IsNullOrWhiteSpace($firstSliceFamilyValue)) {
+        $firstSliceFamilyValue = $highestWeightOpenGateValue
+    }
     $selectedCarrierValueForFirstSlice = Get-KeyValueField -Text $firstSliceProofText -Field 'selected_carrier'
     $proofKindValueForFirstSlice = Get-KeyValueField -Text $firstSliceProofText -Field 'proof_kind'
     $realCarrierKindValueForFirstSlice = Get-KeyValueField -Text $firstSliceProofText -Field 'real_carrier_kind'
@@ -1748,7 +1758,11 @@ if ($Stage -eq 'Phase0') {
         if ($firstSliceValue -match $contractOnlyPattern) {
             $issues.Add('first_slice_proof_invalid:contract_only_first_slice') | Out-Null
         }
-        if ($highestWeightOpenGateValue -match '(?i)core_entry') {
+        $firstSliceTargetsCoreEntry = $firstSliceFamilyValue -match '(?i)core_entry'
+        if (($highestWeightOpenGateValue -match '(?i)core_entry') -and -not $firstSliceTargetsCoreEntry) {
+            $warnings.Add("core_entry_deferred_by_prerequisite_slice:$firstSliceFamilyValue") | Out-Null
+        }
+        if ($firstSliceTargetsCoreEntry) {
             if ($proofKindValueForFirstSlice -match '(?i)payload_shape_behavior|generated_artifact_behavior|route_export_behavior') {
                 $issues.Add('first_slice_proof_invalid:core_entry_static_carrier') | Out-Null
             }
@@ -1798,7 +1812,7 @@ if ($Stage -eq 'Phase0') {
     # selected_carrier must also name a public entry type, not just Mapper/Entity/DTO
     $publicEntryPattern = '(?i)(Facade(?:Impl)?|Controller(?:Impl)?|Api|Endpoint|Route)\b'
     $selectedRealEntryMatch = [regex]::Match($firstSliceProofText, '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?selected_real_entry\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$')
-    if ($selectedRealEntryMatch.Success -and $selectedRealEntryMatch.Groups[1].Value -match $publicEntryPattern) {
+    if ($firstSliceFamilyValue -match '(?i)core_entry' -and $selectedRealEntryMatch.Success -and $selectedRealEntryMatch.Groups[1].Value -match $publicEntryPattern) {
         $selectedCarrierMatch = [regex]::Match($firstSliceProofText, '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?selected_carrier\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$')
         if ($selectedCarrierMatch.Success -and $selectedCarrierMatch.Groups[1].Value -notmatch $publicEntryPattern) {
             $issues.Add('first_slice_proof_invalid:public_entry_carrier_mismatch') | Out-Null
@@ -2531,11 +2545,22 @@ if ($coreEntryCarrierMatch.Success) {
     if (-not [string]::IsNullOrWhiteSpace($coreEntryCarrier)) {
         $carrierLayer = Test-CarrierLayer -CarrierPath $coreEntryCarrier
 
-        # Check if this is a core_entry family plan
-        $isCoreEntryFamily = (
-            $combinedPlanArtifacts -match '(?i)core_entry' -and
-            $combinedPlanArtifacts -match '(?i)highest_weight_open_gate.*core_entry'
-        )
+        # Check if this first slice is a core_entry slice. A replay may keep
+        # core_entry as the highest pending gate while S1 is an explicit
+        # prerequisite slice such as config_policy_threshold; layer validation
+        # must apply to the actual first slice family, not the pending family.
+        $firstSliceFamilyForLayerGate = Get-KeyValueField -Text $combinedPlanArtifacts -Field 'first_slice_family'
+        if ([string]::IsNullOrWhiteSpace($firstSliceFamilyForLayerGate)) {
+            $firstSliceFamilyForLayerGate = Get-KeyValueField -Text $combinedPlanArtifacts -Field 'target_family'
+        }
+        if ([string]::IsNullOrWhiteSpace($firstSliceFamilyForLayerGate)) {
+            $firstSliceFamilyForLayerGate = Get-KeyValueField -Text $combinedPlanArtifacts -Field 'slice_family'
+        }
+        if ([string]::IsNullOrWhiteSpace($firstSliceFamilyForLayerGate)) {
+            $firstSliceFamilyForLayerGate = Get-KeyValueField -Text $combinedPlanArtifacts -Field 'highest_weight_open_gate'
+        }
+
+        $isCoreEntryFamily = ($firstSliceFamilyForLayerGate -match '(?i)core_entry')
 
         if ($isCoreEntryFamily -and $carrierLayer -notin @("Facade", "Controller", "Unknown")) {
             # Try to find suggested Facade

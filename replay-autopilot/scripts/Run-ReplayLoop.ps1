@@ -4381,7 +4381,7 @@ $(foreach ($a in $missingPlanArtifacts) { "- ``$replayRoot\$a``" })
 ## Format Requirements
 
 - SIDE_EFFECT_LEDGER.md: entry -> side effect -> state/task/transaction -> proof
-- TEST_CHARTER.md: RED/GREEN order, real entry tests, DB/transaction verification
+- TEST_CHARTER.md: first non-heading content MUST include exact single-line fields ``test_surface:``, ``entry_point:``, ``test_class:``, and ``test_method:``; then RED/GREEN order, real entry tests, DB/transaction verification
 - FIRST_SLICE_PROOF_PLAN.md: The first non-heading content MUST be a machine-readable contract block with these exact single-line `key: value` fields. Do not rely on headings, bullets, narrative paragraphs, or Markdown tables as the only copy. Narrative explanation may follow only after this block:
 ```text
 first_slice: <must match PLAN_RESULT.md first_slice exactly>

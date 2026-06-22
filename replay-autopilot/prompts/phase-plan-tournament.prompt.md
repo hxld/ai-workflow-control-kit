@@ -383,6 +383,7 @@ Status: PROCEED  # ✅ ALLOWED
    - DB/事务或替代验证
    - deploy-facing surface tests
    - static-only/blocker 时的 cap
+   - **机器行硬要求（v608）**：TEST_CHARTER 的第一段必须包含独立 `key: value` 行：`test_surface: <test harness/surface>`、`entry_point: <production entry>`、`test_class: <expected test class>`、`test_method: <expected RED test method>`。Markdown 粗体标签可以保留，但不能作为唯一机器可读入口。
    - **格式硬要求（v426/v604）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词；缺少 RED 会触发阻塞的 `test_charter_missing:RED`，缺少 GREEN 在 Plan 阶段只触发 `test_charter_missing:GREEN` warning，但 Phase 1 执行前仍会由 `Invoke-TestCharterPrevalidator.ps1` 重新硬校验 charter 可执行性。你可以添加其他内容，但必须显式包含这两个标题段落。
 
 7. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md`
@@ -591,7 +592,7 @@ pattern_evidence_source: <rg command + file path>
    - 禁止使用 "Status: TODO" 或其他占位格式，必须明确 slice 或 blocker
    - 验证器会检查 "closure" 关键词存在性
 7. `{{REPLAY_ROOT}}\SIDE_EFFECT_LEDGER.md` — entry → side effect → state/task/transaction → proof
-8. `{{REPLAY_ROOT}}\TEST_CHARTER.md` — RED/GREEN order + real entry tests + DB/transaction
+8. `{{REPLAY_ROOT}}\TEST_CHARTER.md` — machine `test_surface`/`entry_point`/`test_class`/`test_method` lines + RED/GREEN order + real entry tests + DB/transaction
 9. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md` — first slice proof schema (见上方字段清单)
 
 `PLAN_RESULT.json` 最低格式：

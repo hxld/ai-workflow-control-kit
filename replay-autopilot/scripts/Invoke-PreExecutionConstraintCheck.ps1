@@ -81,6 +81,32 @@ function Get-KeyValueField {
     return ''
 }
 
+function Get-TestCharterSurfaceDetection {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ''
+    }
+
+    $labelPrefix = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?(?:\*{0,2})\s*'
+    $labelSuffix = '\s*(?:\*{0,2})\s*[:=]\s*\S'
+    $patterns = [ordered]@{
+        test_surface_label = $labelPrefix + 'test[_\s-]*surface' + $labelSuffix
+        entry_point_label = $labelPrefix + 'entry[_\s-]*point' + $labelSuffix
+        test_class_label = $labelPrefix + 'test[_\s-]*class' + $labelSuffix
+        test_method_label = $labelPrefix + 'test[_\s-]*method' + $labelSuffix
+        test_scenario_label = $labelPrefix + 'test[_\s-]*scenario' + $labelSuffix
+        red_test_label = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?(?:RED\s+)?Test\s*:\s*\S'
+        class_label = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?Class\s*:\s*\S'
+    }
+
+    foreach ($name in $patterns.Keys) {
+        if ($Text -match $patterns[$name]) {
+            return $name
+        }
+    }
+    return ''
+}
+
 function Test-BooleanTrue {
     param($Value)
     if ($Value -is [bool]) { return [bool]$Value }
@@ -637,10 +663,12 @@ $testCharterExists = Test-Path -LiteralPath $testCharterPath
 
 if ($testCharterExists) {
     $testCharterText = Get-Content -LiteralPath $testCharterPath -Raw -Encoding UTF8
-    $hasTestSurface = $testCharterText -match 'test_surface|entry[_\s-]*point|test[_\s-]*method|test[_\s-]*class|test[_\s-]*scenario'
+    $testSurfaceDetection = Get-TestCharterSurfaceDetection -Text $testCharterText
+    $hasTestSurface = -not [string]::IsNullOrWhiteSpace($testSurfaceDetection)
 } else {
     $hasTestSurface = $false
     $testCharterText = ''
+    $testSurfaceDetection = ''
 }
 
 $checks += [ordered]@{
@@ -648,6 +676,7 @@ $checks += [ordered]@{
     status = if ($testCharterExists -and $hasTestSurface) { 'PASS' } else { 'FAIL' }
     test_charter_exists = $testCharterExists
     has_test_surface = $hasTestSurface
+    surface_detection = $testSurfaceDetection
 }
 
 if (-not ($testCharterExists -and $hasTestSurface)) {

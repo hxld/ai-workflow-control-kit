@@ -158,6 +158,8 @@ function Test-ExecutableEvidenceGate {
         touched_requirement_families = @('core_entry')
         closed_requirement_families = @('core_entry')
         implemented_files = @('src/main/java/MyFacadeImpl.java', 'src/test/java/MyFacadeImplTest.java')
+        test_execution_command = 'mvn -pl app -am -Dtest=MyFacadeImplTest#execute test'
+        test_execution_exit_code = 0
         gap_flags = @()
         closed_assertions = @(
             'MyFacadeImpl#execute request/response business return value is asserted through the real facade entry'
@@ -171,7 +173,7 @@ function Test-ExecutableEvidenceGate {
         }
         tests = @(
             @{ phase = 'RED'; result = 'fail'; evidence = 'assert response status expected business value but implementation returns null' }
-            @{ phase = 'GREEN'; result = 'pass'; evidence = 'verify MyFacadeImpl#execute returns expected response status and payload value' }
+            @{ phase = 'GREEN'; result = 'pass'; command = 'mvn -pl app -am -Dtest=MyFacadeImplTest#execute test'; evidence = 'verify MyFacadeImpl#execute returns expected response status and payload value' }
         )
     }
     $sliceResultPath = Join-Path $replayRoot 'SLICE_RESULT_01.json'
@@ -258,10 +260,12 @@ test-insert-task.log shows task record inserted
         touched_requirement_families = @('stateful_side_effect')
         closed_requirement_families = @()
         implemented_files = @('src/main/java/MyService.java', 'src/test/java/MyServiceTest.java')
+        test_execution_command = 'mvn -pl app -am -Dtest=MyServiceTest#testInsertTask test'
+        test_execution_exit_code = 0
         gap_flags = @()
         tests = @(
             @{ phase = 'RED'; result = 'fail'; evidence = 'Test fails: cannot insert task, assertEquals(0, taskDao.count()) before insert' }
-            @{ phase = 'GREEN'; result = 'pass'; evidence = 'Task inserted successfully, assertEquals(1, taskDao.count()) after insert' }
+            @{ phase = 'GREEN'; result = 'pass'; command = 'mvn -pl app -am -Dtest=MyServiceTest#testInsertTask test'; evidence = 'Task inserted successfully, assertEquals(1, taskDao.count()) after insert' }
         )
     }
     $sliceResultPath = Join-Path $replayRoot 'SLICE_RESULT_01.json'
@@ -365,10 +369,16 @@ function Test-PreflightGate {
 "@
     Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Value $pomContent -Encoding UTF8
 
-    # Run with very short timeout to trigger timeout (simulating failure)
-    # Use a command that will hang on Windows to simulate timeout
+    # Run with very short timeout against a local slow command. This validates
+    # preflight timeout handling without depending on platform-specific ping
+    # argument behavior.
+    $slowMaven = Join-Path $replayRoot 'slow-maven.cmd'
+    @'
+@echo off
+ping 127.0.0.1 -n 5 > nul
+'@ | Set-Content -LiteralPath $slowMaven -Encoding ASCII
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Invoke-PreflightTestCompilation.ps1') `
-        -ReplayRoot $replayRoot -Worktree $worktree -ProjectRoot $worktree -TimeoutSeconds 1 -MavenCommand 'ping' | Out-Null
+        -ReplayRoot $replayRoot -Worktree $worktree -ProjectRoot $worktree -TimeoutSeconds 1 -MavenCommand $slowMaven | Out-Null
     $exitCode = $LASTEXITCODE
     # Should fail with timeout
     $cases.Add((Assert-True 'preflight_timeout_detected' ($exitCode -ne 0))) | Out-Null

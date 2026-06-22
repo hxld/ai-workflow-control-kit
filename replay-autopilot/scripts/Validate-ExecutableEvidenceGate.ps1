@@ -71,6 +71,12 @@ $proofKind = [string]$slice.proof_kind
 $touchedFamilies = @(Get-StringArray $slice.touched_requirement_families)
 $closedFamilies = @(Get-StringArray $slice.closed_requirement_families)
 $implementedFiles = @(Get-StringArray $slice.implemented_files)
+$changedFiles = @(
+    (Get-StringArray $slice.current_slice_changed_files) +
+    (Get-StringArray $slice.round_changed_files_snapshot) +
+    (Get-StringArray $slice.changed_files)
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+$effectiveFiles = @($implementedFiles + $changedFiles) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 $gapFlags = @(Get-StringArray $slice.gap_flags)
 
 # Read supporting artifacts
@@ -81,11 +87,13 @@ $testCharterText = Read-TextIfExists -Path $testCharterPath
 
 # ===== v281 VALIDATION 1: Wrong Test Surface Detection =====
 
-# Check if slice claims to close a family but only tests helpers/DTOs
+# Check if slice claims to close a family but only tests helpers/DTOs.
+# Leading \b is intentionally omitted so suffix-style carriers such as
+# RequestTaskProcessor still count as real processor entries.
 $hasRealEntryBinding = (
-    $targetSubsurface -match '(?i)\b(Facade(?:Impl)?|Controller(?:Impl)?|Service|Processor|Handler|Task|Route|Endpoint)\b' -or
+    $targetSubsurface -match '(?i)(Facade(?:Impl)?|Controller(?:Impl)?|Service|Processor|Handler|Task|Route|Endpoint)\b' -or
     $targetSubsurface -match '\.java#\w+\(' -or
-    $productionBoundary -match '(?i)\b(entry|service|process|handle|execute)\b'
+    $productionBoundary -match '(?i)(entry|service|process|handle|execute)\b'
 )
 
 $hasHelperOnlyBinding = (
@@ -99,9 +107,45 @@ $hasSyntheticBinding = (
     $proofKind -match '(?i)(mock_only|test_stub|synthetic)'
 )
 
-# Check if implemented files are all test-only
-$testOnlyFiles = @($implementedFiles | Where-Object { $_ -match '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' })
-$hasProductionFiles = @($implementedFiles | Where-Object { $_ -notmatch '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' }).Count -gt 0
+# Check if the slice only changed test files. Agents sometimes report production
+# files in current_slice_changed_files or round_changed_files_snapshot instead of
+# implemented_files, so use the effective union before falling back to git.
+$testOnlyFiles = @($effectiveFiles | Where-Object { $_ -match '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' })
+$hasProductionFiles = @($effectiveFiles | Where-Object { $_ -notmatch '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' }).Count -gt 0
+
+# v555: Fallback to git status in worktree when SLICE_RESULT file lists are
+# incomplete. Worktree status is authoritative for tracked and untracked files.
+if (-not $hasProductionFiles -and (Test-Path -LiteralPath $worktreeFull -PathType Container)) {
+    try {
+        $statusLines = @(& git -C $worktreeFull status --short --untracked-files=all 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $statusLines.Count -gt 0) {
+            $foundProduction = $false
+            foreach ($line in $statusLines) {
+                $text = ([string]$line).TrimEnd()
+                if ([string]::IsNullOrWhiteSpace($text)) { continue }
+                $pathText = ''
+                if ($text -match '^(.{2})\s+(.+)$') {
+                    $pathText = $matches[2].Trim()
+                } else {
+                    $pathText = $text.Trim()
+                }
+                if ($pathText -match '\s+->\s+(.+)$') {
+                    $pathText = $matches[1].Trim()
+                }
+                if ($pathText -match '(^|/)src/main/' -and $pathText -notmatch '(?i)Test\.java$') {
+                    $foundProduction = $true
+                    break
+                }
+            }
+            if ($foundProduction) {
+                $hasProductionFiles = $true
+                $warnings.Add('Production files detected via git-status fallback (not listed in SLICE_RESULT file fields)') | Out-Null
+            }
+        }
+    } catch {
+        # git-status fallback is best-effort; silent on failure.
+    }
+}
 
 # Wrong test surface: closing family without testing real production entry
 if (($closedFamilies.Count -gt 0 -or $touchedFamilies.Count -gt 0) -and
@@ -258,6 +302,47 @@ if ($touchesCoreEntryFamily -and $sliceStatus -eq 'DONE') {
     }
 }
 
+# ===== v555+v616 VALIDATION: Executable Evidence Capture =====
+# Require machine-readable test commands for any success-shaped slice. The
+# prompt contract says DONE, but older agents have emitted COMPLETED; treat both
+# as authorizing claims so natural-language GREEN summaries cannot bypass this
+# gate by using a synonym.
+$successSliceStatus = @('DONE', 'COMPLETED') -contains $sliceStatus
+$testExecCommand = Get-StringValue $slice 'test_execution_command'
+$testExecExitCode = $slice.test_execution_exit_code
+$testCompileCommand = Get-StringValue $slice 'test_compilation_command'
+$testCompileExitCode = $slice.test_compilation_exit_code
+
+if ($successSliceStatus) {
+    $hasExecutableTestCommand = -not [string]::IsNullOrWhiteSpace($testExecCommand)
+    $hasExecutableTestExitCode = ($null -ne $testExecExitCode -and $testExecExitCode -eq 0)
+
+    # Some agents encode the executable target entirely in tests[].command.
+    if (-not $hasExecutableTestCommand) {
+        foreach ($test in @($slice.tests)) {
+            if ($null -ne $test -and ($test -is [System.Management.Automation.PSCustomObject])) {
+                $testCommand = [string]$test.command
+                $testResult = [string]$test.result
+                $testPhase = [string]$test.phase
+                if (-not [string]::IsNullOrWhiteSpace($testCommand) -and
+                    $testPhase -match '(?i)^(GREEN|VERIFY)$' -and
+                    $testResult -match '(?i)^(pass|success)$') {
+                    $hasExecutableTestCommand = $true
+                    if ($testCommand -match '(?i)\bmvn(?:\.cmd)?\b' -and $testCommand -match '(?i)(?:^|\s)-D(?:it\.)?test\s*=') {
+                        $hasExecutableTestExitCode = $true
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    if (-not $hasExecutableTestCommand -or -not $hasExecutableTestExitCode) {
+        $issues.Add('behavior_evidence_missing:no_executable_command_evidence') | Out-Null
+        $warnings.Add('Success-shaped slice missing test_execution_command/exit_code; use machine-verifiable Maven commands instead of natural-language summaries') | Out-Null
+    }
+}
+
 # ===== v281 VALIDATION 3: Feedback Loop Blocker Detection =====
 
 # Detect if RED phase was blocked but implementation proceeded anyway
@@ -282,12 +367,14 @@ if ($null -ne $slice.tests) {
 if ($redBlocked -and $implementedFiles.Count -gt 0) {
     $issues.Add('feedback_loop_blocker:implementation_after_blocked_red') | Out-Null
     $warnings.Add('RED phase was BLOCKED but implementation proceeded - violates TDD') | Out-Null
+    if ($gapFlags -notcontains 'feedback_loop_blocker') { $gapFlags += 'feedback_loop_blocker' }
 }
 
 # Check if implementation happened without failing RED
 if ($redPassedBeforeImplementation -and $implementedFiles.Count -gt 0 -and -not $redBlocked) {
     $issues.Add('feedback_loop_blocker:red_passed_before_implementation') | Out-Null
     $warnings.Add('RED phase PASSED before implementation - invalid TDD workflow') | Out-Null
+    if ($gapFlags -notcontains 'feedback_loop_blocker') { $gapFlags += 'feedback_loop_blocker' }
 }
 
 # v289: Test harness placement validation. claim-core has no test dependency

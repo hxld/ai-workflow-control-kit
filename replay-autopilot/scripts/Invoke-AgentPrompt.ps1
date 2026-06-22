@@ -857,8 +857,8 @@ if ($Executor -eq 'codex') {
     }
     $args += '-'
 
-    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $rgConfigPath, $toolPath, $automationGuard, $Name -ScriptBlock {
-        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner)
+    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $rgConfigPath, $toolPath, $automationGuard, $Name, $protectedRoot, $workDirFull -ScriptBlock {
+        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner, $ProtectedRootInner, $WorkDirInner)
         $stdoutText = ''
         $stderrText = ''
         $exit = 1
@@ -870,6 +870,8 @@ if ($Executor -eq 'codex') {
                 $env:RIPGREP_CONFIG_PATH = $RgConfigPathInner
             }
             $env:RG_AUTOPILOT_LIMIT = '80'
+            $env:REPLAY_PROTECTED_ROOT = $ProtectedRootInner
+            $env:REPLAY_WORKTREE_ROOT = $WorkDirInner
             $promptBody = Get-Content -LiteralPath $PromptPathInner -Raw -Encoding UTF8
             $env:REPLAY_AGENT_STAGE = $NameInner
             $env:REPLAY_ORACLE_ISOLATION = if ($NameInner -match '^(?i:phase2)$') { '0' } else { '1' }
@@ -900,8 +902,8 @@ if ($Executor -eq 'codex') {
     }
     $args += @('--add-dir', $workDirFull)
 
-    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $workDirFull, $rgConfigPath, $toolPath, $automationGuard, $Name -ScriptBlock {
-        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $WorkDirInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner)
+    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $workDirFull, $rgConfigPath, $toolPath, $automationGuard, $Name, $protectedRoot -ScriptBlock {
+        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $WorkDirInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner, $ProtectedRootInner)
         $stdoutText = ''
         $stderrText = ''
         $exit = 1
@@ -914,6 +916,8 @@ if ($Executor -eq 'codex') {
                 $env:RIPGREP_CONFIG_PATH = $RgConfigPathInner
             }
             $env:RG_AUTOPILOT_LIMIT = '80'
+            $env:REPLAY_PROTECTED_ROOT = $ProtectedRootInner
+            $env:REPLAY_WORKTREE_ROOT = $WorkDirInner
             Push-Location $WorkDirInner
             $pushed = $true
             $promptBody = Get-Content -LiteralPath $PromptPathInner -Raw -Encoding UTF8

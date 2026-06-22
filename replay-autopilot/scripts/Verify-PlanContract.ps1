@@ -1462,7 +1462,9 @@ if ($Stage -eq 'Phase0') {
         Add-MissingTokenIssue -Issues $warnings -Text $sideEffectText -Token $token -Issue "side_effect_ledger_weak:$token"
     }
     Add-MissingTokenIssue -Issues $issues -Text $testCharterText -Token 'RED' -Issue 'test_charter_missing:RED'
-    Add-MissingTokenIssue -Issues $issues -Text $testCharterText -Token 'GREEN' -Issue 'test_charter_missing:GREEN'
+    # Plan-stage GREEN detail is advisory. Slice execution enforces the
+    # executable TEST_CHARTER contract before RED/test implementation starts.
+    Add-MissingTokenIssue -Issues $warnings -Text $testCharterText -Token 'GREEN' -Issue 'test_charter_missing:GREEN'
 
     Add-MissingAnyTokenIssue -Issues $issues -Text $firstSliceProofText -Tokens @('target family', 'target_family', 'highest_weight_open_gate', 'target subsurface', 'Target Subsurface') -Issue 'first_slice_proof_missing:target family'
     Add-MissingAnyTokenIssue -Issues $issues -Text $firstSliceProofText -Tokens @('existing production carrier', 'existing_production_carrier', 'selected_carrier', 'selected carrier', 'target_subsurface_or_carrier', 'target subsurface') -Issue 'first_slice_proof_missing:existing production carrier'

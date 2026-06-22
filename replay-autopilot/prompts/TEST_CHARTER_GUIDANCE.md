@@ -5,10 +5,10 @@
 **CRITICAL**: TEST_CHARTER.md must include explicit `## RED Phase` and `## GREEN Phase` section headings.
 
 The plan contract verifier (Verify-PlanContract.ps1) searches for "RED" and "GREEN" tokens in TEST_CHARTER.md. If these tokens are missing, it triggers:
-- `test_charter_missing:RED` 
-- `test_charter_missing:GREEN`
+- `test_charter_missing:RED` as a blocking Plan issue.
+- `test_charter_missing:GREEN` as a non-blocking Plan warning.
 
-This causes plan verification to FAIL even if the test content is otherwise valid.
+Phase 1 still runs `Invoke-TestCharterPrevalidator.ps1` before test implementation starts. That prevalidator is the hard executable charter gate for missing, incomplete, or non-executable test charters.
 
 **Required Format**:
 ```markdown

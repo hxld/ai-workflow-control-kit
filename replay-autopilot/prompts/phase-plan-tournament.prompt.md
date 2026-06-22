@@ -383,7 +383,7 @@ Status: PROCEED  # ✅ ALLOWED
    - DB/事务或替代验证
    - deploy-facing surface tests
    - static-only/blocker 时的 cap
-   - **格式硬要求（v426）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词，如果缺少这些关键词将触发 `test_charter_missing:RED` 或 `test_charter_missing:GREEN` 错误。你可以添加其他内容，但必须显式包含这两个标题段落。
+   - **格式硬要求（v426/v604）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词；缺少 RED 会触发阻塞的 `test_charter_missing:RED`，缺少 GREEN 在 Plan 阶段只触发 `test_charter_missing:GREEN` warning，但 Phase 1 执行前仍会由 `Invoke-TestCharterPrevalidator.ps1` 重新硬校验 charter 可执行性。你可以添加其他内容，但必须显式包含这两个标题段落。
 
 7. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md`
    - 只写 Phase 1 第一刀，不写全量计划

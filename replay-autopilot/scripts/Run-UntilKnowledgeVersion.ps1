@@ -572,8 +572,13 @@ Mandatory repair:
 1. Implement concrete tooling/prompt/verifier/test changes in the existing replay autopilot repository.
 2. Prefer existing PowerShell scripts/prompts/tests; do not invent unattached JS filenames unless you add and invoke them.
 3. Run the smallest relevant regression tests.
-4. Update and push the knowledge repo.
+4. Update and push the knowledge repo only after a concrete source/tooling change exists and passes verification.
 5. Overwrite `$evolutionResultPath` only after side effects are complete.
+
+No-op version advance guard:
+- If the failed verification includes no_source_change_cannot_satisfy_stop_and_evolve, NO_SOURCE_CHANGE, noop-evolution, no-source-change, or tooling_changes_applied_missing_or_false, you must either implement a real runner/prompt/verifier/test change or stop with `NO_VERSION_ADVANCE_REASON.md`.
+- A no-source-change / already-covered audit must not edit/commit/push knowledge repo, must not update CURRENT_VERSION.md or changelog, and must not set actual_knowledge_version_after_push to the expected version.
+- If no concrete tooling change is possible, write `$evolutionResultPath` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`, `- tooling_changes_applied: false`, `- stop_and_evolve_satisfied: false`, and the real current knowledge version.
 
 Required machine lines:
 - final_status: VALIDATED_TOOLING_EVOLUTION

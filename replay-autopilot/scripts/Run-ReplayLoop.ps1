@@ -2683,8 +2683,13 @@ Mandatory repair:
 3. Do not only write a plan, do not write success when commit/push is blocked, and do not create side scripts that the current runner does not call.
 4. If a new script is necessary, wire it into the current runner/verifier path and add a regression test proving that invocation.
 5. Run the smallest relevant regression tests.
-6. Update the knowledge repo history/changelog/guide and push the knowledge repo.
+6. Update the knowledge repo history/changelog/guide and push the knowledge repo only after a concrete source/tooling change exists and passes verification.
 7. Overwrite `$EvolutionResultPath` only after side effects are complete.
+
+No-op version advance guard:
+- If the failed verification includes no_source_change_cannot_satisfy_stop_and_evolve, NO_SOURCE_CHANGE, noop-evolution, no-source-change, or tooling_changes_applied_missing_or_false, you must either implement a real runner/prompt/verifier/test change or stop with `NO_VERSION_ADVANCE_REASON.md`.
+- A no-source-change / already-covered audit must not edit/commit/push knowledge repo, must not update CURRENT_VERSION.md or changelog, and must not set actual_knowledge_version_after_push to the expected version.
+- If no concrete tooling change is possible, write `$EvolutionResultPath` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`, `- tooling_changes_applied: false`, `- stop_and_evolve_satisfied: false`, and the real current knowledge version.
 
 Required machine lines in `$EvolutionResultPath` after a successful repair:
 - final_status: VALIDATED_TOOLING_EVOLUTION
@@ -2695,7 +2700,7 @@ Required machine lines in `$EvolutionResultPath` after a successful repair:
 - pushed_commit: <knowledge repo commit hash>
 - actual_knowledge_version_after_push: $ExpectedKnowledgeVersion
 
-Do not write VALIDATED if commit/push is blocked, if the changed file is not used by the runner, if verification is only manual review, or if the report still says the runner should integrate scripts later. If this is genuinely impossible, write `NO_VERSION_ADVANCE_REASON.md` with concrete evidence. The runner will stop after this bounded repair pass if validation still fails.
+Do not write VALIDATED if commit/push is blocked, if the changed file is not used by the runner, if verification is only manual review, if the report still says the runner should integrate scripts later, or if no source/tooling diff was applied. If this is genuinely impossible, write `NO_VERSION_ADVANCE_REASON.md` with concrete evidence and do not edit/commit/push knowledge repo. The runner will stop after this bounded repair pass if validation still fails.
 "@
     Set-Content -LiteralPath $evolutionRepairPrompt -Value $repairPromptText -Encoding UTF8
     if (Test-Path -LiteralPath $EvolutionResultPath) {
@@ -6100,8 +6105,13 @@ Mandatory repair:
 2. Implement at least one concrete tooling/prompt/verifier/test change under the real replay autopilot root. Prefer the existing PowerShell runner/verifier/prompt files already in this repository.
 3. Do not only write a plan, do not only write `BLOCKED_NEEDS_EVIDENCE`, and do not invent unattached JS filenames unless you actually add and invoke them from the current tooling.
 4. Run the smallest relevant regression tests.
-5. Update the knowledge repo history/changelog/guide and push the knowledge repo.
+5. Update the knowledge repo history/changelog/guide and push the knowledge repo only after a concrete source/tooling change exists and passes verification.
 6. Overwrite `$evolutionResultPath` only after side effects are complete.
+
+No-op version advance guard:
+- If the failed verification includes no_source_change_cannot_satisfy_stop_and_evolve, NO_SOURCE_CHANGE, noop-evolution, no-source-change, or tooling_changes_applied_missing_or_false, you must either implement a real runner/prompt/verifier/test change or stop with `NO_VERSION_ADVANCE_REASON.md`.
+- A no-source-change / already-covered audit must not edit/commit/push knowledge repo, must not update CURRENT_VERSION.md or changelog, and must not set actual_knowledge_version_after_push to the expected version.
+- If no concrete tooling change is possible, write `$evolutionResultPath` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`, `- tooling_changes_applied: false`, `- stop_and_evolve_satisfied: false`, and the real current knowledge version.
 
 Required machine lines in `$evolutionResultPath` after a successful repair:
 - final_status: VALIDATED_TOOLING_EVOLUTION
@@ -6112,7 +6122,7 @@ Required machine lines in `$evolutionResultPath` after a successful repair:
 - pushed_commit: <knowledge repo commit hash>
 - actual_knowledge_version_after_push: $($versionContext.EXPECTED_KNOWLEDGE_VERSION)
 
-Do not write VALIDATED if commit/push is blocked, if the changed file is not used by the runner, or if verification is only manual review. If this is genuinely impossible, write `NO_VERSION_ADVANCE_REASON.md` with concrete evidence. The runner will stop after this bounded repair pass if validation still fails.
+Do not write VALIDATED if commit/push is blocked, if the changed file is not used by the runner, if verification is only manual review, or if no source/tooling diff was applied. If this is genuinely impossible, write `NO_VERSION_ADVANCE_REASON.md` with concrete evidence and do not edit/commit/push knowledge repo. The runner will stop after this bounded repair pass if validation still fails.
 "@
                 Set-Content -LiteralPath $evolutionRepairPrompt -Value $repairPromptText -Encoding UTF8
                 if (Test-Path -LiteralPath $evolutionResultPath) {

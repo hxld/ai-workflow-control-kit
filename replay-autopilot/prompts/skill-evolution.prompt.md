@@ -22,12 +22,14 @@
    - source -> backup hash equality
    - project/external identity pollution scan
    - git diff --check
-   - commit and push knowledge repo current upstream branch
+   - 当且仅当本轮存在真实 source/tooling/prompt/verifier/test 变更并通过验证时，commit and push knowledge repo current upstream branch
+   - 如果本轮是 no-source-change / no-op / already-covered 审计，must not edit/commit/push knowledge repo，不能推进版本
 8. 版本推进必须显式闭环：
-   - 如果存在 `workflow-gate-needs-evolution`，必须把知识库推进到 `{{EXPECTED_KNOWLEDGE_VERSION}}`，包括 `custom-skills-history/{{EXPECTED_KNOWLEDGE_VERSION}}-*.md`、changelog/guide 同步、commit/push。
-   - 如果判定为 `already-covered-by-existing-gate` 且不改 canonical skill source，也必须写一个 `{{EXPECTED_KNOWLEDGE_VERSION}}-*-noop-evolution.md` 记录 no-source-change 审计、更新 changelog，并 commit/push，使无人值守循环可确认本轮已处理。
+   - 只有在本轮实际修改 canonical skill source，或实际修改并验证 replay autopilot runner/prompt/verifier/test 后，才能把知识库推进到 `{{EXPECTED_KNOWLEDGE_VERSION}}`，包括 `custom-skills-history/{{EXPECTED_KNOWLEDGE_VERSION}}-*.md`、changelog/guide 同步、commit/push。
+   - 如果判定为 `already-covered-by-existing-gate` 且不改 canonical skill source / replay autopilot tooling，不得写 `{{EXPECTED_KNOWLEDGE_VERSION}}-*-noop-evolution.md`，不得更新 changelog / `CURRENT_VERSION.md`，不得 commit/push knowledge repo。必须写 `NO_VERSION_ADVANCE_REASON.md`，并让 `actual_knowledge_version_after_push` 保持真实当前版本。
    - 但如果存在 `STOP_AND_EVOLVE`、`NEXT_EXPERIMENT_PLAN.md`、或任何 gap 被归类为 `already-covered-but-not-enforced` / `tooling-evolution-needed`，禁止 no-op / no-source-change 版本推进；必须实际修改 {{AUTOPILOT_ROOT}} 的 runner/prompt/verifier/test，或写 `NO_VERSION_ADVANCE_REASON.md` / `EVOLUTION_RESULT.md` 标明 BLOCKED。
    - 如果证据不足或不应推进版本，必须在 replay root 写 `NO_VERSION_ADVANCE_REASON.md`，说明为什么不能推进到 `{{EXPECTED_KNOWLEDGE_VERSION}}`。
+   - `NO_SOURCE_CHANGE`、`NO_SKILL_SOURCE_CHANGE`、`noop-evolution`、`no-source-change` 不能和 `VALIDATED_TOOLING_EVOLUTION`、`verification_results: PASS`、`actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` 同时出现。
 
 【任务】
 1. 阅读 evolution proposal。
@@ -87,4 +89,5 @@ Runner completion artifact:
   - `- closed_machine_gates: ...` must list machine_gate values from verifiable rules that were actually closed
   - `- pushed_commit: ...` must contain the pushed knowledge repo commit hash
   - `- actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` must match the real latest knowledge version after push
+- If no concrete source/tooling change is applied, write `NO_VERSION_ADVANCE_REASON.md` and `EVOLUTION_RESULT.md` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`; do not edit/commit/push knowledge repo, and keep `actual_knowledge_version_after_push` equal to the real current version.
 - Write this file only after the evolution side effects are complete, so the unattended runner can treat it as the completion signal.

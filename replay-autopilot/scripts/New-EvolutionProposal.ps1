@@ -268,6 +268,7 @@ $detectedRows
 
 - enforcement_needed_count: $($enforcementNeeded.Count)
 - rule: if a gap maps to an existing gate but recurs in replay, classify it as already-covered-but-not-enforced, not no-op.
+- no_op_version_guard: already-covered-by-existing-gate without a concrete runner/prompt/verifier/test change must not advance knowledge version; write NO_VERSION_ADVANCE_REASON.md instead.
 - required_action: evolve runner/prompt/verifier enforcement before adding more synonym skill rules.
 
 ## 8-Gate Summary
@@ -281,7 +282,7 @@ $gateRows
 - Absorb only cross-project gates, routing rules, validation discipline, or report formats.
 - Do not absorb project paths, business class names, table names, oracle filenames, commits, or concrete replay roots.
 - Do not treat scoring caps as execution improvements; when the same gap repeats, evolve budget routing, real entries, and executable slices first.
-- If an existing skill already covers the gate, mark already-covered-by-existing-gate instead of duplicating rules.
+- If an existing skill already covers the gate, mark already-covered-by-existing-gate instead of duplicating rules, but do not create no-source-change knowledge versions.
 - Do not add new synonymous gate names. Map every candidate change to one of the eight productized gates before editing skills.
 
 ## Suggested Next Action

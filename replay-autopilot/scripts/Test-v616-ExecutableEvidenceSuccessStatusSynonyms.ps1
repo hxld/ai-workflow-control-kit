@@ -110,6 +110,41 @@ try {
     $validatorText = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Validate-ExecutableEvidenceGate.ps1') -Raw -Encoding UTF8
     Assert-True ($validatorText.Contains("@('DONE', 'COMPLETED') -contains `$sliceStatus")) 'validator must treat DONE and COMPLETED as success-shaped status values'
     Assert-True ($validatorText.Contains('Success-shaped slice missing test_execution_command/exit_code')) 'validator warning must not be DONE-only'
+    Assert-True ($validatorText.Contains("(Test-Path -LiteralPath `$e1Script) -and (Test-Path -LiteralPath `$requirementLedgerPath)")) 'v340 experiment E1 path checks must be parenthesized'
+
+    $scenario4 = New-ScenarioRoot -Root $tempRoot -Name 'v340-e1-enabled-with-ledger'
+    $slice4 = Join-Path $scenario4.ReplayRoot 'SLICE_RESULT_01.json'
+    Write-JsonFile (Join-Path $scenario4.ReplayRoot 'REQUIREMENT_FAMILY_LEDGER.json') ([ordered]@{
+        families = @()
+    })
+    Write-JsonFile $slice4 ([ordered]@{
+        slice_index = 1
+        slice_status = 'COMPLETED'
+        slice_type = 'field_contract_slice'
+        target_subsurface_or_carrier = 'ExampleController'
+        production_boundary = 'ExampleController#save'
+        proof_kind = 'payload_shape_behavior'
+        touched_requirement_families = @()
+        closed_requirement_families = @()
+        implemented_files = @('src/main/java/ExampleController.java', 'src/test/java/ExampleControllerTest.java')
+        gap_flags = @()
+        tests = @(
+            @{
+                phase = 'GREEN'
+                result = 'pass'
+                command = 'mvn -pl app -am -Dtest=ExampleControllerTest#shouldSave test'
+                evidence = 'Surefire reports 1 test, 0 failures'
+            }
+        )
+        test_evidence = @(
+            @{
+                phase = 'GREEN'
+                result = 'PASS'
+            }
+        )
+    })
+    $exit4 = Invoke-Gate -ReplayRoot $scenario4.ReplayRoot -Worktree $scenario4.Worktree -SliceResultPath $slice4
+    Assert-True ($exit4 -eq 0) 'v340 E1 activation with requirement ledger must not trigger Test-Path parameter binding failure'
 
     Write-Host 'Test-v616-ExecutableEvidenceSuccessStatusSynonyms PASS'
 } finally {

@@ -433,7 +433,7 @@ if ($v340ExperimentsEnabled -and $pythonCmd) {
     $e1Script = Join-Path $scriptDir 'verifier\executable_evidence.py'
     $requirementLedgerPath = Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json'
 
-    if (Test-Path -LiteralPath $e1Script -and Test-Path -LiteralPath $requirementLedgerPath) {
+    if ((Test-Path -LiteralPath $e1Script) -and (Test-Path -LiteralPath $requirementLedgerPath)) {
         try {
             $sliceResultJson = Get-Content -LiteralPath $sliceResultPath -Raw -Encoding UTF8
             $ledgerJson = Get-Content -LiteralPath $requirementLedgerPath -Raw -Encoding UTF8

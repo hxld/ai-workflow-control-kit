@@ -285,7 +285,7 @@ foreach ($flag in @(
     'executable_surface_slice_gap',
     'core_entry_unclosed'
 )) {
-    if ($metaAuthorizingFlags -contains $flag) {
+    if ($metaAuthorizingFlags -contains $flag -or $gapFlags -contains $flag) {
         $mustFailClosed = $true
         $mustFailReasons.Add($flag) | Out-Null
     }

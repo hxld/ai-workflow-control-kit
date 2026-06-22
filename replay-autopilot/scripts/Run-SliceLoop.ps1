@@ -478,6 +478,29 @@ function Get-PermanentExecutorResourceBlocker {
     return [pscustomobject]@{ IsResourceBlocker = $true; Category = $category; Diagnostic = $diagnostic }
 }
 
+function Convert-ToExecutorExitCode {
+    param(
+        [object]$Value,
+        [int]$Default = 1
+    )
+
+    if ($null -eq $Value) { return $Default }
+
+    $candidates = @($Value)
+    for ($idx = $candidates.Count - 1; $idx -ge 0; $idx--) {
+        $candidate = $candidates[$idx]
+        if ($null -eq $candidate) { continue }
+        $text = ([string]$candidate).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        $parsed = 0
+        if ([int]::TryParse($text, [ref]$parsed)) {
+            return $parsed
+        }
+    }
+
+    return $Default
+}
+
 function Get-CommandGuardRetryGuidance {
     param([string]$LogDir)
 
@@ -4549,7 +4572,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         } else {
             $executorExitCode = Invoke-SliceExecutorWithRetry -AgentArgs $agentArgs -SliceLogDir $sliceLogDir -SliceId $sliceId -MaxRetries 2 -DelaySeconds 60
             if ($executorExitCode -ne 0) {
-                $executorExitCode = $LASTEXITCODE
+                $executorExitCode = Convert-ToExecutorExitCode $executorExitCode
                 if (Test-Path -LiteralPath $sliceResult) {
                     Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor nonzero with result | {1} | {2} | executor_failed_but_result_present | exit_code={3}; preserving agent-authored slice result for verification. |" -f $i, $forced.family_id, $forced.slice_type, $executorExitCode)
                 } else {
@@ -4663,6 +4686,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry runner invocation smoke blocked | {1} | {2} | runner_invocation_error | validate-only exit_code={3}; retry executor was not started. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE)
             } else {
                 $retryExitCode = Invoke-SliceExecutorWithRetry -AgentArgs $retryAgentArgs -SliceLogDir $retryLogDir -SliceId "$sliceId-retry" -MaxRetries 1 -DelaySeconds 60
+                $retryExitCode = Convert-ToExecutorExitCode $retryExitCode
                 if ($retryExitCode -ne 0) {
                     Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} retry executor failed | {1} | {2} | executor_failed_without_result | retry exit_code={3}; preserving actual retry failure code for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $retryExitCode)
                 }
@@ -4673,9 +4697,9 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     if (-not (Test-Path -LiteralPath $sliceResult)) {
         $finalExecutorExitCode = 0
         if ($null -ne $retryExitCode) {
-            $finalExecutorExitCode = [int]$retryExitCode
+            $finalExecutorExitCode = Convert-ToExecutorExitCode $retryExitCode
         } elseif ($null -ne $executorExitCode) {
-            $finalExecutorExitCode = [int]$executorExitCode
+            $finalExecutorExitCode = Convert-ToExecutorExitCode $executorExitCode
         }
         $partialAfterRetry = Write-PartialWorktreeDiffAudit -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -Stage 'after_retry' -SliceLogDir $sliceLogDir -ExitCode $finalExecutorExitCode
         Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $finalExecutorExitCode -Reason "executor completed without writing required SLICE_RESULT after retry" -PartialDiffAudit $partialAfterRetry

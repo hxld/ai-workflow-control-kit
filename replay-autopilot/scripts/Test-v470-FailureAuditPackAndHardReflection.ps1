@@ -33,7 +33,8 @@ try {
     $writeAuditText = Get-Content -LiteralPath $writeAudit -Raw -Encoding UTF8
     $writeControlText = Get-Content -LiteralPath $writeControl -Raw -Encoding UTF8
     Assert-True 'failure_audit_classifies_protected_root_isolation' ($writeAuditText -match 'protected_root_isolation_violation' -and $writeAuditText -match 'runner_isolation')
-    Assert-True 'control_summary_fingerprints_protected_root_isolation' ($writeControlText -match 'protected_root_isolation_violation' -and $writeControlText -match 'command_guard_violation')
+    Assert-True 'control_summary_fingerprints_protected_root_isolation' ($writeControlText -match 'protected_root_isolation_violation' -and $writeControlText -match 'protected_root_pom_forbidden')
+    Assert-True 'control_summary_does_not_treat_generic_command_guard_as_protected_root' (-not ($writeControlText -match "'protected_root_isolation_violation'\s*=\s*'[^']*command_guard_violation"))
 
     $replayRoot = Join-Path $tempRoot 'feature-under-test\claim-codex-replay-v470-test-r01'
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null

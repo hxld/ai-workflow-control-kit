@@ -247,7 +247,7 @@ function Get-FingerprintsFromText {
         'phase0_carrier_evidence_gap' = 'phase0_carrier_search_commands_missing|phase0_selected_real_entry_missing|phase0_selected_real_entry_invalid_format|phase0_selected_real_entry_not_found|phase0_selected_real_entry_not_baseline_existing|phase0_carrier_claim_hallucinated'
         'plan_format_drift' = 'first_slice_proof_(?:missing|invalid|schema)|schema_missing|format drift|BLOCKED_PLAN_MISMATCH|plan_contract_verification_failed|plan_status_not_proceed'
         'phase0_format_drift' = 'phase0_status.*not found|STOP_PHASE0_PARSE_FAILURE|phase0 parse|exploration_missing|selected_real_entry_missing|requirement literal inventory'
-        'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|command_guard_violation|protected main project root|forbidden replay command|protected root'
+        'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|protected main project root|protected root'
         'executor_credit_required' = 'executor_credit_required|402\s+Credit|required account credit|credit required|positive balance|required for this model|insufficient credits|not enough credits'
         'executor_resource_or_crash' = '429|rate limit|usage_limit|timeout|API 400|executor_failed_without_result|executor crash'
         'evolution_validation_fail' = 'FAIL_AFTER_REPAIR|EVOLUTION_RESULT_VERIFY|knowledge_repo_commit_or_push_blocked|validation.*fail'

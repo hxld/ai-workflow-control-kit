@@ -484,6 +484,11 @@ pattern_evidence_source: <rg command + file path>
    - 如果需求写明字段来源、来源表、来源字段或“后端自动填充”，第一刀或第二刀必须是 source-chain slice：`source carrier -> build context/request -> task data -> wire payload`。只验证终端 DTO/taskData/payload 写入不能关闭 core。
    - 字段默认写成单行 `field: value`；如必须换行，下一行只能使用 Markdown definition-list 的 `: value`，不能把值散落到普通段落里。`production_boundary:`、`selected_carrier:`、`target_subsurface_or_carrier:`、`expected_production_diff:` 这四个字段必须优先写成同一行逗号分隔值；禁止写成空冒号后接 bullet/list，否则 verifier 会判定 `first_slice_proof_schema_empty`。
    - 若第一刀无法用真实入口和 RED 测试证明，`PLAN_RESULT.md` 必须写 `plan_status=BLOCKED`，不得进入 Phase 1
+	   - **TaskProcessor Policy Rebuild Source-Chain 计划证据要求（Executable Evidence Gate）**：当计划承载点涉及 TaskProcessor/rebuild 模式且需求包含 policyNum/insureNum（或其他来源字段重建）时，PLAN_RESULT.md、REPLAY_PLAN.md、IMPLEMENTATION_CONTRACT.md、EXPECTED_DIFF_MATRIX.md、FIRST_SLICE_PROOF_PLAN.md 必须包含以下精确机器可读证据：
+	     - 上游构建/装配方法全限定名和上下文类型名（如构建辅助类的 buildRequestCommon、请求构建函数类型 RequestBuildFunction、构建上下文类型 RequestBuildContext），用于证明 source 到 request 的精确赋值链路。禁止只用描述性文字如"使用 source-chain 构建请求"而不写出正式全名。
+	     - 上游字段赋值精确字面量（如 req.setPolicyNum(buildContext.getPolicyNum()) 和 req.setInsureNum(buildContext.getInsureNum())），用于证明源字段重建的精确执行语句。禁止省略命名空间前缀或用泛化语句代替。
+	     - 兄弟 TaskProcessor rebuild 路径引用（如 apply 分支的 rebuildTaskData + calculate 分支的 rebuildTaskData），用于证明 sibling 重建覆盖。
+	     - 第一刀必须是上游 source-chain 赋值证明，不得是 DTO-only 或下游 taskData.setXxx(request.getXxx()) 证明。PLAN_RESULT.md 的 golden_slice_binding 或 next_action 字段必须包含精确的上游赋值字面量。
 	   - **v457 first_slice_proof schema 硬要求（Executable Evidence Gate）**：
 	     FIRST_SLICE_PROOF_PLAN 必须包含以下 V457 字段，且格式必须符合机器校验：
 	     - `target_carrier_file_path:` - 精确文件路径，不能是 TBD/unknown/占位词

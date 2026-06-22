@@ -1144,11 +1144,28 @@ function Ensure-PlanTestCompileEvidence {
         return
     }
 
-    $moduleName = [string]$infra.PSObject.Properties['test_module_for_target'].Value
-    $evidenceFile = [string]$infra.PSObject.Properties['compilation_dry_run_evidence_file'].Value
-    if ([string]::IsNullOrWhiteSpace($moduleName) -or [string]::IsNullOrWhiteSpace($evidenceFile)) {
+    $moduleName = Get-ObjectPropertyString -Object $infra -Name 'test_module_for_target'
+    if ([string]::IsNullOrWhiteSpace($moduleName)) {
         return
     }
+
+    $injectedAny = $false
+    if ([string]::IsNullOrWhiteSpace((Get-ObjectPropertyString -Object $infra -Name 'compilation_dry_run_command'))) {
+        $worktreePom = Join-Path $Worktree 'pom.xml'
+        $mvnSettingsSegment = Get-MavenSettingsCommandSegment -MavenSettings $MavenSettings
+        $defaultCommand = "mvn $mvnSettingsSegment -f `"$worktreePom`" -pl $moduleName -am test-compile"
+        Set-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_command' -Value $defaultCommand.Trim()
+        $injectedAny = $true
+    }
+    if ([string]::IsNullOrWhiteSpace((Get-ObjectPropertyString -Object $infra -Name 'compilation_dry_run_evidence_file'))) {
+        Set-ObjectPropertyValue -Object $infra -Name 'compilation_dry_run_evidence_file' -Value 'TEST_INFRASTRUCTURE_DRY_RUN.json'
+        $injectedAny = $true
+    }
+    if ($injectedAny) {
+        $Plan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $PlanResultJsonPath -Encoding UTF8
+        Write-Host "Injected missing compilation_dry_run_* fields into PLAN_RESULT.json for module $moduleName"
+    }
+    $evidenceFile = Get-ObjectPropertyString -Object $infra -Name 'compilation_dry_run_evidence_file'
 
     if ((Test-PolicyRebuildPlanText -PlanText $planRaw) -and $moduleName.Trim() -ine 'claim-server') {
         $reason = "policy_rebuild_test_module_must_be_claim_server; actual=$moduleName"

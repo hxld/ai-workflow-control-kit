@@ -623,6 +623,18 @@ pattern_evidence_source: <rg command + file path>
 
 如果 plan_status=BLOCKED，IMPLEMENTATION_CONTRACT 和 FIRST_SLICE_PROOF_PLAN 可以写简短 blocker 说明，但文件必须存在。
 
+【输出自检（v605）— 提交前必须逐条验证】
+
+在写入 `PLAN_RESULT.json` 之前，必须逐项确认以下字段全部存在且格式正确；任何缺失都会导致 runner 的 `Invoke-PlanSchemaFailFast` 拒绝合同并使本轮规划作废：
+
+1. `test_infrastructure_check.compilation_dry_run_command` — 必须是有效的 Maven test-compile 命令，包含 `-pl <test-module> -am test-compile`，指向 `{{WORKTREE}}\pom.xml`，绝不能指向 protected project root。
+2. `test_infrastructure_check.compilation_dry_run_evidence_file` — 必须指向 replay root 内的基线证据文件名（如 `TEST_INFRASTRUCTURE_DRY_RUN.json`），不能是相对路径或占位符。
+3. `test_infrastructure_check.compilation_dry_run_exit_code` — 如果证据尚未 materialize，暂填 `0`（假设编译可运行）；runner 的 `Ensure-PlanTestCompileEvidence` 会在 schema gate 前覆盖该值。
+4. `test_infrastructure_check.test_module_for_target` — 必须指向一个真实存在 `src/test` 的测试模块，且与 `compilation_dry_run_command` 中的 `-pl` 值一致。
+5. 如果上述任一字段无法填写（如不存在可用测试模块），必须写 `plan_status=BLOCKED`，`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`。
+
+runner 的 `Ensure-PlanTestCompileEvidence` 可作为安全网注入缺失的 command 和 evidence_file，但自检不依赖此安全网——主动填写正确值可避免 injection 降级。
+
 开始执行 Phase 0.5。只写上述规划产物。
 
 ---

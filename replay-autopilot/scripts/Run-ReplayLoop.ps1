@@ -2856,6 +2856,27 @@ $sandbox = if ($config.ContainsKey('codex_sandbox')) { $config['codex_sandbox'] 
 $approval = if ($config.ContainsKey('codex_approval')) { $config['codex_approval'] } else { 'never' }
 $mavenSettings = Get-ConfigValueOrDefault -Config $config -Key 'maven_settings' -DefaultValue ''
 $mavenSettings = Resolve-MavenSettingsPath -ConfiguredValue $mavenSettings
+
+# Project build profiles are repository-local contracts. Use them only after
+# explicit config/env settings are absent, so shared runners stay portable.
+if ([string]::IsNullOrWhiteSpace($mavenSettings) -and -not [string]::IsNullOrWhiteSpace($projectRoot)) {
+    $buildProfilePath = Join-Path $projectRoot '.memory\build-test-profile.yaml'
+    if (Test-Path -LiteralPath $buildProfilePath -PathType Leaf) {
+        $yamlContent = Get-Content -LiteralPath $buildProfilePath -Raw -Encoding UTF8
+        $match = [regex]::Match($yamlContent, '(?m)^maven_settings:\s*(.+)$')
+        if ($match.Success) {
+            $profileSettings = $match.Groups[1].Value.Trim().Trim('"').Trim("'")
+            if (-not [string]::IsNullOrWhiteSpace($profileSettings)) {
+                $resolved = Resolve-MavenSettingsPath -ConfiguredValue $profileSettings
+                if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+                    $mavenSettings = $resolved
+                    $script:ResolvedMavenSettingsSource = 'profile:build-test-profile.yaml'
+                }
+            }
+        }
+    }
+}
+
 if (-not [string]::IsNullOrWhiteSpace($mavenSettings)) {
     Write-Host "Using Maven settings ($script:ResolvedMavenSettingsSource): $mavenSettings"
 }

@@ -1123,6 +1123,8 @@ if ($Stage -eq 'Phase0') {
         '(?m)\|\s*carrier_search\s*\|\s*`?([^\r\n|]+?)`?\s*\|'
     )
     $carrierSearchQueries = Get-FirstText $combinedPlanArtifacts @(
+        # v606: YAML | literal block captures all subsequent indented lines.
+        '(?m)^\s*-?\s*\*{0,2}\s*carrier_search_queries\s*\*{0,2}\s*[:=]\s*\|\s*\r?\n((?:\s{2,}[^\r\n]*(?:\r?\n|$))+)',
         '(?m)^\s*-?\s*\*{0,2}\s*carrier_search_queries\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*carrier_search_queries\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*\*{0,2}\s*search_queries\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
@@ -1168,7 +1170,10 @@ if ($Stage -eq 'Phase0') {
     )
     $newServiceJustification = Get-FirstText $combinedPlanArtifacts @(
         # YAML folded blocks put the real justification on following indented lines.
+        # v602_evolved: handles `> ` continuation syntax
         '(?m)^\s*-?\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*[:=]\s*>\s*\r?\n((?:\s{2,}[^\r\n]*(?:\r?\n|$))+)',
+        # v606: also handle `|` literal block syntax (same indented continuation).
+        '(?m)^\s*-?\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*[:=]\s*\|\s*\r?\n((?:\s{2,}[^\r\n]*(?:\r?\n|$))+)',
         '(?m)^\s*-?\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*new_service_justification\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)\|\s*\*{0,2}\s*new_service_justification\s*\*{0,2}\s*:\s*(.+?)\s*\|',

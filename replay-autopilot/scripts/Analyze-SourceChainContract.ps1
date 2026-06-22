@@ -60,6 +60,28 @@ function Convert-SnakeToCamel {
     return $camel
 }
 
+function Test-NegatedSourceChainIntent {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+
+    return (
+        $Text -match '(?i)\bnot\s+(a\s+)?(rebuildTaskData|rebuild\s+path|source[-_\s]?chain)\b' -or
+        $Text -match '(?i)\bnot\s+(a\s+)?rebuildTaskData\s+or\s+source[-_\s]?chain\b'
+    )
+}
+
+function Test-ExplicitSourceChainIntent {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    if (Test-NegatedSourceChainIntent -Text $Text) { return $false }
+
+    return (
+        $Text -match '(?i)\b(source[-_\s]?chain|source extraction|backend source extraction|from backend source)\b' -or
+        $Text -match '(?i)\b(RequestBuildContext|buildRequestCommon|RequestBuildFunction|rebuildTaskData)\b' -or
+        $Text -match '(?i)\b(rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
+    )
+}
+
 function Get-OracleTaskProcessorFiles {
     param([string]$ReplayRoot)
 
@@ -128,15 +150,18 @@ $hasSecondarySource = $text -match '(?i)\b(Secondary\.secondaryId|secondaryId|se
 $hasPrimaryTarget = $text -match '(?i)\b(primary_id)\b'
 $hasSecondaryTarget = $text -match '(?i)\b(secondary_id)\b'
 $hasAiPayloadContext = $text -match '(?i)\b(InputData|input_data|AI request|Example|Example|ExampleApply|ExampleCalculate)\b'
-$rebuildPathRequirement = $text -match '(?i)\b(rebuildTaskData|rebuild|rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
+$explicitSourceChainIntent = Test-ExplicitSourceChainIntent -Text $text
+$rebuildPathRequirement = $explicitSourceChainIntent -and (
+    $text -match '(?i)\b(rebuildTaskData|rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
+)
 $oracleTaskProcessorFiles = @(Get-OracleTaskProcessorFiles -ReplayRoot $root)
 
-if ($hasPrimarySource -and $hasPrimaryTarget -and $hasAiPayloadContext) {
+if ($explicitSourceChainIntent -and $hasPrimarySource -and $hasPrimaryTarget -and $hasAiPayloadContext) {
     Add-Unique $sourceFields 'SourceRecord.primaryId'
     Add-Unique $targetFields 'primary_id'
     Add-Unique $assertions 'captured InputData.primary_id equals SourceRecord.primaryId from backend source extraction'
 }
-if ($hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
+if ($explicitSourceChainIntent -and $hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
     Add-Unique $sourceFields 'SecondaryRecord.secondaryId'
     Add-Unique $targetFields 'secondary_id'
     Add-Unique $assertions 'captured InputData.secondary_id equals SecondaryRecord.secondaryId queried by policy number'
@@ -150,18 +175,21 @@ $ignoredWireTokens = @(
     'request_body',
     'response_body'
 )
-$wireTokens = @([regex]::Matches($text, '(?i)\b[a-z][a-z0-9]+(?:_[a-z0-9]+)+\b') | ForEach-Object {
-    $_.Value.ToLowerInvariant()
-} | Where-Object {
-    $ignoredWireTokens -notcontains $_
-} | Select-Object -Unique)
-foreach ($wireToken in $wireTokens) {
-    $camelToken = Convert-SnakeToCamel -Value $wireToken
-    if ([string]::IsNullOrWhiteSpace($camelToken)) { continue }
-    if ($text -match ('(?i)\b' + [regex]::Escape($camelToken) + '\b')) {
-        Add-Unique $sourceFields "source.$camelToken"
-        Add-Unique $targetFields $wireToken
-        Add-Unique $assertions "captured InputData.$wireToken equals source.$camelToken from backend source extraction"
+$wireTokens = @()
+if ($explicitSourceChainIntent) {
+    $wireTokens = @([regex]::Matches($text, '(?i)\b[a-z][a-z0-9]+(?:_[a-z0-9]+)+\b') | ForEach-Object {
+        $_.Value.ToLowerInvariant()
+    } | Where-Object {
+        $ignoredWireTokens -notcontains $_
+    } | Select-Object -Unique)
+    foreach ($wireToken in $wireTokens) {
+        $camelToken = Convert-SnakeToCamel -Value $wireToken
+        if ([string]::IsNullOrWhiteSpace($camelToken)) { continue }
+        if ($text -match ('(?i)\b' + [regex]::Escape($camelToken) + '\b')) {
+            Add-Unique $sourceFields "source.$camelToken"
+            Add-Unique $targetFields $wireToken
+            Add-Unique $assertions "captured InputData.$wireToken equals source.$camelToken from backend source extraction"
+        }
     }
 }
 
@@ -216,6 +244,8 @@ $activationReason = if ($hasNamedSource) {
     'source-like terms found, but no exact wire target field primary_id/secondary_id; source-chain gate not applicable'
 } elseif (($hasPrimaryTarget -or $hasSecondaryTarget) -and -not $hasAiPayloadContext) {
     'wire-like target terms found without AI InputData context; source-chain gate not applicable'
+} elseif (-not $explicitSourceChainIntent -and ($wireTokens.Count -eq 0)) {
+    'field-name pairs found without explicit source-chain/rebuild intent; source-chain gate not applicable'
 } else {
     'no named source-chain contract detected'
 }

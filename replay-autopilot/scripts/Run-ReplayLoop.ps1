@@ -4511,6 +4511,16 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
     if ($policyHarnessRepaired) {
         Write-Host "Policy rebuild Plan machine contract normalized to claim-server test harness."
     }
+    $planMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
+    if (Test-Path -LiteralPath $planMachineNormalizer -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $planMachineNormalizer `
+            -ReplayRoot $replayRoot `
+            -PlanResultPath $planMachineContractPath `
+            -FirstSliceProofPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Plan machine contract normalization failed with exit code $LASTEXITCODE."
+        }
+    }
     Ensure-PlanTestCompileEvidence -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath -MavenSettings $mavenSettings
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRoot -PlanResultPath $planMachineContractPath -Worktree $worktree | Out-Null
     if ($LASTEXITCODE -ne 0) {

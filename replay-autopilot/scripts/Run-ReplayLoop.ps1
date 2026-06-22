@@ -4961,6 +4961,16 @@ Do not create new production files, test files, or worktree changes.
 
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $replayRoot -Stage Plan | Out-Null
         $planContractVerifyExit = $LASTEXITCODE
+        $postRepairPlanMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
+        if (Test-Path -LiteralPath $postRepairPlanMachineNormalizer -PathType Leaf) {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $postRepairPlanMachineNormalizer `
+                -ReplayRoot $replayRoot `
+                -PlanResultPath $planMachineContractPath `
+                -FirstSliceProofPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Post-repair plan machine contract normalization failed with exit code $LASTEXITCODE."
+            }
+        }
     }
     if ($planContractVerifyExit -ne 0) {
         $verifyText = Read-TextIfExists $planContractVerify

@@ -4073,6 +4073,17 @@ if (Apply-FamilyScopeFilter -Ledger $initialLedger -RequirementSource $requireme
 
 # v465: Plan schema fail-fast validation
 if (Test-Path -LiteralPath (Join-Path $replayRootFull 'PLAN_RESULT.json')) {
+    $planMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
+    if (Test-Path -LiteralPath $planMachineNormalizer -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $planMachineNormalizer `
+            -ReplayRoot $replayRootFull `
+            -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') `
+            -FirstSliceProofPath (Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md') | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "plan_machine_contract_normalization_failed:exit_$LASTEXITCODE" -EvidencePath (Join-Path $replayRootFull 'PLAN_MACHINE_CONTRACT_NORMALIZATION.json')
+            exit 95
+        }
+    }
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1') -ReplayRoot $replayRootFull -PlanResultPath (Join-Path $replayRootFull 'PLAN_RESULT.json') | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Phase1InitFailure -ReplayRoot $replayRootFull -LogsRoot $logsRoot -RunnerContractPath $runnerContractPath -ProgressPath $progressPath -MaxSlices $MaxSlices -Reason "plan_schema_validation_failed:exit_$LASTEXITCODE" -EvidencePath (Join-Path $replayRootFull 'PLAN_SCHEMA_FAILFAST.json')

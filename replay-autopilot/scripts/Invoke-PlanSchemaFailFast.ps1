@@ -28,9 +28,13 @@ function Read-JsonObject {
         $start = $text.IndexOf('{')
         $end = $text.LastIndexOf('}')
         if ($start -ge 0 -and $end -gt $start) {
-            return $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
+            try {
+                return $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
+            } catch {
+                return $null
+            }
         }
-        throw
+        return $null
     }
 }
 

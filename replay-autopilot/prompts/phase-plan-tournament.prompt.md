@@ -493,6 +493,7 @@ pattern_evidence_source: <rg command + file path>
 	       ```text
 	       expected_assertions: ["assertEquals(35, caseStatus)", "verify(compensateDetailMapper).insert()", "assertNotNull(result)"]
 	       ```
+	       ⚠️ 断言字符串内的双引号必须转义为 `\"`。例如 `contains(\"expected status\")`，不能写成 `contains("expected status")`，否则 `PLAN_RESULT.json` 整体 JSON 解析会失败，runner 将拒绝本合同。
 	     - `expected_side_effects:` - JSON 数组格式，至少 1 个副作用，例如：
 	       ```text
 	       expected_side_effects: [{"table": "t_compensate_detail", "operation": "insert"}, {"table": "t_case_route", "operation": "update", "field": "status", "value": "35"}]

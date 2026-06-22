@@ -3733,6 +3733,45 @@ function Get-FamilySiblingSurfaces {
     return @()
 }
 
+function Get-PreflightCompilationEvidenceForBlockedSlice {
+    param([string]$SliceResultPath)
+
+    $evidence = [ordered]@{
+        command = ''
+        exit_code = $null
+        evidence = $false
+        evidence_source = ''
+    }
+    if ([string]::IsNullOrWhiteSpace($SliceResultPath)) { return $evidence }
+
+    $replayRootDir = Split-Path -Parent $SliceResultPath
+    if ([string]::IsNullOrWhiteSpace($replayRootDir)) { return $evidence }
+
+    $preflightPath = Join-Path $replayRootDir 'PREFLIGHT_TEST_COMPILATION.json'
+    if (-not (Test-Path -LiteralPath $preflightPath -PathType Leaf)) { return $evidence }
+
+    try {
+        $preflight = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $preflightExitCode = $null
+        if ($preflight.PSObject.Properties.Name -contains 'exit_code') {
+            $preflightExitCode = $preflight.exit_code
+        }
+        if ($null -ne $preflightExitCode) {
+            $evidence.exit_code = [int]$preflightExitCode
+            $evidence.evidence_source = $preflightPath
+            if ([int]$preflightExitCode -eq 0) {
+                $evidence.evidence = $true
+            }
+        }
+        if ($preflight.PSObject.Properties.Name -contains 'maven_command_args') {
+            $evidence.command = [string]$preflight.maven_command_args
+        }
+    } catch {
+        # Malformed preflight artifacts must not prevent blocked-result synthesis.
+    }
+    return $evidence
+}
+
 function Write-ExecutorBlockedSliceResult {
     param(
         [string]$Path,
@@ -3769,6 +3808,7 @@ function Write-ExecutorBlockedSliceResult {
     if (-not [string]::IsNullOrWhiteSpace($forcedFamily)) {
         $gapFlags += 'gate_present_but_not_enforced'
     }
+    $preflightCompilation = Get-PreflightCompilationEvidenceForBlockedSlice -SliceResultPath $Path
 
     [ordered]@{
         slice_index = $SliceIndex
@@ -3806,6 +3846,10 @@ function Write-ExecutorBlockedSliceResult {
         partial_worktree_diff_audit = $partialAuditJson
         partial_worktree_diff_report = $partialAuditMd
         executor_resource_blocker = (@('executor_credit_required', 'usage_limit', 'auth') -contains $FailureCategory)
+        test_compilation_command = [string]$preflightCompilation.command
+        test_compilation_exit_code = $preflightCompilation.exit_code
+        test_compilation_evidence = [bool]$preflightCompilation.evidence
+        test_compilation_evidence_source = [string]$preflightCompilation.evidence_source
         touched_requirement_families = @()
         closed_requirement_families = @()
         blocker = "Phase1 slice blocked: $Reason. Executor exit code $ExitCode. Inspect logs under $SliceLogDir."

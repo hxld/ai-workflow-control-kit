@@ -89,5 +89,7 @@ Runner completion artifact:
   - `- closed_machine_gates: ...` must list machine_gate values from verifiable rules that were actually closed
   - `- pushed_commit: ...` must contain the pushed knowledge repo commit hash
   - `- actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` must match the real latest knowledge version after push
+- Before writing `EVOLUTION_RESULT.md`, self-check that the required machine-readable field names appear exactly as listed above. Do not use display aliases such as `Commit`, `Knowledge Version`, `Status`, or `Verification Result`; those aliases are not parsed by `Validate-EvolutionResult.ps1`.
+- If the field-name self-check fails, fix `EVOLUTION_RESULT.md` before treating the evolution as complete. A successful tooling evolution must not rely on human-readable headings where a machine field is required.
 - If no concrete source/tooling change is applied, write `NO_VERSION_ADVANCE_REASON.md` and `EVOLUTION_RESULT.md` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`; do not edit/commit/push knowledge repo, and keep `actual_knowledge_version_after_push` equal to the real current version.
 - Write this file only after the evolution side effects are complete, so the unattended runner can treat it as the completion signal.

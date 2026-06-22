@@ -1874,9 +1874,10 @@ $sampleText
 2. Phase 0 is read-only discovery plus artifact writing. It is not a build, test, deploy, or implementation phase.
 3. Do not run any command containing mvn, mvn.cmd, maven, gradle, deploy, install, package, compile, test-compile, surefire, or failsafe.
 4. Do not run tests. Do not compile. Do not build. Do not install. Do not deploy.
-5. Use only read-only source discovery commands such as rg, Get-Content, Select-String, Get-ChildItem, Test-Path, git status, git diff, and git show.
-6. If the current evidence is enough, write the required Phase 0 artifacts under the replay root. If it is not enough, write PHASE0_RESULT.md with phase0_status: BLOCKED and a concrete blocker.
-7. Preserve the protected project root. All artifact writes must stay under the replay root.
+5. Use only read-only source discovery commands such as rg, Get-Content, Select-String, Get-ChildItem, and Test-Path. Do not run git diff, git log, git show, or any build tool in this repair pass.
+6. Do not run any command line containing the protected project root, the original source root, or a pom.xml path outside the isolated worktree.
+7. If the current evidence is enough, write the required Phase 0 artifacts under the replay root. If it is not enough, write PHASE0_RESULT.md with phase0_status: BLOCKED and a concrete blocker.
+8. Preserve the protected project root. All artifact writes must stay under the replay root.
 
 ## Required Outcome
 
@@ -2546,7 +2547,10 @@ function Invoke-WithRetry {
     while ($true) {
         $attempt++
         try {
-            & $Action
+            $actionOutput = @(& $Action)
+            foreach ($line in $actionOutput) {
+                Write-Host ([string]$line)
+            }
             $exitCodeNow = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
             if ($exitCodeNow -eq 0) { return $true }
             if ($NonRetryExitCodes -contains $exitCodeNow) {
@@ -3767,12 +3771,14 @@ $verifyText
 10. If the verification failure includes phase0_oracle_inferred_selected_entry, remove oracle-derived evidence from the selected entry decision. selected_real_entry evidence must cite only current worktree source paths, method signatures, rg/source-search facts, or neutral surface scan candidates. Do not cite oracle additions, oracle line counts, oracle new service, oracle metadata, oracle evidence, or oracle high-weight files as selected-entry authority.
 11. If the verification failure includes phase0_manual_oracle_wait, remove every manual-oracle-wait statement from all Phase 0 artifacts. Do not write Oracle Post-Hoc, oracle verification pending, oracle commit pending, waiting for oracle, pending fetch, or "verify after oracle" as a prerequisite for planning or implementation.
 12. Keep oracle structural metadata only in an allowed structural-priority section; it may affect family priority/cap, but it must not appear in Selected Real Entry, Key Decisions, Next Actions, required_flags, or completion notes as an implementation fact.
-13. EXPLORATION_REPORT.md must contain the exact heading ## Uncertainty Ledger after repair. If invalid oracle-wait content appears inside that section, remove the invalid entries but keep or recreate the heading. If no uncertainty remains, write a short cleared entry such as "none after repair"; do not delete the section.
-14. PHASE0_RESULT.md must contain an exact heading ## Search Commands Used followed by at least three reproducible rg commands and a result_summary that names hit counts, candidate classes or methods, and selected/excluded carrier rationale. If the verification failure includes phase0_carrier_search_commands_missing, this is mandatory repair work, not optional prose. Do not claim Phase 0 is repaired until this section exists in PHASE0_RESULT.md.
-15. For every selected_real_entry, carrier_class, or carrier_status: EXISTING claim, add a matching rg command in ## Search Commands Used that could verify the class or method in the current worktree.
-16. If the verification failure includes phase0_selected_real_entry_not_found or phase0_selected_real_entry_not_baseline_existing, replace selected_real_entry with a baseline-worktree existing production entry proven by rg/source evidence. Do not use NEW services, oracle additions, oracle line counts, project-root-only files, or "not found in baseline" candidates as selected_real_entry. Move new carriers into planned_new_carrier/family scope with blocker/cap when needed.
-17. If no baseline-worktree existing production entry can be found, set phase0_status: BLOCKED or INVALID_PLAN and required_flags: real_entry_gap. Do not keep PROCEED with a NEW/oracle-added selected_real_entry.
-18. After repairing the artifacts, write a short completion note to this exact path and do not create an alternate completion file:
+13. EXPLORATION_REPORT.md must contain the exact heading ## Schema and Exact Contract Discovery Ledger after repair. Do not put schema, signature, field, enum, or payload discovery content only under ## Uncertainty Ledger.
+14. The Schema and Exact Contract Discovery Ledger must include current-worktree search evidence: rg/search command, discovered source/file/symbol, confirmed/inferred/blocked status, affected family, coverage cap, and next executable proof.
+15. EXPLORATION_REPORT.md must contain the exact heading ## Uncertainty Ledger after repair. If invalid oracle-wait content appears inside that section, remove the invalid entries but keep or recreate the heading. If no uncertainty remains, write a short cleared entry such as "none after repair"; do not delete the section.
+16. PHASE0_RESULT.md must contain an exact heading ## Search Commands Used followed by at least three reproducible rg commands and a result_summary that names hit counts, candidate classes or methods, and selected/excluded carrier rationale. If the verification failure includes phase0_carrier_search_commands_missing, this is mandatory repair work, not optional prose. Do not claim Phase 0 is repaired until this section exists in PHASE0_RESULT.md.
+17. For every selected_real_entry, carrier_class, or carrier_status: EXISTING claim, add a matching rg command in ## Search Commands Used that could verify the class or method in the current worktree.
+18. If the verification failure includes phase0_selected_real_entry_not_found or phase0_selected_real_entry_not_baseline_existing, replace selected_real_entry with a baseline-worktree existing production entry proven by rg/source evidence. Do not use NEW services, oracle additions, oracle line counts, project-root-only files, or "not found in baseline" candidates as selected_real_entry. Move new carriers into planned_new_carrier/family scope with blocker/cap when needed.
+19. If no baseline-worktree existing production entry can be found, set phase0_status: BLOCKED or INVALID_PLAN and required_flags: real_entry_gap. Do not keep PROCEED with a NEW/oracle-added selected_real_entry.
+20. After repairing the artifacts, write a short completion note to this exact path and do not create an alternate completion file:
    $phase0RepairResult
 
 The goal is not to make the verifier weaker. The goal is to make the machine artifacts valid and complete so the same verifier can pass or fail honestly.

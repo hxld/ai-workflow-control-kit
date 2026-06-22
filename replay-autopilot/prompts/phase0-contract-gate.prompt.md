@@ -34,6 +34,12 @@ Phase 0 只允许：
 11. 写 `{{REPLAY_ROOT}}\FAMILY_CONTRACT.json`。
 12. 写 `{{REPLAY_ROOT}}\PHASE0_RESULT.md`。
 
+Phase 0 shell command whitelist：
+- 只允许执行只读发现命令：`rg`、`Get-Content`、`Select-String`、`Get-ChildItem`、`Test-Path`。
+- 源码路径参数只能指向 `{{WORKTREE}}`，产物路径只能指向上面列出的 `{{REPLAY_ROOT}}` 文件。
+- 禁止运行任何包含 `mvn`、`mvn.cmd`、`maven`、`gradle`、`compile`、`test-compile`、`surefire`、`failsafe`、`install`、`deploy` 的命令。
+- 禁止运行任何包含 protected/original project root、受保护主仓库、或 `{{WORKTREE}}` 之外 `pom.xml` 路径的命令；Phase 0 不需要也不允许验证 Maven 编译。
+
 `phase0_family_contract_strict_json`：`FAMILY_CONTRACT.json` 必须是严格 JSON，禁止 Markdown fence、注释、尾随逗号、缺逗号、单引号、未转义换行或解释性文字。写完后必须自行确认它能被标准 JSON parser 读取；不能把“看起来像 JSON”的片段当作完成产物。
 
 【Feature Classification 校准规则】

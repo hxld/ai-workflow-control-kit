@@ -1033,8 +1033,9 @@ if ($Stage -eq 'Phase0') {
     if (-not [string]::IsNullOrWhiteSpace($planJsonText)) {
         try { $planMachineContract = $planJsonText | ConvertFrom-Json } catch { $planMachineContract = $null }
     }
+    $hasExplicitPolicyRebuildBoundary = $sourceAwarePlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
     $isPolicyRebuildSourceChainPlan = (
-        ($sourceChainRequired -or $sourceAwarePlanText -match '(?i)(rebuildTaskData|TaskProcessor)') -and
+        ($sourceChainRequired -or $hasExplicitPolicyRebuildBoundary) -and
         $sourceAwarePlanText -match '(?i)(policyNum|policy_num)' -and
         $sourceAwarePlanText -match '(?i)(insureNum|insure_num)'
     )

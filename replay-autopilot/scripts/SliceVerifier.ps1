@@ -196,6 +196,19 @@ if ($SliceIndex -le 0) {
     $SliceIndex = Infer-SliceIndex -Path $sliceResultFull -Result $slice
 }
 
+$normalizerScript = Join-Path $PSScriptRoot 'Normalize-SliceResultSchema.ps1'
+if (Test-Path -LiteralPath $normalizerScript) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $normalizerScript `
+        -SliceResultPath $sliceResultFull `
+        -ReplayRoot $replayRootFull `
+        -SliceIndex $SliceIndex `
+        -InPlace | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Normalize-SliceResultSchema.ps1 failed with exit code $LASTEXITCODE"
+    }
+    $slice = Read-JsonObject -Path $sliceResultFull
+}
+
 $verifyScript = Join-Path $PSScriptRoot 'Verify-SliceClosure.ps1'
 & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript `
     -ReplayRoot $replayRootFull `

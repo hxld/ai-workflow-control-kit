@@ -637,6 +637,16 @@ $closedFamilies = @()
 $resultEvidenceText = ''
 
 if ($null -ne $result) {
+    $normalizerScript = Join-Path $PSScriptRoot 'SliceResultSchemaNormalizer.ps1'
+    if (Test-Path -LiteralPath $normalizerScript) {
+        . $normalizerScript
+        $schemaNormalization = Invoke-SliceResultSchemaNormalization -Slice $result
+        foreach ($normalizationWarning in @($schemaNormalization.warnings)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizationWarning)) {
+                $warnings.Add([string]$normalizationWarning) | Out-Null
+            }
+        }
+    }
     $sliceStatus = [string]$result.slice_status
     $sliceType = [string]$result.slice_type
     $implementedFiles = @(Get-StringArray $result.implemented_files)
@@ -2427,6 +2437,7 @@ $verify = [ordered]@{
         side_effect_evidence_required = $sideEffectEvidenceRequired
         exempted_gap_flags = @($featureExemptedGapFlags)
     }
+    schema_normalization = $(if ($null -ne $schemaNormalization) { $schemaNormalization } else { $null })
 }
 
 $verify | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $verifyPath -Encoding UTF8

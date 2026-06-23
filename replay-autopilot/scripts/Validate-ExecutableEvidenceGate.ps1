@@ -63,6 +63,16 @@ $warnings = New-Object System.Collections.Generic.List[string]
 
 # Read slice result
 $slice = Read-JsonObject -Path $sliceResultPath
+$normalizerScript = Join-Path $PSScriptRoot 'SliceResultSchemaNormalizer.ps1'
+if (Test-Path -LiteralPath $normalizerScript) {
+    . $normalizerScript
+    $schemaNormalization = Invoke-SliceResultSchemaNormalization -Slice $slice
+    foreach ($normalizationWarning in @($schemaNormalization.warnings)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$normalizationWarning)) {
+            $warnings.Add([string]$normalizationWarning) | Out-Null
+        }
+    }
+}
 $sliceStatus = [string]$slice.slice_status
 $sliceType = [string]$slice.slice_type
 $targetSubsurface = [string]$slice.target_subsurface_or_carrier

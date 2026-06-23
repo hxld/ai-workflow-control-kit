@@ -23,6 +23,49 @@ function Read-TextIfExists {
     return ''
 }
 
+function Repair-EscapedLineBreaks {
+    param([string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+
+    $literalNewline = [char]96 + 'n'
+    $literalCarriageReturn = [char]96 + 'r'
+    $literalCrLf = $literalCarriageReturn + $literalNewline
+
+    $literalNewlineCount = [regex]::Matches($Text, [regex]::Escape($literalNewline)).Count
+    $actualNewlineCount = [regex]::Matches($Text, "`n").Count
+    if ($literalNewlineCount -lt 2) { return $Text }
+
+    $fixed = $Text
+    $lineLeadingLiteralCount = [regex]::Matches($fixed, '(?m)^[ \t]*' + [regex]::Escape($literalNewline)).Count
+    if ($actualNewlineCount -le 2) {
+        $fixed = $fixed.Replace("`r$literalNewline", "`r`n")
+        $fixed = $fixed.Replace($literalCrLf, "`r`n")
+        $fixed = $fixed.Replace($literalNewline, "`r`n")
+        $fixed = [regex]::Replace($fixed, "`r(?!`n)", "`r`n")
+    } elseif ($lineLeadingLiteralCount -ge 2) {
+        $fixed = [regex]::Replace($fixed, '(?m)^([ \t]*)' + [regex]::Escape($literalNewline), '$1')
+    }
+    return $fixed
+}
+
+function Repair-PlanArtifactLineBreaks {
+    param(
+        [string]$Path,
+        [string]$ArtifactName,
+        [System.Collections.Generic.List[string]]$Warnings
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+
+    $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $fixed = Repair-EscapedLineBreaks -Text $content
+    if ($fixed -ne $content) {
+        Set-Content -LiteralPath $Path -Value $fixed -Encoding UTF8
+        $Warnings.Add("plan_artifact_linebreaks_normalized:$ArtifactName") | Out-Null
+    }
+}
+
 function Get-FirstText {
     param([string]$Text, [string[]]$Patterns)
     foreach ($pattern in $Patterns) {
@@ -661,6 +704,10 @@ if ($Stage -eq 'Phase0') {
     )
     foreach ($file in $planFiles) {
         Add-MissingFileIssue -Issues $issues -Root $replayRootFull -Name $file
+    }
+
+    foreach ($file in $planFiles) {
+        Repair-PlanArtifactLineBreaks -Path (Join-Path $replayRootFull $file) -ArtifactName $file -Warnings $warnings
     }
 
     # v408: Auto-repair FIRST_SLICE_PROOF_PLAN.md format BEFORE reading content
@@ -2319,8 +2366,8 @@ if ($Stage -eq 'Phase0') {
                         $warnings.Add("v421_domain_exemption_applied:overlap_${overlapPercent}%_high_weight_${highWeightOverlapPercent}%_architectural_separation_detected") | Out-Null
 
                         # Update plan_status: anything -> PROCEED
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*plan_status\s*[:=]\s*)\w+\s*$', '${1}PROCEED'
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?plan_status`?\s*[:|=|]\s*\w+\s*$', '${1}`plan_status`: PROCEED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*plan_status\s*[:=]\s*)\w+\s*$', '${1}PROCEED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?plan_status`?\s*[:|=|]\s*\w+\s*$', '${1}`plan_status`: PROCEED'
 
                         # Update or add domain_exemption field
                         if ($repairedContent -notmatch '(?m)^[\s`]*domain_exemption[\s`]*[:|=|]') {
@@ -2331,18 +2378,18 @@ if ($Stage -eq 'Phase0') {
                         }
 
                         # Update blocker: anything -> none (exemption applied)
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*blocker\s*[:=]\s*).+?$', '${1}none'
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?blocker`?\s*[:|=|]\s*.+?$', '${1}`blocker`: none'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*blocker\s*[:=]\s*).+?$', '${1}none'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?blocker`?\s*[:|=|]\s*.+?$', '${1}`blocker`: none'
                         $repairedContent = $repairedContent -replace '(?m)(\*?\*?Blocker\*?\*?\s*:\s*).+?$', '${1}none'
                     } else {
                         # v387 original: hard BLOCKED for insufficient coverage without honest exemption
                         # Update plan_status: PROCEED/anything -> BLOCKED
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*plan_status\s*[:=]\s*)\w+\s*$', '${1}BLOCKED'
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?plan_status`?\s*[:|=|]\s*\w+\s*$', '${1}`plan_status`: BLOCKED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*plan_status\s*[:=]\s*)\w+\s*$', '${1}BLOCKED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?plan_status`?\s*[:|=|]\s*\w+\s*$', '${1}`plan_status`: BLOCKED'
 
                         # Update blocker: anything -> oracle_overlap_below_threshold
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*blocker\s*[:=]\s*).+?$', '${1}oracle_overlap_below_threshold'
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?blocker`?\s*[:|=|]\s*.+?$', '${1}`blocker`: oracle_overlap_below_threshold'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*blocker\s*[:=]\s*).+?$', '${1}oracle_overlap_below_threshold'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?blocker`?\s*[:|=|]\s*.+?$', '${1}`blocker`: oracle_overlap_below_threshold'
                         # v416: Handle markdown format **Blocker**: value
                         $repairedContent = $repairedContent -replace '(?m)(\*?\*?Blocker\*?\*?\s*:\s*).+?$', '${1}oracle_overlap_below_threshold'
 
@@ -2357,14 +2404,14 @@ if ($Stage -eq 'Phase0') {
                     }
 
                     # Update oracle_production_file_overlap: XX% -> calculated value
-                    $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
-                    $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
+                    $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
+                    $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
 
                     # Update oracle_missing_high_weight_files: none/anything -> actual missing files
                     if ($missingHighWeightFiles.Count -gt 0) {
                         $missingFilesList = $missingHighWeightFiles -join '; '
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_missing_high_weight_files\s*[:=]\s*).+?$', "${1}$missingFilesList"
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_missing_high_weight_files`?\s*[:|=|]\s*.+?$', "${1}`oracle_missing_high_weight_files`: $missingFilesList"
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_missing_high_weight_files\s*[:=]\s*).+?$', "${1}$missingFilesList"
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_missing_high_weight_files`?\s*[:|=|]\s*.+?$', "${1}`oracle_missing_high_weight_files`: $missingFilesList"
                     }
 
                     if ($repairedContent -ne $planContent) {
@@ -2389,8 +2436,8 @@ if ($Stage -eq 'Phase0') {
                 $repairedContent = $planContent
 
                 # Update plan_status: BLOCKED -> PROCEED
-                $repairedContent = $repairedContent -replace '(?m)^(\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
 
                 # v405: Update blocker: oracle_overlap_below_threshold (with any trailing text) -> none
                 # Fixed regex to match blocker text even when additional description follows
@@ -2411,13 +2458,13 @@ if ($Stage -eq 'Phase0') {
                 $repairedContent = $lines -join "`r`n"
 
                 # Update oracle_production_file_overlap: XX% -> calculated value
-                $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
 
                 # Update oracle_high_weight_coverage: XX% (N/M) -> calculated value
                 $highWeightCovPercent = if ($filteredHighWeightFiles.Count -gt 0) { [math]::Floor(($highWeightMatched / $filteredHighWeightFiles.Count) * 100) } else { 100 }
-                $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_high_weight_coverage\s*[:=]\s*)\d+%\s+\(\d+/\d+\)', "${1}${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_high_weight_coverage`?\s*[:|=|]\s*\d+%\s+\(\d+/\d+\)', "${1}`oracle_high_weight_coverage`: ${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_high_weight_coverage\s*[:=]\s*)\d+%\s+\(\d+/\d+\)', "${1}${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_high_weight_coverage`?\s*[:|=|]\s*\d+%\s+\(\d+/\d+\)', "${1}`oracle_high_weight_coverage`: ${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
 
                 if ($repairedContent -ne $planContent) {
                     Set-Content -LiteralPath $planResultPath -Value $repairedContent -Encoding UTF8
@@ -2436,8 +2483,8 @@ if ($Stage -eq 'Phase0') {
                 $repairedContent = $planContent
 
                 # Update plan_status: BLOCKED -> PROCEED
-                $repairedContent = $repairedContent -replace '(?m)^(\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
 
                 # Update blocker: oracle_high_weight_overlap_below_threshold (with any trailing text) -> none
                 $lines = $repairedContent -split "`r?`n"
@@ -2453,16 +2500,16 @@ if ($Stage -eq 'Phase0') {
                         }
                     }
                 }
-                $repairedContent = $lines -join "`r``n"
+                $repairedContent = $lines -join "`r`n"
 
                 # Update oracle_production_file_overlap: XX% -> calculated value
-                $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_production_file_overlap\s*[:=]\s*)\d+%\s*$', "${1}${overlapPercent}%"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_production_file_overlap`?\s*[:|=|]\s*\d+%\s*$', "${1}`oracle_production_file_overlap`: ${overlapPercent}%"
 
                 # Update oracle_high_weight_coverage: XX% (N/M) -> calculated value
                 $highWeightCovPercent = if ($filteredHighWeightFiles.Count -gt 0) { [math]::Floor(($highWeightMatched / $filteredHighWeightFiles.Count) * 100) } else { 100 }
-                $repairedContent = $repairedContent -replace '(?m)^(\s*oracle_high_weight_coverage\s*[:=]\s*)\d+%\s+\(\d+/\d+\)', "${1}${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
-                $repairedContent = $repairedContent -replace '(?m)^(\s*)`?oracle_high_weight_coverage`?\s*[:|=|]\s*\d+%\s+\(\d+/\d+\)', "${1}`oracle_high_weight_coverage`: ${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*oracle_high_weight_coverage\s*[:=]\s*)\d+%\s+\(\d+/\d+\)', "${1}${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
+                $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?oracle_high_weight_coverage`?\s*[:|=|]\s*\d+%\s+\(\d+/\d+\)', "${1}`oracle_high_weight_coverage`: ${highWeightCovPercent}% ($highWeightMatched/$($filteredHighWeightFiles.Count))"
 
                 if ($repairedContent -ne $planContent) {
                     Set-Content -LiteralPath $planResultPath -Value $repairedContent -Encoding UTF8
@@ -2493,8 +2540,8 @@ if ($Stage -eq 'Phase0') {
                         $repairedContent = $planContent
 
                         # v448: Update plan_status: BLOCKED -> PROCEED
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
-                        $repairedContent = $repairedContent -replace '(?m)^(\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*plan_status\s*[:=]\s*)BLOCKED\s*$', '${1}PROCEED'
+                        $repairedContent = $repairedContent -replace '(?m)^(\s*-?\s*)`?plan_status`?\s*[:|=|]\s*BLOCKED\s*$', '${1}`plan_status`: PROCEED'
 
                         # v448: Update blocker: oracle_high_weight_overlap_below_threshold -> none
                         $lines = $repairedContent -split "`r?`n"

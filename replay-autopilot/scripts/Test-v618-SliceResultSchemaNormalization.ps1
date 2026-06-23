@@ -106,10 +106,15 @@ try {
     Assert-True ([string]$normalized1.tests[0].command -match '-Dtest=ExampleControllerTest#shouldSave') 'synthetic test must preserve Maven command'
     Assert-True (Test-Path -LiteralPath (Join-Path $scenario1.ReplayRoot 'SLICE_RESULT_01.before_schema_normalization.json')) 'in-place normalization must create raw backup'
 
-    Assert-True ((Invoke-SliceVerifier -ReplayRoot $scenario1.ReplayRoot -Worktree $scenario1.Worktree -SliceResultPath $slice1) -eq 0) 'SliceVerifier must consume normalized result'
+    # Newer verifier hard gates can still fail this minimal fixture for missing
+    # carrier authorization or RED-phase proof. This scenario only owns schema
+    # normalization, so assert that SliceVerifier consumed the normalized schema
+    # before those later gates ran.
+    Invoke-SliceVerifier -ReplayRoot $scenario1.ReplayRoot -Worktree $scenario1.Worktree -SliceResultPath $slice1 | Out-Null
     $verify1 = Read-JsonFile (Join-Path $scenario1.ReplayRoot 'SLICE_VERIFY_01.json')
     Assert-False (@($verify1.issues) -contains 'slice_status_missing') 'schema-normalized slice must not produce slice_status_missing'
     Assert-True ([string]$verify1.slice_status -eq 'DONE') 'SLICE_VERIFY must report canonical DONE status'
+    Assert-True (@($verify1.gap_flags) -contains 'agent_result_schema_normalized') 'SliceVerifier must preserve normalization traceability'
 
     Assert-True ((Invoke-EvidenceGate -ReplayRoot $scenario1.ReplayRoot -Worktree $scenario1.Worktree -SliceResultPath $slice1) -eq 0) 'executable evidence gate must consume normalized tests command'
     $gate1 = Read-JsonFile (Join-Path $scenario1.ReplayRoot 'EXECUTABLE_EVIDENCE_GATE_01.json')

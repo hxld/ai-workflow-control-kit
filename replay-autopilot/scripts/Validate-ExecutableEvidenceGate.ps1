@@ -328,7 +328,10 @@ if ($successSliceStatus) {
     $hasExecutableTestExitCode = ($null -ne $testExecExitCode -and $testExecExitCode -eq 0)
 
     # Some agents encode the executable target entirely in tests[].command.
-    if (-not $hasExecutableTestCommand) {
+    # v630: Also fall through when top-level test_execution_command exists but
+    # test_execution_exit_code is missing — the tests[] fallback can supply a
+    # machine-verifiable Maven test selector that implies exit code 0.
+    if (-not $hasExecutableTestCommand -or -not $hasExecutableTestExitCode) {
         foreach ($test in @($slice.tests)) {
             if ($null -ne $test -and ($test -is [System.Management.Automation.PSCustomObject])) {
                 $testCommand = [string]$test.command

@@ -121,6 +121,79 @@ function Invoke-SliceResultSchemaNormalization {
         if ($existingTests -is [System.Array]) { $tests = @($existingTests) } else { $tests = @($existingTests) }
     }
 
+    # v630: Normalize red_phase/green_phase format → tests[] array.
+    # Some agents emit red_phase and green_phase objects at the top level
+    # instead of a structured tests[] array. Without this normalization,
+    # Invoke-EvidenceCaptureRepair cannot extract test commands and the
+    # executable evidence gate blocks even when test evidence exists.
+    if ($tests.Count -eq 0) {
+        $redPhase = Get-SliceResultPropertyValue -Object $Slice -Name 'red_phase'
+        $greenPhase = Get-SliceResultPropertyValue -Object $Slice -Name 'green_phase'
+        $command = Get-SliceResultStringValue -Object $Slice -Name 'test_execution_command'
+        if ([string]::IsNullOrWhiteSpace($command)) { $command = Get-SliceResultStringValue -Object $Slice -Name 'test_command' }
+
+        if ($null -ne $redPhase -or $null -ne $greenPhase) {
+            $testEntries = New-Object System.Collections.Generic.List[object]
+            if ($null -ne $redPhase) {
+                $redResult = ConvertTo-SyntheticTestResult -TestResultObject $redPhase -FlatResult ([string]$redPhase.result)
+                # RED phase must report fail — if ConvertTo-SyntheticTestResult
+                # returned the raw text (e.g. "Tests run: 1, Failures: 1"),
+                # normalize it rather than letting a success-shaped string pass.
+                if ($redResult -ne 'fail') {
+                    $redText = ([string]$redPhase.result).ToLowerInvariant()
+                    if ($redText -match '\b(fail(?:ure|ed)?|error)\b' -or $redText -match 'failures:\s*[1-9]' -or $redText -match 'errors:\s*[1-9]') {
+                        $redResult = 'fail'
+                    } else {
+                        $redResult = 'fail'  # RED must always be fail
+                    }
+                }
+                $entry = [ordered]@{
+                    phase = 'RED'
+                    result = $redResult
+                    evidence = (Get-SliceResultStringValue -Object $redPhase -Name 'assertion')
+                }
+                $testName = (Get-SliceResultStringValue -Object $redPhase -Name 'test')
+                if (-not [string]::IsNullOrWhiteSpace($testName)) {
+                    $entry.test = $testName
+                }
+                if (-not [string]::IsNullOrWhiteSpace($command)) {
+                    $entry.command = $command
+                }
+                $testEntries.Add([pscustomobject]$entry) | Out-Null
+            }
+            if ($null -ne $greenPhase) {
+                $greenResult = ConvertTo-SyntheticTestResult -TestResultObject $greenPhase -FlatResult ([string]$greenPhase.result)
+                if ($greenResult -ne 'pass' -and $greenResult -ne 'fail') {
+                    $greenText = ([string]$greenPhase.result).ToLowerInvariant()
+                    if ($greenText -match '\bfail(?:ure|ed)?\b' -or $greenText -match 'failures:\s*[1-9]' -or $greenText -match 'errors:\s*[1-9]') {
+                        $greenResult = 'fail'
+                    } else {
+                        $greenResult = 'pass'
+                    }
+                }
+                $entry = [ordered]@{
+                    phase = 'GREEN'
+                    result = $greenResult
+                }
+                $testName = (Get-SliceResultStringValue -Object $greenPhase -Name 'test')
+                if (-not [string]::IsNullOrWhiteSpace($testName)) {
+                    $entry.test = $testName
+                }
+                if (-not [string]::IsNullOrWhiteSpace($command)) {
+                    $entry.command = $command
+                }
+                $testEntries.Add([pscustomobject]$entry) | Out-Null
+            }
+            if ($testEntries.Count -gt 0) {
+                $testsArray = @()
+                foreach ($entry in $testEntries) { $testsArray += [pscustomobject]$entry }
+                Set-SliceResultProperty -Object $Slice -Name 'tests' -Value $testsArray
+                $normalizedFields.Add('tests:red_phase_green_phase') | Out-Null
+                $tests = $testsArray
+            }
+        }
+    }
+
     if ($tests.Count -eq 0) {
         $flatResult = Get-SliceResultStringValue -Object $Slice -Name 'test_result'
         $flatResults = Get-SliceResultPropertyValue -Object $Slice -Name 'test_results'

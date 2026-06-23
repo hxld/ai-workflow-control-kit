@@ -372,6 +372,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
 14. 如果本 slice 没有关闭或推进 REQUIREMENT_FAMILY_LEDGER 中任何 OPEN/PARTIAL family，`coverage_delta` 必须为 0，`gap_flags` 必须包含 `no_progress_slice`。
 15. 严格 TDD：先写/调整 RED，运行并记录失败，再最小 GREEN。`DONE` 必须至少有一条 `phase=RED,result=fail` 的测试证据；如果 RED 命令因 PowerShell 参数解析、`-Dtest`、`-Dsurefire...` 或 wrapper 参数问题被阻断，必须立刻用 `mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml ...` 重放同一个 RED，再决定是否编码。不能把“RED 命令 blocked”当成可接受 RED，也不能在没有 RED fail 的情况下进入 GREEN；若重放仍非业务断言失败，写 BLOCKED 或 PARTIAL，并在 `gap_flags` 写 `tdd_red_not_replayed`、`feedback_loop_blocker`。
 16. Maven 必须带 `-f {{WORKTREE}}\pom.xml`；仅当 replay config 定义 `maven_settings` 时才带 `{{MAVEN_SETTINGS_ARG}}`。任何带 `-pl <module>` 的 Maven test/test-compile/compile 命令都必须同时带 `-am`，否则会绕过 reactor 源码并可能误用本机 Maven 仓库里的漂移 SNAPSHOT 依赖；禁止把这种 `-am` 缺失导致的 facade/interface 编译错误报告成 `base_compile_blocker`。
+   - 即使只是快速编译、离线编译或排查命令，也禁止运行 `mvn compile -pl <module>`、`mvn test-compile -pl <module>` 或任何带 `-pl` 但不带 `-am` 的 Maven 命令；改用 `mvn {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <module> -am test-compile` 或写 BLOCKED JSON。
 17. 禁止执行 `mvn deploy`。默认禁止执行 `mvn install`；除非本 prompt 明确要求 isolated replay worktree 的 install，否则只能运行 `test-compile`、`test` 或必要的只读依赖检查。
 18. 禁止对主工作区运行 Maven：不得使用 `-f {{PROJECT_ROOT}}\pom.xml`，不得在 {{PROJECT_ROOT}} 下构建、测试、安装或发布。
 19. 不允许修改主工作区 {{PROJECT_ROOT}}。

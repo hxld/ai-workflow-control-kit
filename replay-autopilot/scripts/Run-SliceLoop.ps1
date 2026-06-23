@@ -586,6 +586,17 @@ function Get-CommandGuardRetryGuidance {
     }
 }
 
+function Get-DefaultMavenCommandGuardGuidance {
+    @(
+        'Maven command guard baseline:',
+        '- Any Maven compile, test-compile, or test command that uses `-pl <module>` MUST include `-am` in the same command.',
+        '- Do not run `mvn compile -pl <module>` or any offline variant without `-am`; it can bypass reactor source modules and trigger command guard termination.',
+        '- Use this shape instead: `mvn <settings> -f <WORKTREE>\pom.xml -pl <test-module> -am test-compile` and `mvn --% <settings> -f <WORKTREE>\pom.xml -pl <test-module> -am -Dtest=<class>#<method> -Dsurefire.failIfNoSpecifiedTests=false test`.',
+        '- If a valid module cannot be identified, write BLOCKED SLICE_RESULT JSON instead of probing with a forbidden Maven command.',
+        ''
+    ) -join "`n"
+}
+
 function Invoke-SliceExecutorWithRetry {
     param(
         [string[]]$AgentArgs,
@@ -3857,6 +3868,99 @@ function Write-ExecutorBlockedSliceResult {
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
 }
 
+function Invoke-EvidenceCaptureRepair {
+    param(
+        [string]$SliceResultPath,
+        [string]$SliceLogDir,
+        [string]$ReplayRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SliceResultPath) -or -not (Test-Path -LiteralPath $SliceResultPath -PathType Leaf)) { return }
+
+    try {
+        $resultText = Get-Content -LiteralPath $SliceResultPath -Raw -Encoding UTF8
+        $result = $resultText | ConvertFrom-Json
+        $sliceStatus = ([string]$result.slice_status).ToUpperInvariant()
+        if (@('DONE', 'COMPLETED') -notcontains $sliceStatus) { return }
+
+        $changed = $false
+        $hasExecCmd = -not [string]::IsNullOrWhiteSpace([string]$result.test_execution_command)
+        $hasCompileCmd = -not [string]::IsNullOrWhiteSpace([string]$result.test_compilation_command)
+
+        if (-not $hasExecCmd) {
+            $tests = @()
+            if ($null -ne $result.tests) {
+                if ($result.tests -is [System.Array]) { $tests = @($result.tests) } else { $tests = @($result.tests) }
+            }
+            foreach ($test in $tests) {
+                if ($null -eq $test) { continue }
+                $testCommand = [string]$test.command
+                $testPhase = ([string]$test.phase).ToUpperInvariant()
+                $testResult = ([string]$test.result).ToLowerInvariant()
+                $exitCodeValue = $test.exit_code
+                if ($null -eq $exitCodeValue) { $exitCodeValue = $test.test_execution_exit_code }
+                $exitCodeParsed = 1
+                $hasParsedExitCode = $false
+                if ($null -ne $exitCodeValue) {
+                    $exitCodeText = ([string]$exitCodeValue).Trim()
+                    $hasParsedExitCode = [int]::TryParse($exitCodeText, [ref]$exitCodeParsed)
+                }
+                $isExecutableMavenTest = (
+                    $testCommand -match '(?i)\bmvn(?:\.cmd)?\b' -and
+                    $testCommand -match '(?i)-D(?:it\.)?test\s*=' -and
+                    $testCommand -match '(?i)(^|[\s"`''])-am($|[\s"`''])'
+                )
+                if (-not [string]::IsNullOrWhiteSpace($testCommand) -and
+                    @('GREEN', 'VERIFY') -contains $testPhase -and
+                    $testResult -eq 'pass' -and
+                    $hasParsedExitCode -and
+                    [int]$exitCodeParsed -eq 0 -and
+                    $isExecutableMavenTest) {
+                    Set-ObjectProperty -Object $result -Name 'test_execution_command' -Value $testCommand
+                    Set-ObjectProperty -Object $result -Name 'test_execution_exit_code' -Value 0
+                    Set-ObjectProperty -Object $result -Name 'test_execution_evidence_source' -Value 'SLICE_RESULT.tests'
+                    $testModule = [string]$test.test_module
+                    if (-not [string]::IsNullOrWhiteSpace($testModule)) {
+                        Set-ObjectProperty -Object $result -Name 'test_module' -Value $testModule
+                    }
+                    $changed = $true
+                    break
+                }
+            }
+        }
+
+        $preflightPath = Join-Path $ReplayRoot 'PREFLIGHT_TEST_COMPILATION.json'
+        if (-not $hasCompileCmd -and (Test-Path -LiteralPath $preflightPath -PathType Leaf)) {
+            try {
+                $preflight = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $preflightCommand = [string]$preflight.maven_command_args
+                if (-not [string]::IsNullOrWhiteSpace($preflightCommand)) {
+                    Set-ObjectProperty -Object $result -Name 'test_compilation_command' -Value $preflightCommand
+                    Set-ObjectProperty -Object $result -Name 'test_compilation_evidence_source' -Value $preflightPath
+                    $changed = $true
+                }
+                if ($preflight.PSObject.Properties.Name -contains 'exit_code') {
+                    $preflightExitCode = $preflight.exit_code
+                    if ($null -ne $preflightExitCode) {
+                        $preflightExitCodeParsed = [int]$preflightExitCode
+                        Set-ObjectProperty -Object $result -Name 'test_compilation_exit_code' -Value $preflightExitCodeParsed
+                        if ($preflightExitCodeParsed -eq 0) {
+                            Set-ObjectProperty -Object $result -Name 'test_compilation_evidence' -Value $true
+                        }
+                        $changed = $true
+                    }
+                }
+            } catch {}
+        }
+
+        if ($changed) {
+            $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $SliceResultPath -Encoding UTF8
+        }
+    } catch {
+        # Best-effort metadata repair must never hide verifier failures.
+    }
+}
+
 function Normalize-SliceProgress {
     param(
         [string]$Path,
@@ -4292,6 +4396,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     }
     if ($hasExistingResult -and $hasExistingVerify) {
         Write-Host "Reusing existing Phase 1 $sliceId result; regenerating authoritative verification."
+        Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
         $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$v348Gate.CanProceed) {
@@ -4645,6 +4750,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             $lastMessage = Read-TextIfExists -Path $lastMessagePath
             $partialBeforeRetry = Write-PartialWorktreeDiffAudit -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -Stage 'before_retry' -SliceLogDir $sliceLogDir -ExitCode $executorExitCode
             $guardGuidance = Get-CommandGuardRetryGuidance -LogDir $sliceLogDir
+            $defaultMavenGuardSection = Get-DefaultMavenCommandGuardGuidance
             $guardSection = ''
             if ([bool]$guardGuidance.HasCommandGuardViolation) {
                 $guardSection = @(
@@ -4686,6 +4792,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 'Narrow the slice before retrying: choose the smallest deployable carrier for the forced family, close one concrete surface with RED/GREEN evidence, and leave sibling surfaces as explicit remaining gaps.',
                 'If you cannot safely continue, write a BLOCKED SLICE_RESULT JSON with the concrete blocker instead of ending with a question.',
                 '',
+                $defaultMavenGuardSection,
                 $guardSection,
                 $partialDiffSection,
                 'Previous last message excerpt:',
@@ -4750,6 +4857,8 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         $partialText = if ($null -ne $partialAfterRetry -and [bool]$partialAfterRetry.HasDiff) { "partial_diff=$($partialAfterRetry.JsonPath)" } else { 'partial_diff=none' }
         Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} executor blocked | {1} | {2} | missing_slice_result_after_retry | exit_code={3}; {4}; blocked slice result generated for synthesis/evolution. |" -f $i, $forced.family_id, $forced.slice_type, $finalExecutorExitCode, ($partialText -replace '\|', '/'))
     }
+
+    Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
     $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
@@ -4907,6 +5016,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         if (Test-Path -LiteralPath $repairEvidenceGate) {
             Remove-Item -LiteralPath $repairEvidenceGate -Force -ErrorAction SilentlyContinue
         }
+        Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
         $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$v348Gate.CanProceed) {

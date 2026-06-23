@@ -4421,6 +4421,10 @@ expected_test_class: <test class>
 expected_test_method: <test method>
 expected_assertions: ["assertion 1","assertion 2","assertion 3"]
 expected_side_effects: [{"state":"...","operation":"...","proof":"..."}]
+interface_contract_return_type: <public entry return type or not_public_entry_with_reason>
+interface_contract_error_handling: <exception/ResultModel/error-code behavior or not_public_entry_with_reason>
+pattern_to_follow: <existing production call path/signature or NEW_PATTERN with reason>
+pattern_evidence_source: <rg command plus file path, or target_carrier_file_path:line proof>
 ```
 If S1 is a prerequisite slice while `core_entry` remains pending, keep `selected_real_entry` as the Phase0 entry, put the prerequisite carrier in `selected_carrier`, set `first_slice_family` to the prerequisite family, and schedule the real core tracer later. If S1 claims `first_slice_family: core_entry`, the selected carrier must satisfy the core-entry executable proof rules.
 - PLAN_RESULT.json: create this only if it is listed under Missing Artifacts. If it already exists, it is read-only. For a newly created PROCEED file include plan_status, target_carrier_file_path, target_carrier_line_number, expected_test_class, expected_test_method, side_effects, expected_assertions, and test_infrastructure_check { test_module_for_target, test_module_has_dependencies, test_harness_available, can_import_production_classes, compilation_dry_run_exit_code, compilation_dry_run_command, compilation_dry_run_evidence_file, blocker_reason }. For BLOCKED include plan_status and blocker. For INVALID_PLAN include plan_status and invalid_reason. The intended command must name the selected test module, -pl, -am, and test-compile, and must point at the isolated worktree root POM; the runner writes the real evidence file under the replay root.

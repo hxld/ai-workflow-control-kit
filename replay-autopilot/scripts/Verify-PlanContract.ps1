@@ -1384,7 +1384,11 @@ if ($Stage -eq 'Phase0') {
             if (-not (Test-Path -LiteralPath $searchPath)) { continue }
             if ($carrierFound) { break }
 
-            $rgCarrierPattern = 'class\s+' + [regex]::Escape($carrierNameForExistenceCheck) + '\b'
+            # v632: Facade carriers are often Java interfaces while the implementation class
+            # carries the executable boundary. Treat an existing interface or implementation
+            # relationship as a real carrier instead of requiring only `class <Carrier>`.
+            $escapedCarrierName = [regex]::Escape($carrierNameForExistenceCheck)
+            $rgCarrierPattern = '(class|interface)\s+' + $escapedCarrierName + '\b|implements\s+' + $escapedCarrierName + '\b'
             $rgStdout = ''
             $rgExitCode = 1
 
@@ -1414,10 +1418,11 @@ if ($Stage -eq 'Phase0') {
                 try {
                     $javaFiles = Get-ChildItem -LiteralPath $searchPath -Recurse -Filter "$carrierNameForExistenceCheck.java" -ErrorAction SilentlyContinue
                     if ($javaFiles.Count -gt 0) {
-                        # Verify the file contains "class <CarrierName>"
+                        # Verify the file contains a concrete class, an interface, or an implementation
+                        # relationship for the selected carrier.
                         foreach ($file in $javaFiles) {
                             $content = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                            if ($content -match "class\s+$carrierNameForExistenceCheck\b") {
+                            if ($content -match "(class|interface)\s+$escapedCarrierName\b|implements\s+$escapedCarrierName\b") {
                                 $carrierFound = $true
                                 $searchPathType = if ($searchPath -eq $worktreePathForCarrierCheck) { 'worktree' } else { 'project root' }
                                 $warnings.Add("carrier_existence_check: '$carrierNameForExistenceCheck' found in $searchPathType via Get-ChildItem fallback") | Out-Null
@@ -1731,6 +1736,9 @@ if ($Stage -eq 'Phase0') {
                 $parsed = $cleanSideEffects | ConvertFrom-Json
                 if ($parsed -is [array]) {
                     $sideEffectCount = $parsed.Count
+                } elseif ($null -ne $parsed) {
+                    # Windows PowerShell unwraps a single-item JSON array to a scalar.
+                    $sideEffectCount = @($parsed).Count
                 }
             } catch { }
         } else {
@@ -1955,16 +1963,28 @@ if ($Stage -eq 'Phase0') {
     $errorHandlingContractPattern = '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?(?:interface_contract_error_handling|pattern_error_handling)\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'
     $placeholderContractPattern = '(?i)^(TBD|unknown|N/A|placeholder|' + ([char]0x5F85 + [char]0x786E + [char]0x8BA4) + '|' + ([char]0x672A + [char]0x786E + [char]0x8BA4) + ')$'
     if ($selectedRealEntryMatch.Success -and $selectedRealEntryMatch.Groups[1].Value -match '(?i)(Facade(?:Impl)?|Controller(?:Impl)?|Api|Endpoint|Route|Callback|Push|Notify|Receive|Send)\b') {
-        $combinedProofAndExploration = "$firstSliceProofText`n$explorationText`n$planText"
+        $combinedProofAndExploration = "$firstSliceProofText`n$explorationText`n$planText`n$implementationContractText"
         $returnTypeMatch = [regex]::Match($combinedProofAndExploration, $interfaceContractPattern)
         if (-not $returnTypeMatch.Success -or [string]::IsNullOrWhiteSpace($returnTypeMatch.Groups[1].Value)) {
-            $issues.Add('interface_contract_return_type_missing') | Out-Null
+            $fallbackReturnType = Get-KeyValueField -Text $combinedProofAndExploration -Field 'return_type'
+            if ([string]::IsNullOrWhiteSpace($fallbackReturnType)) {
+                $issues.Add('interface_contract_return_type_missing') | Out-Null
+            } elseif ($fallbackReturnType.Trim().Trim('`').Trim() -match $placeholderContractPattern) {
+                $issues.Add('interface_contract_return_type_placeholder') | Out-Null
+            } else {
+                $warnings.Add('interface_contract_return_type_inferred:return_type') | Out-Null
+            }
         } elseif ($returnTypeMatch.Groups[1].Value.Trim().Trim('`').Trim() -match $placeholderContractPattern) {
             $issues.Add('interface_contract_return_type_placeholder') | Out-Null
         }
         $errorHandlingMatch = [regex]::Match($combinedProofAndExploration, $errorHandlingContractPattern)
         if (-not $errorHandlingMatch.Success -or [string]::IsNullOrWhiteSpace($errorHandlingMatch.Groups[1].Value)) {
-            $issues.Add('interface_contract_error_handling_missing') | Out-Null
+            $hasErrorHandlingEvidence = $combinedProofAndExploration -match '(?i)(assertThrows|throws\s+[A-Za-z0-9_.]+Exception|IllegalArgumentException|error_handling|fail_closed_condition|validation_rules|ResultModel|response_codes|exception_propagation)'
+            if ($hasErrorHandlingEvidence) {
+                $warnings.Add('interface_contract_error_handling_inferred:existing_error_or_validation_evidence') | Out-Null
+            } else {
+                $issues.Add('interface_contract_error_handling_missing') | Out-Null
+            }
         } elseif ($errorHandlingMatch.Groups[1].Value.Trim().Trim('`').Trim() -match $placeholderContractPattern) {
             $issues.Add('interface_contract_error_handling_placeholder') | Out-Null
         }
@@ -1975,15 +1995,28 @@ if ($Stage -eq 'Phase0') {
     $patternToFollowPattern = '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?pattern_to_follow\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'
     $patternEvidencePattern = '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?pattern_evidence_source\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'
     if ($selectedRealEntryMatch.Success -and $selectedRealEntryMatch.Groups[1].Value -match '(?i)(Facade(?:Impl)?|Callback|Push|Notify|Receive|Send|Api|Endpoint)\b') {
-        $ptfMatch = [regex]::Match($firstSliceProofText, $patternToFollowPattern)
+        $patternFallbackText = "$firstSliceProofText`n$implementationContractText"
+        $ptfMatch = [regex]::Match($patternFallbackText, $patternToFollowPattern)
         if (-not $ptfMatch.Success -or [string]::IsNullOrWhiteSpace($ptfMatch.Groups[1].Value)) {
-            $issues.Add('pattern_to_follow_missing') | Out-Null
+            $traceValue = Get-KeyValueField -Text $patternFallbackText -Field 'trace'
+            $patternValue = Get-KeyValueField -Text $patternFallbackText -Field 'pattern'
+            if (-not [string]::IsNullOrWhiteSpace($traceValue) -or -not [string]::IsNullOrWhiteSpace($patternValue)) {
+                $warnings.Add('pattern_to_follow_inferred:trace_or_pattern') | Out-Null
+            } else {
+                $issues.Add('pattern_to_follow_missing') | Out-Null
+            }
         } elseif ($ptfMatch.Groups[1].Value.Trim().Trim('`').Trim() -match $placeholderContractPattern) {
             $issues.Add('pattern_to_follow_placeholder') | Out-Null
         }
-        $peMatch = [regex]::Match($firstSliceProofText, $patternEvidencePattern)
+        $peMatch = [regex]::Match($patternFallbackText, $patternEvidencePattern)
         if (-not $peMatch.Success -or [string]::IsNullOrWhiteSpace($peMatch.Groups[1].Value)) {
-            $issues.Add('pattern_evidence_source_missing') | Out-Null
+            $targetCarrierFilePath = Get-KeyValueField -Text $firstSliceProofText -Field 'target_carrier_file_path'
+            $targetCarrierLineNumber = Get-KeyValueField -Text $firstSliceProofText -Field 'target_carrier_line_number'
+            if (-not [string]::IsNullOrWhiteSpace($targetCarrierFilePath) -and $targetCarrierLineNumber -match '^\d+$') {
+                $warnings.Add('pattern_evidence_source_inferred:target_carrier_file_path_and_line') | Out-Null
+            } else {
+                $issues.Add('pattern_evidence_source_missing') | Out-Null
+            }
         } else {
             $peValue = $peMatch.Groups[1].Value.Trim().Trim('`').Trim()
             if (-not [string]::IsNullOrWhiteSpace($peValue)) {
@@ -2236,8 +2269,19 @@ if ($Stage -eq 'Phase0') {
             '(?im)^\s*-?\s*oracle_expansion_plan\s*[:=]\s*(.+)',
             '(?im)^\s*oracle_expansion_plan\s*[:=]\s*(.+)'
         )
-        $hasCrossFeatureOracleDiff = $crossFeatureExpansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)'
-        $crossFeatureHighWeightThreshold = if ($hasCrossFeatureOracleDiff) { 10 } else { 40 }
+        $crossFeatureOutOfScopeContent = Get-FirstText $combinedPlanText @(
+            '(?im)^\s*-?\s*oracle_out_of_scope_files\s*[:=]\s*(.+)',
+            '(?im)^\s*oracle_out_of_scope_files\s*[:=]\s*(.+)'
+        )
+        $crossFeatureEvidenceText = "$crossFeatureExpansionPlanContent`n$crossFeatureOutOfScopeContent"
+        $hasStrongCrossFeatureOracleDiff = $crossFeatureEvidenceText -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)'
+        # v632: A first executable slice may honestly plan oracle-heavy files into later
+        # slices (S2/S3/...) or follow-up runs. That is still a valid oracle repair ledger
+        # when enough high-weight coverage remains in the selected slice; it should not be
+        # auto-repaired back to BLOCKED just because the whole oracle commit is multi-slice.
+        $hasPlannedDeferredOracleDiff = $crossFeatureEvidenceText -match '(?i)\bplanned\s+S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
+        $hasCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $hasPlannedDeferredOracleDiff
+        $crossFeatureHighWeightThreshold = if ($hasStrongCrossFeatureOracleDiff) { 10 } else { 40 }
         $isCrossFeatureHighWeightExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
 
         $highWeightThreshold = 70
@@ -2320,7 +2364,12 @@ if ($Stage -eq 'Phase0') {
             # When oracle_expansion_plan explains that missing HIGH-weight files belong to other
             # features/requirements, it's a legitimate multi-feature oracle diff (not a plan quality
             # issue). The missing files will be covered in their own slices for those features.
-            $hasCrossFeatureOracleDiff = $hasCrossFeatureOracleDiff -or ($expansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)')
+            $strongCrossFeatureDetected = $expansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)'
+            $plannedDeferredDetected = $expansionPlanContent -match '(?i)\bplanned\s+S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
+            $hasStrongCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $strongCrossFeatureDetected
+            $hasPlannedDeferredOracleDiff = $hasPlannedDeferredOracleDiff -or $plannedDeferredDetected
+            $hasCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $hasPlannedDeferredOracleDiff
+            $crossFeatureHighWeightThreshold = if ($hasStrongCrossFeatureOracleDiff) { 10 } else { 40 }
 
             # v627: Broaden exemption for cross-feature oracle diffs (not just LOW-weight files + threshold language)
             $hasHonestOutOfScopeExplanation = ($hasLowWeightFileCategories -and $hasCannotReachThresholdLanguage) -or $hasCrossFeatureOracleDiff
@@ -2330,12 +2379,12 @@ if ($Stage -eq 'Phase0') {
         # v467: Fixed stale blocker detection to check actual overlap >= 50% threshold
         # This eliminates staleness between verification result and plan status
         $planStatus = Get-FirstText $planText @(
-            '(?m)^\s*-?\s*plan_status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
+            '(?m)^\s*-?\s*`?plan_status`?\s*[:=|]\s*[`*]*([A-Z_]+)[`*]*',
             '(?m)\bplan_status\b[^\nA-Z_]*([A-Z_]{3,})'
         )
         $planBlocker = Get-FirstText $planText @(
-            '(?m)^\s*-?\s*blocker\s*[:=]\s*(.+?)\s*$',
-            '(?m)^\s*blocker\s*:\s*(.+?)\s*$',
+            '(?m)^\s*-?\s*`?blocker`?\s*[:=|]\s*(.+?)\s*$',
+            '(?m)^\s*`?blocker`?\s*:\s*(.+?)\s*$',
             '(?m)\*?\*?Blocker\*?\*?\s*:\s*(.+?)\s*$',
             '(?i)\*\*?blocker\*?\*?\s*[:=]\s*(.+?)\s*$'
         )
@@ -2362,7 +2411,7 @@ if ($Stage -eq 'Phase0') {
         if ($overlapPercent -lt 50) {
             # v627: Cross-feature oracle diffs are exempt — missing files belong to other features,
             # documented in oracle_expansion_plan. These will be covered in future feature slices.
-            $isCrossFeatureExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge 10)
+            $isCrossFeatureExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
             if ($isCrossFeatureExempt) {
                 $warnings.Add("oracle_overlap_below_threshold_exempted:${overlapPercent}%_cross_feature_oracle_diff") | Out-Null
             } else {
@@ -2489,14 +2538,14 @@ if ($Stage -eq 'Phase0') {
                 # Note: PowerShell -replace doesn't support (?m) with ^ anchor, use line-by-line approach
                 $lines = $repairedContent -split "`r?`n"
                 for ($i = 0; $i -lt $lines.Count; $i++) {
-                    if ($lines[$i] -match 'blocker\s*[:=|]\s*oracle_overlap_below_threshold') {
-                        if ($lines[$i] -match '^\s*-\s*blocker\s*[:=]\s*') {
-                            $lines[$i] = $lines[$i] -replace 'blocker\s*[:=]\s*oracle_overlap_below_threshold.*', 'blocker: none'
+                    if ($lines[$i] -match '`?blocker`?\s*[:=|]\s*oracle_overlap_below_threshold') {
+                        if ($lines[$i] -match '^\s*-\s*`?blocker`?\s*[:=|]\s*') {
+                            $lines[$i] = $lines[$i] -replace '`?blocker`?\s*[:=|]\s*oracle_overlap_below_threshold.*', 'blocker: none'
                         } elseif ($lines[$i] -match '\*?\*?Blocker\*?\*?\s*:\s*') {
                             # Handle markdown format: **Blocker**: oracle_overlap_below_threshold
                             $lines[$i] = $lines[$i] -replace '\*?\*?Blocker\*?\*?\s*:\s*oracle_overlap_below_threshold.*', '**Blocker**: none'
                         } else {
-                            $lines[$i] = $lines[$i] -replace 'blocker\s*[:=|]\s*oracle_overlap_below_threshold.*', 'blocker: none'
+                            $lines[$i] = $lines[$i] -replace '`?blocker`?\s*[:=|]\s*oracle_overlap_below_threshold.*', 'blocker: none'
                         }
                     }
                 }
@@ -2683,9 +2732,9 @@ if ($coreEntryCarrierMatch.Success) {
 if ($planStatusCheckDeferred -and $Stage -eq 'Plan') {
     # Re-read plan status after potential auto-repair
     $finalPlanStatus = Get-FirstText $planText @(
-        '(?m)^\s*-?\s*plan_status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*',
+        '(?m)^\s*-?\s*`?plan_status`?\s*[:=|]\s*[`*]*([A-Z_]+)[`*]*',
         '(?m)\bplan_status\b[^\nA-Z_]*([A-Z_]{3,})',
-        '(?m)^\s*-?\s*status\s*[:=]\s*[`*]*([A-Z_]+)[`*]*'
+        '(?m)^\s*-?\s*`?status`?\s*[:=|]\s*[`*]*([A-Z_]+)[`*]*'
     )
     if ($finalPlanStatus -ne 'PROCEED') {
         $issues.Add("plan_status_not_proceed:$finalPlanStatus") | Out-Null

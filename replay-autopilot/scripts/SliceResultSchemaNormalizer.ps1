@@ -220,6 +220,65 @@ function Invoke-SliceResultSchemaNormalization {
         }
     }
 
+    # v632: Normalize proofs format -> tests[] array.
+    # Some agents emit free-text proofs (nested object) at the top level
+    # instead of a structured tests[] array. This is common for tracer-bullet
+    # slices where the executor provides natural-language proof summaries.
+    if ($tests.Count -eq 0) {
+        $proofs = Get-SliceResultPropertyValue -Object $Slice -Name 'proofs'
+        $isProofsObject = ($null -ne $proofs -and $proofs -is [System.Management.Automation.PSCustomObject])
+        if ($null -ne $proofs -and ($isProofsObject -or $proofs -is [System.Collections.IDictionary] -or $proofs -is [System.Collections.Hashtable])) {
+            $testEntries = New-Object System.Collections.Generic.List[object]
+            $proofKeys = @($proofs.PSObject.Properties.Name)
+
+            foreach ($key in $proofKeys) {
+                $rawValue = [string]$proofs.$key
+                if ([string]::IsNullOrWhiteSpace($rawValue)) { continue }
+                $upperKey = $key.ToUpperInvariant()
+
+                $phase = ''
+                $result = 'pass'
+                if ($upperKey -match '^RED_') {
+                    $phase = 'RED'
+                    $result = 'fail'
+                } elseif ($upperKey -match '^GREEN_') {
+                    $phase = 'GREEN'
+                    $result = 'pass'
+                } else {
+                    continue
+                }
+
+                $evidence = $rawValue
+                if ($rawValue -match '(?i)PASS\s*(?:\u2014|-|:)\s*(.+)') {
+                    $evidence = $matches[1].Trim()
+                }
+                if ($rawValue -match '(?i)FAIL\s*(?:\u2014|-|:)\s*(.+)') {
+                    $evidence = $matches[1].Trim()
+                }
+
+                $entry = [ordered]@{
+                    phase = $phase
+                    result = $result
+                    evidence = $evidence
+                }
+
+                # Extract maven command from evidence text if present
+                if ($rawValue -match '(?i)(mvn(?:\.cmd)?\s+--?[^\n]*?(?:test|install|package|compile|verify)\b[^\n]*)') {
+                    $entry.command = $matches[1].Trim()
+                }
+
+                $testEntries.Add([pscustomobject]$entry) | Out-Null
+            }
+
+            if ($testEntries.Count -gt 0) {
+                $testsArray = @()
+                foreach ($entry in $testEntries) { $testsArray += [pscustomobject]$entry }
+                Set-SliceResultProperty -Object $Slice -Name 'tests' -Value $testsArray
+                $normalizedFields.Add('tests:proofs') | Out-Null
+            }
+        }
+    }
+
     if ($normalizedFields.Count -gt 0) {
         Add-SliceResultGapFlag -Slice $Slice -Flag 'agent_result_schema_normalized'
         Set-SliceResultProperty -Object $Slice -Name 'schema_normalization' -Value ([ordered]@{

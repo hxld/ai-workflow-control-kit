@@ -215,6 +215,57 @@ if (Test-Path -LiteralPath $normalizerScript) {
         throw "Normalize-SliceResultSchema.ps1 failed with exit code $LASTEXITCODE"
     }
     $slice = Read-JsonObject -Path $sliceResultFull
+    # v632: Backfill compilation evidence from PREFLIGHT_TEST_COMPILATION.json
+    # when the slice lacks test_compilation_exit_code. This runs after schema
+    # normalization so the slice object has canonical structure before evidence
+    # injection. Downstream Verify-SliceClosure then reads the injected fields.
+    $existingCompileCode = $null
+    if ($slice.PSObject.Properties.Name -contains 'test_compilation_exit_code') { $existingCompileCode = $slice.test_compilation_exit_code }
+    if ($null -eq $existingCompileCode -and ($slice.PSObject.Properties.Name -contains 'test_compile_exit_code')) { $existingCompileCode = $slice.test_compile_exit_code }
+    $hasCompileExitCode = ($null -ne $existingCompileCode)
+    if (-not $hasCompileExitCode) {
+        $preflightPath = Join-Path $replayRootFull 'PREFLIGHT_TEST_COMPILATION.json'
+        if (Test-Path -LiteralPath $preflightPath -PathType Leaf) {
+            try {
+                $preflight = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $preflightExit = $null
+                if ($null -ne $preflight.exit_code) { $preflightExit = [int]$preflight.exit_code }
+                if ($null -ne $preflightExit) {
+                    $setCompileEvidence = $false
+                    $preflightCmd = [string]$preflight.maven_command_args
+                    if (-not [string]::IsNullOrWhiteSpace($preflightCmd)) {
+                        if ($slice.PSObject.Properties.Name -contains 'test_compilation_command') {
+                            $slice.test_compilation_command = $preflightCmd
+                        } else {
+                            $slice | Add-Member -NotePropertyName 'test_compilation_command' -NotePropertyValue $preflightCmd
+                        }
+                    }
+                    if ($slice.PSObject.Properties.Name -contains 'test_compilation_exit_code') {
+                        $slice.test_compilation_exit_code = $preflightExit
+                    } else {
+                        $slice | Add-Member -NotePropertyName 'test_compilation_exit_code' -NotePropertyValue $preflightExit
+                    }
+                    if ($slice.PSObject.Properties.Name -contains 'test_compilation_evidence_source') {
+                        $slice.test_compilation_evidence_source = $preflightPath
+                    } else {
+                        $slice | Add-Member -NotePropertyName 'test_compilation_evidence_source' -NotePropertyValue $preflightPath
+                    }
+                    if ($preflightExit -eq 0) {
+                        if ($slice.PSObject.Properties.Name -contains 'test_compilation_evidence') {
+                            $slice.test_compilation_evidence = $true
+                        } else {
+                            $slice | Add-Member -NotePropertyName 'test_compilation_evidence' -NotePropertyValue $true
+                        }
+                        $setCompileEvidence = $true
+                    }
+                    # Persist the injected fields back to disk
+                    $slice | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $sliceResultFull -Encoding UTF8
+                }
+            } catch {
+                # Best-effort preflight backfill must not block verification
+            }
+        }
+    }
 }
 
 $verifyScript = Join-Path $PSScriptRoot 'Verify-SliceClosure.ps1'

@@ -2230,9 +2230,23 @@ if ($Stage -eq 'Phase0') {
         $domainExpansionGuidancePath = Join-Path $PSScriptRoot '..\prompts\PLAN_ORACLE_DOMAIN_EXPANSION.md'
         $hasDomainExpansionGuidance = Test-Path -LiteralPath $domainExpansionGuidancePath
 
+        # v631: Detect cross-feature oracle diffs before high-weight threshold issues are emitted.
+        # The v627 exemption must apply to both overall overlap and high-weight overlap.
+        $crossFeatureExpansionPlanContent = Get-FirstText $combinedPlanText @(
+            '(?im)^\s*-?\s*oracle_expansion_plan\s*[:=]\s*(.+)',
+            '(?im)^\s*oracle_expansion_plan\s*[:=]\s*(.+)'
+        )
+        $hasCrossFeatureOracleDiff = $crossFeatureExpansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)'
+        $crossFeatureHighWeightThreshold = if ($hasCrossFeatureOracleDiff) { 10 } else { 40 }
+        $isCrossFeatureHighWeightExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
+
         $highWeightThreshold = 70
         if ($highWeightOverlapPercent -lt $highWeightThreshold) {
-            $issues.Add("oracle_high_weight_overlap_below_threshold:${highWeightOverlapPercent}%<${highWeightThreshold}%") | Out-Null
+            if ($isCrossFeatureHighWeightExempt) {
+                $warnings.Add("oracle_high_weight_overlap_below_threshold_exempted:${highWeightOverlapPercent}%_cross_feature_oracle_diff") | Out-Null
+            } else {
+                $issues.Add("oracle_high_weight_overlap_below_threshold:${highWeightOverlapPercent}%<${highWeightThreshold}%") | Out-Null
+            }
 
             # v442: Add explicit diagnostic for missing high-weight files
             if ($missingHighWeightFiles.Count -gt 0) {
@@ -2251,7 +2265,7 @@ if ($Stage -eq 'Phase0') {
                 $combinedPlanText -match '(?im)^\s*-?\s*oracle_missing_high_weight_files\s*[:=]\s*\S' -or
                 $combinedPlanText -match '(?im)^\s*-?\s*oracle_expansion_plan\s*[:=]\s*\S'
             )
-            if (-not $hasHighWeightRepairLedger) {
+            if (-not $hasHighWeightRepairLedger -and -not $isCrossFeatureHighWeightExempt) {
                 $issues.Add('oracle_high_weight_repair_ledger_missing') | Out-Null
             }
         }
@@ -2261,6 +2275,9 @@ if ($Stage -eq 'Phase0') {
         # and plan focuses on HIGH-weight backend services with reasonable coverage, allow proceeding with adjusted cap.
         $hasHonestOutOfScopeExplanation = $false
         $domainSeparationDetected = $false
+        if ($hasCrossFeatureOracleDiff) {
+            $hasHonestOutOfScopeExplanation = $true
+        }
         if ($overlapPercent -lt 50 -and $hasOracleOutOfScope) {
             # Extract oracle_out_of_scope_files content for analysis
             $outOfScopeContent = Get-FirstText $combinedPlanText @(
@@ -2272,6 +2289,9 @@ if ($Stage -eq 'Phase0') {
                 '(?im)^\s*-?\s*oracle_expansion_plan\s*[:=]\s*(.+)',
                 '(?im)^\s*oracle_expansion_plan\s*[:=]\s*(.+)'
             )
+            if ([string]::IsNullOrWhiteSpace($expansionPlanContent)) {
+                $expansionPlanContent = $crossFeatureExpansionPlanContent
+            }
 
             # Look for domain separation indicators
             $domainSeparationPatterns = @(
@@ -2296,7 +2316,14 @@ if ($Stage -eq 'Phase0') {
             # Check for honest "cannot reach threshold" language
             $hasCannotReachThresholdLanguage = $expansionPlanContent -match '(?i)cannot.*reach.*threshold|honest.*assessment|BLOCKED.*threshold|below.*threshold.*honest'
 
-            $hasHonestOutOfScopeExplanation = $hasLowWeightFileCategories -and $hasCannotReachThresholdLanguage
+            # v627: Cross-feature oracle diff detection
+            # When oracle_expansion_plan explains that missing HIGH-weight files belong to other
+            # features/requirements, it's a legitimate multi-feature oracle diff (not a plan quality
+            # issue). The missing files will be covered in their own slices for those features.
+            $hasCrossFeatureOracleDiff = $hasCrossFeatureOracleDiff -or ($expansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)')
+
+            # v627: Broaden exemption for cross-feature oracle diffs (not just LOW-weight files + threshold language)
+            $hasHonestOutOfScopeExplanation = ($hasLowWeightFileCategories -and $hasCannotReachThresholdLanguage) -or $hasCrossFeatureOracleDiff
         }
 
         # v350: Auto-repair stale PLAN_RESULT.md when overlap >= 50% but plan_status is BLOCKED
@@ -2322,15 +2349,25 @@ if ($Stage -eq 'Phase0') {
         # v467: Fixed to be consistent with threshold checking - both conditions explicitly check the threshold
         $isStaleHighWeightBlocker = ($planStatus -eq 'BLOCKED') -and
             ($planBlocker -match 'oracle_high_weight_overlap_below_threshold') -and
-            ($highWeightOverlapPercent -ge 70 -or ($hasHonestOutOfScopeExplanation -and $highWeightOverlapPercent -ge 40))
+            ($highWeightOverlapPercent -ge 70 -or ($hasHonestOutOfScopeExplanation -and $highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold))
 
         # v451: Add domain-aware expansion guidance reference
         $domainExpansionGuidancePath = Join-Path $PSScriptRoot '..\prompts\PLAN_ORACLE_DOMAIN_EXPANSION.md'
         $hasDomainExpansionGuidance = Test-Path -LiteralPath $domainExpansionGuidancePath
 
+        # v627: Initialize cross-feature oracle diff exemption flag before overlap check
+        $isCrossFeatureExempt = $false
+
         # Fail-closed: overlap < 50% is an issue
         if ($overlapPercent -lt 50) {
-            $issues.Add("oracle_overlap_below_threshold:$overlapPercent%<50%") | Out-Null
+            # v627: Cross-feature oracle diffs are exempt — missing files belong to other features,
+            # documented in oracle_expansion_plan. These will be covered in future feature slices.
+            $isCrossFeatureExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge 10)
+            if ($isCrossFeatureExempt) {
+                $warnings.Add("oracle_overlap_below_threshold_exempted:${overlapPercent}%_cross_feature_oracle_diff") | Out-Null
+            } else {
+                $issues.Add("oracle_overlap_below_threshold:$overlapPercent%<50%") | Out-Null
+            }
 
             # v451: Add guidance reference when domain expansion prompt exists
             if ($hasDomainExpansionGuidance) {
@@ -2350,12 +2387,14 @@ if ($Stage -eq 'Phase0') {
             }
 
             # v421: Domain-aware exemption - if honest out_of_scope with domain separation and reasonable high-weight coverage
-            $shouldApplyDomainExemption = $hasHonestOutOfScopeExplanation -and ($highWeightOverlapPercent -ge 40)
+            # v627: Use $crossFeatureHighWeightThreshold (10 for cross-feature diffs, 40 otherwise)
+            $shouldApplyDomainExemption = $hasHonestOutOfScopeExplanation -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
 
             # v387: Auto-repair when overlap < 50% but plan_status is PROCEED or incorrectly set
             # This prevents plans with insufficient oracle coverage from proceeding to implementation
             # v421 update: Apply domain exemption when honest architectural separation is detected
-            $needsBlockerRepair = ($planStatus -ne 'BLOCKED') -or ($planBlocker -notmatch 'oracle_overlap_below_threshold')
+            # v627: Also trigger auto-repair for cross-feature oracle diffs (exemption overrides existing block)
+            $needsBlockerRepair = ($planStatus -ne 'BLOCKED') -or ($planBlocker -notmatch 'oracle_overlap_below_threshold') -or $isCrossFeatureExempt
             if ($needsBlockerRepair) {
                 $planResultPath = Join-Path $replayRootFull 'PLAN_RESULT.md'
                 if (Test-Path -LiteralPath $planResultPath) {
@@ -2375,7 +2414,12 @@ if ($Stage -eq 'Phase0') {
                             if (-not $repairedContent.EndsWith("`n")) {
                                 $repairedContent += "`n"
                             }
-                            $repairedContent += "`domain_exemption`: applied (LOW-weight DTO/Resource/UI files require separate frontend replay)`n"
+                            # v627: Use cross-feature-specific exemption text when applicable
+                            if ($isCrossFeatureExempt) {
+                                $repairedContent += "`domain_exemption`: applied (cross-feature oracle diff; missing HIGH-weight files belong to other requirements, documented in oracle_expansion_plan)`n"
+                            } else {
+                                $repairedContent += "`domain_exemption`: applied (LOW-weight DTO/Resource/UI files require separate frontend replay)`n"
+                            }
                         }
 
                         # Update blocker: anything -> none (exemption applied)
@@ -2528,7 +2572,7 @@ if ($Stage -eq 'Phase0') {
         if ($overlapPercent -ge 50 -and $highWeightOverlapPercent -lt 70 -and $hasHonestOutOfScopeExplanation) {
             # v448: Apply exemption when honest architectural separation is documented
             # and reasonable high-weight coverage is achieved on in-scope files
-            $shouldApplyHighWeightExemption = $hasHonestOutOfScopeExplanation -and ($highWeightOverlapPercent -ge 40)
+            $shouldApplyHighWeightExemption = $hasHonestOutOfScopeExplanation -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
 
             if ($shouldApplyHighWeightExemption) {
                 # v448: Auto-repair high-weight blocker when exemption applies

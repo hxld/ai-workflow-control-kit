@@ -739,11 +739,27 @@ if ($Executor -ne 'manual') {
 
 $timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
 $effectiveSilentNoOutputTimeoutSeconds = [Math]::Max(0, $SilentNoOutputTimeoutSeconds)
+$silentNoOutputPolicyReason = 'disabled'
+$silentNoOutputExplicit = $SilentNoOutputTimeoutSeconds -gt 0
 if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and $env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS -match '^\d+$') {
     $effectiveSilentNoOutputTimeoutSeconds = [int]$env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS
+    $silentNoOutputExplicit = $true
 }
 if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and $timeoutSeconds -gt 1200) {
-    $effectiveSilentNoOutputTimeoutSeconds = 900
+    if ($Executor -eq 'claude') {
+        # Claude --print normally emits no stdout until final completion; the stage timeout remains the hard bound.
+        $silentNoOutputPolicyReason = 'default_disabled_for_claude_print_executor'
+    } else {
+        $effectiveSilentNoOutputTimeoutSeconds = 900
+        $silentNoOutputPolicyReason = 'default_required_completion_watchdog'
+    }
+}
+if ($effectiveSilentNoOutputTimeoutSeconds -gt 0 -and $silentNoOutputExplicit) {
+    $silentNoOutputPolicyReason = 'explicit_or_env_override'
+} elseif ($effectiveSilentNoOutputTimeoutSeconds -gt 0 -and $silentNoOutputPolicyReason -eq 'disabled') {
+    $silentNoOutputPolicyReason = 'enabled'
+} elseif ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and $silentNoOutputPolicyReason -eq 'disabled') {
+    $silentNoOutputPolicyReason = 'not_required'
 }
 
 $reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
@@ -770,6 +786,7 @@ $goalSpec = [ordered]@{
         timeout_seconds = $timeoutSeconds
         completion_quiet_seconds = $CompletionQuietSeconds
         silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
+        silent_no_output_policy_reason = $silentNoOutputPolicyReason
         fail_closed_on_missing_completion = $completionRequired
         fail_closed_on_command_guard = $true
         fail_closed_on_protected_root_modified = $true
@@ -800,6 +817,7 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         CompletionPath = $CompletionPath
         CompletionQuietSeconds = $CompletionQuietSeconds
         SilentNoOutputTimeoutSeconds = $effectiveSilentNoOutputTimeoutSeconds
+        SilentNoOutputPolicyReason = $silentNoOutputPolicyReason
         Status = if ($Executor -eq 'manual') { 'MANUAL_PROMPT_READY' } else { 'VALID' }
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Get-Content -LiteralPath $metaPath -Encoding UTF8
@@ -1069,6 +1087,7 @@ $meta = [ordered]@{
     completion_path = $CompletionPath
     completion_quiet_seconds = $CompletionQuietSeconds
     silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
+    silent_no_output_policy_reason = $silentNoOutputPolicyReason
     completion_mode = $result.CompletionMode
     stdout_length = $stdoutLength
     stderr_length = $stderrLength

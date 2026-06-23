@@ -72,8 +72,8 @@ public class ExampleConfigFacadeImpl implements ExampleConfigFacade {
 - requirement_primary_domain: ai
 - oracle_production_file_overlap: 40% (4/10)
 - oracle_high_weight_coverage: 40% (4/10)
-- oracle_missing_high_weight_files: AutoFlowService (planned S2), OcrRetryService (planned S4), OcrTaskProcessor (planned S4), ReportExportService (deferred scope_cap), RiskRuleService (planned S5), CaseFlowService (deferred follow-up run)
-- oracle_expansion_plan: AutoFlowService -> planned S2; OcrRetryService -> planned S4; OcrTaskProcessor -> planned S4; ReportExportService -> deferred follow-up run (scope_cap); RiskRuleService -> planned S5; CaseFlowService -> deferred follow-up run (scope_cap)
+- oracle_missing_high_weight_files: AutoFlowService (S2), OcrRetryService (S4), OcrTaskProcessor (S4), ReportExportService (deferred scope_cap), RiskRuleService (S5), CaseFlowService (deferred follow-up run)
+- oracle_expansion_plan: AutoFlowService -> S2; OcrRetryService -> S4; OcrTaskProcessor => S4; ReportExportService -> deferred follow-up run (scope_cap); RiskRuleService: S5; CaseFlowService -> deferred follow-up run (scope_cap)
 - oracle_out_of_scope_files: ReportExportService (deferred follow-up run), CaseFlowService (deferred follow-up run)
 - golden_slice_binding: exact_contract_gap -> ExampleConfigFacade.save -> RED: save returns null in query response -> GREEN: field added to DTO/service/mapper -> DB query assertion proves persisted value
 - carrier_search: performed

@@ -2279,7 +2279,7 @@ if ($Stage -eq 'Phase0') {
         # slices (S2/S3/...) or follow-up runs. That is still a valid oracle repair ledger
         # when enough high-weight coverage remains in the selected slice; it should not be
         # auto-repaired back to BLOCKED just because the whole oracle commit is multi-slice.
-        $hasPlannedDeferredOracleDiff = $crossFeatureEvidenceText -match '(?i)\bplanned\s+S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
+        $hasPlannedDeferredOracleDiff = $crossFeatureEvidenceText -match '(?i)\bplanned\s+S\d+\b|(?:->|=>|:)\s*S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
         $hasCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $hasPlannedDeferredOracleDiff
         $crossFeatureHighWeightThreshold = if ($hasStrongCrossFeatureOracleDiff) { 10 } else { 40 }
         $isCrossFeatureHighWeightExempt = $hasCrossFeatureOracleDiff -and ($highWeightOverlapPercent -ge $crossFeatureHighWeightThreshold)
@@ -2365,7 +2365,7 @@ if ($Stage -eq 'Phase0') {
             # features/requirements, it's a legitimate multi-feature oracle diff (not a plan quality
             # issue). The missing files will be covered in their own slices for those features.
             $strongCrossFeatureDetected = $expansionPlanContent -match '(?i)other (requirement|feature)s?|different (requirement|feature)s?|multi[- ]feature|not in scope for this|belongs? to other|addressed in (own|separate|subsequent)'
-            $plannedDeferredDetected = $expansionPlanContent -match '(?i)\bplanned\s+S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
+            $plannedDeferredDetected = $expansionPlanContent -match '(?i)\bplanned\s+S\d+\b|(?:->|=>|:)\s*S\d+\b|deferred|scope_cap|follow[- ]up|later slice|separate slice|subsequent slice|future slice'
             $hasStrongCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $strongCrossFeatureDetected
             $hasPlannedDeferredOracleDiff = $hasPlannedDeferredOracleDiff -or $plannedDeferredDetected
             $hasCrossFeatureOracleDiff = $hasStrongCrossFeatureOracleDiff -or $hasPlannedDeferredOracleDiff

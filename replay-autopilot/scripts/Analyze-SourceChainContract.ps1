@@ -75,11 +75,32 @@ function Test-ExplicitSourceChainIntent {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
     if (Test-NegatedSourceChainIntent -Text $Text) { return $false }
 
-    return (
-        $Text -match '(?i)\b(source[-_\s]?chain|source extraction|backend source extraction|from backend source)\b' -or
-        $Text -match '(?i)\b(RequestBuildContext|buildRequestCommon|RequestBuildFunction|rebuildTaskData)\b' -or
-        $Text -match '(?i)\b(rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
-    )
+    $normalized = [string]$Text
+    if (
+        $normalized -match '(?i)\bsource[-_\s]?chain\b' -or
+        $normalized -match '(?i)\b(source extraction|backend source extraction|from backend source)\b' -or
+        $normalized -match '(?i)\b(RequestBuildContext|buildRequestCommon|RequestBuildFunction)\b'
+    ) {
+        return $true
+    }
+
+    $paragraphs = @([regex]::Split($normalized, '(?:\r?\n\s*){2,}'))
+    foreach ($paragraph in $paragraphs) {
+        if ([string]::IsNullOrWhiteSpace($paragraph)) { continue }
+        if ($paragraph -notmatch '(?i)\b(rebuildTaskData|rebuilt task data|task data is rebuilt|boundary rebuild path)\b') { continue }
+
+        if ($paragraph -match '(?i)\b(No-Spring Test Rule|test rule|tests?:\s*use|JUnit|Mockito|Spring Boot Test annotation|Test resides)\b') {
+            continue
+        }
+
+        $hasTransferVerb = $paragraph -match '(?i)\b(preserve|propagate|copy|carry|map|assign|fill|read|write|from|into|through|via)\b'
+        $hasSourceOrWireBoundary = $paragraph -match '(?i)\b(source|InputData|input_data|wire|payload|RequestBuildContext|build context|task data|AI request|field|[a-z][a-z0-9]+_[a-z0-9_]+)\b'
+        if ($hasTransferVerb -and $hasSourceOrWireBoundary) {
+            return $true
+        }
+    }
+
+    return $false
 }
 
 function Get-OracleTaskProcessorFiles {
@@ -298,6 +319,7 @@ $result = [ordered]@{
     schema_version = 1
     replay_root = $root
     required_source_chain = $hasNamedSource
+    explicit_source_chain_intent = $explicitSourceChainIntent
     source_fields = @($sourceFields)
     target_fields = @($targetFields)
     source_chain_mode = $sourceChainMode

@@ -3152,6 +3152,35 @@ function Test-NoOpenRequiredFamilyForSlice {
     return $true
 }
 
+function Test-SourceChainOverrideAllowedForForcedDecision {
+    param(
+        $ForcedDecision,
+        $SourceChain,
+        [int]$SliceIndex
+    )
+
+    if ($null -eq $SourceChain -or $null -eq $SourceChain.next_required_slice) { return $false }
+    if ($null -eq $ForcedDecision) { return $true }
+
+    $family = if ($ForcedDecision.PSObject.Properties.Name -contains 'family_id') { [string]$ForcedDecision.family_id } else { '' }
+    $surface = if ($ForcedDecision.PSObject.Properties.Name -contains 'target_sibling_surface') { [string]$ForcedDecision.target_sibling_surface } else { '' }
+    $reason = if ($ForcedDecision.PSObject.Properties.Name -contains 'reason') { [string]$ForcedDecision.reason } else { '' }
+    if ([string]::IsNullOrWhiteSpace($family)) { return $true }
+    if ($family -in @('core_entry', 'source_chain')) { return $true }
+
+    $sourceCarrier = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'carrier') { [string]$SourceChain.next_required_slice.carrier } else { '' }
+    $sourceEntry = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'entry') { [string]$SourceChain.next_required_slice.entry } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($sourceCarrier) -and $surface -eq $sourceCarrier) { return $true }
+    if (-not [string]::IsNullOrWhiteSpace($sourceEntry) -and $surface -match [regex]::Escape($sourceEntry)) { return $true }
+
+    $decisionText = @($surface, $reason) -join ' '
+    if ($decisionText -match '(?i)\b(rebuildTaskData|RequestBuildContext|source_chain|source[-_\s]?chain|source field|wire field|input_data)\b') {
+        return $true
+    }
+
+    return $false
+}
+
 function Resolve-ForcedFamilyDecisionForSlice {
     param(
         $Ledger,
@@ -3168,6 +3197,10 @@ function Resolve-ForcedFamilyDecisionForSlice {
         $sourceChain = Read-JsonObject -Path $SourceChainContractPath
         $coreStillOpen = Test-RequiredFamilyOpenInLedger -Ledger $Ledger -FamilyId 'core_entry'
         if ([bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice -and $coreStillOpen) {
+            if (-not (Test-SourceChainOverrideAllowedForForcedDecision -ForcedDecision $forced -SourceChain $sourceChain -SliceIndex $SliceIndex)) {
+                Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} source-chain override skipped | source_chain | exact_contract_slice | planned_slice_guard | preserving planned/router-selected family={1}; source-chain contract cannot override a concrete non-source-chain slice. |" -f $SliceIndex, $forced.family_id)
+                return $forced
+            }
             return [ordered]@{
                 family_id = 'core_entry'
                 slice_type = [string]$sourceChain.next_required_slice.slice_type

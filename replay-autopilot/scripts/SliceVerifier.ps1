@@ -137,6 +137,14 @@ function Get-RemediationMap {
                     priority = 'CRITICAL'
                 }
             }
+            'forbidden_dependency_drift_gap' {
+                $remediationMap['forbidden_dependency_drift_gap'] = @{
+                    fix_command = 'Return BLOCKED SLICE_RESULT when the current harness lacks dependencies; do not edit pom.xml during slice execution'
+                    expected_output_pattern = 'BLOCKED.*forbidden_dependency_drift|forbidden_dependency_drift_gap'
+                    verification = 'SLICE_VERIFY contains no forbidden_dependency_drift_gap and current_slice_changed_files has no pom.xml'
+                    priority = 'CRITICAL'
+                }
+            }
             'mock_behavior_gap' {
                 $remediationMap['mock_behavior_gap'] = @{
                     fix_command = 'Generate-BusinessAssertionTest -UseRealBehavior -RequireProductionCall'
@@ -278,6 +286,7 @@ foreach ($flag in @(
     'shallow_module',
     'synthetic_carrier_gap',
     'tooling_enforcement_stop',
+    'forbidden_dependency_drift_gap',
     'mock_behavior_gap',
     'carrier_authorization_missing',
     'carrier_authorization_stop',
@@ -318,6 +327,7 @@ $requiresCapTen = @($mustFailReasons | Where-Object {
         'subclass_only_proof',
         'empty_or_noop_production_carrier',
         'tooling_enforcement_stop',
+        'forbidden_dependency_drift_gap',
         'carrier_authorization_missing',
         'carrier_authorization_stop',
         'exact_contract_assertion_missing',

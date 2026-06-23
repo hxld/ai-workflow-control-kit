@@ -839,6 +839,7 @@ $automationGuard = @(
     '- Maven commands with `-pl <module>` must also include `-am` so reactor source modules are used instead of drifted local/remote SNAPSHOT artifacts.',
     '- In PowerShell, Maven commands containing `-Dtest`, `#`, or `-Dsurefire.failIfNoSpecifiedTests=false` should use `mvn --% ...` to avoid argument parsing false blockers.',
     '- If the target production carrier is in a module without test dependencies, place tests in an existing test-harness module; do not edit any `pom.xml` to add JUnit/Mockito/Spring Test.',
+    '- Editing `pom.xml` or any dependency configuration file during slice execution is FORBIDDEN. If existing harness dependencies are insufficient, write BLOCKED SLICE_RESULT instead of modifying pom.xml.',
     '- For TaskProcessor/rebuildTaskData/source-chain tests, do not start a full Spring context: do not extend AbstractTestClass and do not add @SpringBootTest, @RunWith(SpringJUnit4ClassRunner.class), @ContextConfiguration, or @Resource injection. Use no-Spring JUnit with Mockito/reflection and deterministic inputs.',
     '- For policyNum/insureNum rebuild slices, mock AiClaimDataAssemblyHelper.buildRequestCommon and invoke the real RequestBuildFunction with a RequestBuildContext containing policyNum and insureNum. Do not directly return a hand-built request from thenAnswer. Do not rely on fixed database caseIds or allow taskData == null to pass.',
     ''

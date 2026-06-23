@@ -880,6 +880,16 @@ if ($forceCurrentSliceNoDiffStop) {
     if ($gapFlags -notcontains 'no_progress_slice') { $gapFlags += 'no_progress_slice' }
     $coverageDelta = 0
 }
+$forbiddenDependencyDriftFiles = @($currentSliceChangedFiles | Where-Object {
+    [string]$_ -match '(^|[\\/])pom\.xml$'
+})
+if ($forbiddenDependencyDriftFiles.Count -gt 0 -and $sliceStatus -eq 'DONE') {
+    $warnings.Add("forbidden_dependency_drift_gap:$($forbiddenDependencyDriftFiles -join ';')") | Out-Null
+    if ($gapFlags -notcontains 'forbidden_dependency_drift_gap') { $gapFlags += 'forbidden_dependency_drift_gap' }
+    if ($gapFlags -notcontains 'tooling_enforcement_stop') { $gapFlags += 'tooling_enforcement_stop' }
+    $hasBehaviorEvidence = $false
+    $coverageDelta = 0
+}
 $isCoreEntrySlice = ($touchedFamilies -contains 'core_entry') -or ($closedFamilies -contains 'core_entry') -or ([string]$targetSubsurface -match '(?i)\b(entry|handler|processor|callback|route|controller)\b')
 $hasStatefulGap = @('side_effect_ledger_gap', 'needs_transaction_test', 'core_entry_unclosed') | Where-Object { $gapFlags -contains $_ }
 $hasSurfaceGap = @('executable_surface_slice_gap', 'surface_budget_gap', 'deploy_surface_lock_gap', 'deploy_surface_contract_gap', 'external_integration_sibling_gap', 'family_sibling_gap') | Where-Object { $gapFlags -contains $_ }
@@ -2109,6 +2119,7 @@ $nonAuthorizingEvidenceFlags = @(
     'shallow_module',
     'synthetic_carrier_gap',
     'tooling_enforcement_stop',
+    'forbidden_dependency_drift_gap',
     'mock_behavior_gap',
     'tdd_red_not_replayed',
     'no_progress_slice',
@@ -2192,6 +2203,7 @@ if ($hasTransactionDepthGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageC
 if ($proofTypeMismatchFamilies.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 55) }
 if ($gapFlags -contains 'mock_behavior_gap') { $coverageCap = [Math]::Min($coverageCap, 35) }
 if ($gapFlags -contains 'behavior_test_charter_gap') { $coverageCap = [Math]::Min($coverageCap, 10) }
+if ($gapFlags -contains 'forbidden_dependency_drift_gap') { $coverageCap = [Math]::Min($coverageCap, 10) }
 if (@('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence') | Where-Object { $gapFlags -contains $_ }) { $coverageCap = [Math]::Min($coverageCap, 0) }
 if ($sliceStatus -eq 'DONE' -and $redTests.Count -eq 0 -and -not $greenOnlyAcceptedByFeatureClassification) { $coverageCap = [Math]::Min($coverageCap, 55) }
 if ($hasRedPhaseDidNotFail) { $coverageCap = [Math]::Min($coverageCap, 10) }
@@ -2237,6 +2249,9 @@ if ($coverageDelta -ne $null) {
         $adjustedCoverageDelta = 0
     }
     if ($gapFlags -contains 'behavior_test_charter_gap') {
+        $adjustedCoverageDelta = 0
+    }
+    if ($gapFlags -contains 'forbidden_dependency_drift_gap') {
         $adjustedCoverageDelta = 0
     }
     if (@('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence') | Where-Object { $gapFlags -contains $_ }) {
@@ -2299,6 +2314,9 @@ foreach ($flag in @('public_response_contract_missing', 'deploy_surface_unproven
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
 if ($gapFlags -contains 'exact_contract_not_closed') { $nonAuthorizingReasons.Add('exact_contract_not_closed') | Out-Null }
+foreach ($flag in @('tooling_enforcement_stop', 'forbidden_dependency_drift_gap')) {
+    if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
+}
 # v414 TODO Blocker: TODO placeholders in production code now block slice authorization
 if ($gapFlags -contains 'todo_placeholder_exists') { $nonAuthorizingReasons.Add('todo_placeholder_exists') | Out-Null }
 $nonAuthorizingReasons = @($nonAuthorizingReasons | Select-Object -Unique)
@@ -2324,6 +2342,8 @@ $hardAuthorizationGapFlags = @(
     'no_test_execution_evidence',
     'public_response_contract_missing',
     'deploy_surface_unproven',
+    'tooling_enforcement_stop',
+    'forbidden_dependency_drift_gap',
     'exact_contract_not_closed',
     'todo_placeholder_exists'
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique

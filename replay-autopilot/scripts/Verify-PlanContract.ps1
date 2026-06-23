@@ -137,6 +137,7 @@ function Convert-SelectedRealEntryToText {
         $carrierClass = [string]$item.carrier_class
         if ([string]::IsNullOrWhiteSpace($carrierClass)) { $carrierClass = [string]$item.processor }
         $method = [string]$item.method
+        if ([string]::IsNullOrWhiteSpace($method)) { $method = [string]$item.entry_method }
         if (-not [string]::IsNullOrWhiteSpace($carrierClass) -and -not [string]::IsNullOrWhiteSpace($method)) {
             $classLeaf = ($carrierClass -split '\.')[-1]
             $entries.Add("$classLeaf.$method") | Out-Null

@@ -134,7 +134,7 @@ Phase 0 必须保持可执行 blind replay：
 - selected real entry 必须是 processor/controller/facade/worker/exporter/mapper/scheduler 等真实生产入口或其最近可执行边界。
 - 第一条 executable slice 必须从 selected real entry 触发业务行为。
 - DTO/entity/mapper/config/log/OCR/report/export/helper/static guard 都不能作为第一刀，除非它们本身就是该需求的最高权重真实入口。
-- **selected_real_entry 必须写 baseline worktree 中已存在的真实生产类名+方法签名**（如 `ExampleReceiveFacade.receiveExampleTicket(ExampleTicketParam)`）。机器校验脚本会逐字匹配，以下占位词全部禁止：`待确认`、`待 Oracle 对比确认`、`TBD`、`unknown`、`N/A`、`后续确认`、`placeholder`、`未确认`。如果无法从当前代码中找到真实入口，`phase0_status` 必须写 `BLOCKED` 并在 `required_flags` 写 `real_entry_gap`，不能写 `PROCEED`。
+- **selected_real_entry 必须写 baseline worktree 中已存在的真实生产类名+方法名**，格式必须是可解析的 `ClassName.methodName` 或 `package.ClassName.methodName`（如 `com.example.workflow.ExistingReceiveFacade.receiveTicket`）。不能只写类名、自然语言、章节标题或括号说明。机器校验脚本会逐字匹配，以下占位词全部禁止：`待确认`、`待 Oracle 对比确认`、`TBD`、`unknown`、`N/A`、`后续确认`、`placeholder`、`未确认`。如果无法从当前代码中找到真实入口，`phase0_status` 必须写 `BLOCKED` 并在 `required_flags` 写 `real_entry_gap`，不能写 `PROCEED`。
 - 新服务、新 Controller、新 Facade 或 oracle 新增类可以是实现计划里的 `planned_new_carrier`，但不能代替 Phase 0 的 `selected_real_entry`。第一刀应绑定到最近的既有生产入口或可执行边界，再由该入口驱动新增 carrier。
 
 【Minimum Stateful Core Slice 硬要求】
@@ -314,7 +314,7 @@ Hard Gate:
 
 每个 detected family 必须出现在 `families` 中。若某 family 无法执行，`planned_slice` 可为空，但必须写 `blocker` 和 `coverage_cap_if_open`。禁止把 placeholder、file-presence、DTO/entity/constant existence、mock-only test 写成可关闭 family 的 proof。
 
-**FAMILY_CONTRACT.json 的 `selected_real_entry` 必须写 baseline worktree 已存在的真实生产类名或方法签名；每个 family 的 `first_executable_carrier` 也必须写真实生产类名或方法签名，禁止写占位词**（待确认、TBD、unknown、N/A、placeholder）。如果某 family 需要新增 carrier，必须显式写 `carrier_status: NEW`、`planned_new_carrier` 或 blocker/cap；不能把 NEW/oracle-added carrier 写成 top-level `selected_real_entry`。如果无法找到真实 carrier，`blocker` 字段必须写明证据缺口，`coverage_cap_if_open` 必须设为 0。
+**FAMILY_CONTRACT.json 的 `selected_real_entry` 必须写 baseline worktree 已存在的真实生产方法级入口，格式必须是 `ClassName.methodName` 或 `package.ClassName.methodName`；每个 family 的 `first_executable_carrier` 也必须写真实生产类名或方法级入口，禁止写占位词**（待确认、TBD、unknown、N/A、placeholder）。如果某 family 需要新增 carrier，必须显式写 `carrier_status: NEW`、`planned_new_carrier` 或 blocker/cap；不能把 NEW/oracle-added carrier 写成 top-level `selected_real_entry`。如果无法找到真实 carrier，`blocker` 字段必须写明证据缺口，`coverage_cap_if_open` 必须设为 0。
 
 【Oracle Structural Alignment (Allowed Metadata Only)】
 
@@ -483,7 +483,7 @@ python scripts/plan_contract_verify.py \
 
 - phase0_status: PROCEED | INVALID_PLAN | BLOCKED
 - selected_core_path:
-- selected_real_entry:
+- selected_real_entry: <baseline-existing.package.ClassName.methodName>
 - first_executable_slice:
 - family_contract: {{REPLAY_ROOT}}\FAMILY_CONTRACT.json
 - test_surface_mapping: {{REPLAY_ROOT}}\test_surface_mapping.json
@@ -496,6 +496,8 @@ python scripts/plan_contract_verify.py \
 ```
 
 紧跟上述机器字段后，必须写独立章节：
+
+**硬要求**：`# Phase 0 Result` 下的机器字段必须逐行使用 `- field_name: value` bullet 格式，尤其 `- selected_real_entry:` 必须在该字段同一行写入可解析的 `ClassName.methodName` 或 `package.ClassName.methodName`。禁止把 selected real entry 只写在后续章节、表格、自然语言段落或 `Selected Real Entry` 标题下。
 
 ## Search Commands Used
 

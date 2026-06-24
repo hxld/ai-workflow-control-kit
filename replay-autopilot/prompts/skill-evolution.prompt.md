@@ -89,7 +89,16 @@ Runner completion artifact:
   - `- closed_machine_gates: ...` must list machine_gate values from verifiable rules that were actually closed
   - `- pushed_commit: ...` must contain the pushed knowledge repo commit hash
   - `- actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` must match the real latest knowledge version after push
-- Before writing `EVOLUTION_RESULT.md`, self-check that the required machine-readable field names appear exactly as listed above. Do not use display aliases such as `Commit`, `Knowledge Version`, `Status`, or `Verification Result`; those aliases are not parsed by `Validate-EvolutionResult.ps1`.
+- Before writing `EVOLUTION_RESULT.md`, run the following structured self-check. For each required machine field, verify that the exact bullet line exists in the EVOLUTION_RESULT.md content:
+  - `- final_status: VALIDATED_TOOLING_EVOLUTION` or `- final_status: BLOCKED_NEEDS_EVIDENCE`
+  - `- tooling_changes_applied: true`
+  - `- stop_and_evolve_satisfied: true`
+  - `- verification_results: PASS`
+  - `- changed_files: <actual changed replay-autopilot files>`
+  - `- closed_machine_gates: <machine_gate values>`
+  - `- pushed_commit: <commit hash>`
+  - `- actual_knowledge_version_after_push: v<N>`
+- Each field must be a bullet line (`- field_name: value`) under the `# Evolution Result` heading. Do not use display aliases such as `Commit`, `Knowledge Version`, `Status`, or `Verification Result`; those aliases are not parsed by `Validate-EvolutionResult.ps1`.
 - If the field-name self-check fails, fix `EVOLUTION_RESULT.md` before treating the evolution as complete. A successful tooling evolution must not rely on human-readable headings where a machine field is required.
 - If no concrete source/tooling change is applied, write `NO_VERSION_ADVANCE_REASON.md` and `EVOLUTION_RESULT.md` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`; do not edit/commit/push knowledge repo, and keep `actual_knowledge_version_after_push` equal to the real current version.
 - Write this file only after the evolution side effects are complete, so the unattended runner can treat it as the completion signal.

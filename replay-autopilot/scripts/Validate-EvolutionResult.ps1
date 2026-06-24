@@ -225,6 +225,17 @@ if ($ValidateOnly) {
             'tooling_changes_applied and verification_results are required when stop-loss asks for experiments',
             'knowledge push failure is non-blocking only when the expected knowledge version is locally committed and the working tree is clean'
         )
+        RequiredFieldsWhenStopAndEvolve = @(
+            'final_status - VALIDATED_TOOLING_EVOLUTION or BLOCKED_NEEDS_EVIDENCE',
+            'tooling_changes_applied - true',
+            'stop_and_evolve_satisfied - true',
+            'verification_results - PASS or VALIDATED',
+            'changed_files - actual replay-autopilot files changed',
+            'closed_machine_gates - machine_gate values from verifiable rules',
+            'pushed_commit - knowledge repo commit hash or local-only:hash',
+            'actual_knowledge_version_after_push - must match CURRENT_VERSION.md when an expected version is declared'
+        )
+        FieldFormatNote = 'Each required field must be a bullet line: `- field_name: value`. Do not use section headings, bold aliases, or display names.'
     } | Format-List
     exit 0
 }
@@ -378,6 +389,19 @@ if ($issues.Count -gt 0) {
     $path = Write-Result -ReplayRootFull $replayRootFull -Status 'FAIL' -Issues @($issues) -Warnings @($warnings) -StopAndEvolveRequired $true -Reason 'required_stop_and_evolve_not_satisfied'
     Write-Host "Evolution result validation FAIL: $path"
     foreach ($issue in $issues) { Write-Host " - $issue" }
+    Write-Host ''
+    Write-Host 'The EVOLUTION_RESULT.md file is missing or has incorrect required machine fields.'
+    Write-Host 'When STOP_AND_EVOLVE is required, these bullet fields must be present:'
+    Write-Host '  - final_status: VALIDATED_TOOLING_EVOLUTION (or BLOCKED_NEEDS_EVIDENCE)'
+    Write-Host '  - tooling_changes_applied: true'
+    Write-Host '  - stop_and_evolve_satisfied: true'
+    Write-Host '  - verification_results: PASS (or VALIDATED)'
+    Write-Host '  - changed_files: <actual replay-autopilot scripts/prompts/tests changed>'
+    Write-Host '  - closed_machine_gates: <machine_gate values from verifiable rules>'
+    Write-Host '  - pushed_commit: <knowledge repo commit hash or local-only:hash>'
+    Write-Host '  - actual_knowledge_version_after_push: v<N>'
+    Write-Host 'Each field must be a bullet line (`- field_name: value`), not a section heading, bold alias, or display name.'
+    Write-Host 'Edit EVOLUTION_RESULT.md to add the missing fields, then re-run Validate-EvolutionResult.ps1.'
     exit 1
 }
 

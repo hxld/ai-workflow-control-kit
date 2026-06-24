@@ -6097,8 +6097,21 @@ Do not create new production files, test files, or worktree changes.
                 -ForcedFamily 'none' `
                 -SliceType 'phase2' | Out-Null
 
-            Write-Host "BLOCKED: $blocker"
-            break
+            $finalFallbackScript = Join-Path $PSScriptRoot 'Write-FinalReplayReportFallback.ps1'
+            if (Test-Path -LiteralPath $finalFallbackScript) {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $finalFallbackScript `
+                    -ReplayRoot $replayRoot `
+                    -Worktree $worktree `
+                    -Reason $blockerReason `
+                    -Phase2ExitCode $phase2ExitCode `
+                    -Phase2LogDir (Join-Path $logs 'phase2') | Out-Null
+            }
+
+            if (-not (Test-Path -LiteralPath $finalReportPath)) {
+                Write-Host "BLOCKED: $blocker"
+                break
+            }
+            Write-Host "Recovered deterministic FINAL_REPLAY_REPORT.md after Phase 2 executor failure: $finalReportPath"
         }
     }
     if (-not (Test-Path -LiteralPath $finalReportPath)) {
@@ -6110,9 +6123,21 @@ Do not create new production files, test files, or worktree changes.
     }
 
     if (-not (Test-Path -LiteralPath $finalReportPath)) {
-        "# Autopilot Blocker`n`nPhase 2 completed without FINAL_REPLAY_REPORT.md. Inspect logs under $logs." | Set-Content -LiteralPath $blocker -Encoding UTF8
-        Write-Host "BLOCKED: $blocker"
-        break
+        $finalFallbackScript = Join-Path $PSScriptRoot 'Write-FinalReplayReportFallback.ps1'
+        if (Test-Path -LiteralPath $finalFallbackScript) {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $finalFallbackScript `
+                -ReplayRoot $replayRoot `
+                -Worktree $worktree `
+                -Reason 'phase2_completed_without_final_report' `
+                -Phase2ExitCode 0 `
+                -Phase2LogDir (Join-Path $logs 'phase2') | Out-Null
+        }
+        if (-not (Test-Path -LiteralPath $finalReportPath)) {
+            "# Autopilot Blocker`n`nPhase 2 completed without FINAL_REPLAY_REPORT.md. Inspect logs under $logs." | Set-Content -LiteralPath $blocker -Encoding UTF8
+            Write-Host "BLOCKED: $blocker"
+            break
+        }
+        Write-Host "Recovered deterministic FINAL_REPLAY_REPORT.md after missing Phase 2 completion artifact: $finalReportPath"
     }
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Parse-ReplayReport.ps1') -ReplayRoot $replayRoot

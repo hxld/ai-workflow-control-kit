@@ -243,7 +243,8 @@ function Parse-OneReplay {
         'mock_behavior_gap',
         'helper_only_surface_gap',
         'implementation_after_blocked_red',
-        'behavior_test_charter_gap'
+        'behavior_test_charter_gap',
+        'phase2_executor_blocker'
     )
 
     $flagCounts = [ordered]@{}
@@ -344,6 +345,26 @@ function Parse-OneReplay {
             'behavior_test_coverage'
         }
     }
+    $explicitRequiresEvolution = Get-FirstText $combined @(
+        '(?m)^\s*-?\s*`?requires_evolution`?\s*[:=]\s*`?([A-Za-z0-9_+-]+)`?',
+        '(?m)^\s*-?\s*requires evolution\s*[:=]\s*`?([A-Za-z0-9_+-]+)`?'
+    )
+    $explicitEvolutionType = Get-FirstText $combined @(
+        '(?m)^\s*-?\s*`?evolution_type`?\s*[:=]\s*`?([A-Za-z0-9_-]+)`?',
+        '(?m)^\s*-?\s*evolution type\s*[:=]\s*`?([A-Za-z0-9_-]+)`?'
+    )
+    if ($explicitRequiresEvolution -and $explicitRequiresEvolution.Trim() -match '^(?i:true|yes|1)$') {
+        $requiresEvolution = $true
+    }
+    if ($combined -match '(?m)^\s*-?\s*`?phase2_fallback_used`?\s*[:=]\s*`?(?i:true|yes|1)`?' -or $flagCounts['phase2_executor_blocker'] -gt 0) {
+        $requiresEvolution = $true
+        if ($evolutionType -eq 'none') {
+            $evolutionType = 'phase2_executor_fallback'
+        }
+    }
+    if ($explicitEvolutionType) {
+        $evolutionType = $explicitEvolutionType
+    }
 
     return [pscustomobject]@{
         ReplayRoot = $Root
@@ -412,6 +433,7 @@ $productizedGateMap = @{
     implementation_after_blocked_red = 'Executable Evidence Gate'
     behavior_test_charter_gap = 'Executable Evidence Gate'
     executable_surface_slice_gap = 'Surface Coverage Gate'
+    phase2_executor_blocker = 'Evolution Abstraction Gate'
 }
 
 foreach ($result in $results) {

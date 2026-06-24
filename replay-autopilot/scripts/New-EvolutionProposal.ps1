@@ -146,6 +146,10 @@ $flagMap = [ordered]@{
         Gate = 'Surface Coverage Gate'
         Recommendation = 'Plan oracle high-weight production file coverage is below the 70% threshold. Core service, facade, and flow files must be covered before proceeding. The evolution proposal should flag this as tooling-evolution-needed.'
     }
+    phase2_executor_blocker = [pscustomobject]@{
+        Gate = 'Evolution Abstraction Gate'
+        Recommendation = 'Phase2 executor failure prevented the normal final report/oracle path. Preserve deterministic fallback reporting, keep oracle credit at zero, and route the run into tooling evolution instead of stranding unattended control.'
+    }
 }
 
 $detected = @(foreach ($key in $flagMap.Keys) {
@@ -161,6 +165,8 @@ $detected = @(foreach ($key in $flagMap.Keys) {
             'workflow-gate-needs-evolution'
         } elseif (@('exact_contract_gap', 'executable_surface_slice_gap', 'core_entry_unclosed', 'real_entry_gap', 'side_effect_ledger_gap', 'needs_transaction_test', 'wrong_test_surface', 'shallow_module', 'feedback_loop_blocker', 'mock_behavior_gap', 'helper_only_surface_gap', 'surface_budget_gap') -contains $key) {
             'already-covered-but-not-enforced'
+        } elseif (@('phase2_executor_blocker') -contains $key) {
+            'tooling-evolution-needed'
         } else {
             'needs-more-replay-evidence'
         }

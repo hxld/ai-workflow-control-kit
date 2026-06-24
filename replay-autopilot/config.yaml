@@ -39,6 +39,8 @@ executor: claude
 require_executor: claude
 allow_codex_executor: false
 executor_timeout_minutes: 240
+executor_resource_preflight_probe: false
+executor_resource_preflight_bypass: false
 maven_settings:
 codex_sandbox: danger-full-access
 codex_approval: never

@@ -422,6 +422,8 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
 4. 禁止直接写 `REQUIREMENT_FAMILY_LEDGER.json` 或 `{{SLICE_VERIFY}}`；这两个文件由 runner/verifier 统一生成。
 
 【SLICE_RESULT JSON schema】
+CRITICAL: Every entry in the `tests[]` array MUST include the `command` field with the exact Maven command executed (e.g., `mvn -f <pom> -Dtest=<Class> -am test`). Evidence-only entries without `command` are REJECTED by the verifier and will cause authorization failure and slice blocking. The `evidence` field supplements the command with descriptive text; it does not replace the command.
+
 ```json
 {
   "slice_index": {{SLICE_INDEX}},
@@ -450,7 +452,7 @@ verifier 将在 GREEN 阶段前运行 `verify_green_phase.py`：
   "current_slice_changed_files": [],
   "round_changed_files_snapshot": [],
   "tests": [
-    {"command": "", "phase": "RED|GREEN|VERIFY", "result": "pass|fail|blocked", "evidence": ""}
+    {"command": "MANDATORY", "phase": "RED|GREEN|VERIFY", "result": "pass|fail|blocked", "evidence": ""}
   ],
   "exact_contract_assertions": [
     {"literal": "", "symbol_or_field": "", "db_or_wire_or_display": "", "boundary_type": "wire|db|display|payload|callback|behavior", "production_boundary": "", "closure_proof": "", "production_predicate": "", "forbidden_extra_predicate": "", "test_assertion": "", "source_type": "requirement|code_fact", "status": "CLOSED|BLOCKED"}

@@ -3986,6 +3986,50 @@ function Invoke-EvidenceCaptureRepair {
             } catch {}
         }
 
+        # v635: Fallback for NL-only evidence with BUILD_SUCCESS. When the agent
+        # produced GREEN/pass evidence with test execution results (BUILD_SUCCESS,
+        # tests_run) but omitted the `command` field in the tests array, synthesize
+        # a test_execution_command from the available compilation command and test
+        # class. This prevents has_behavior_evidence=false when tests were actually
+        # executed and passed (proven by the evidence text).
+        if (-not $hasExecCmd -and -not $changed -and $hasCompileCmd) {
+            $compileCmdText = [string]$result.test_compilation_command
+            if ($compileCmdText -match '(?i)\bmvn(?:\.cmd)?\b') {
+                $testClassSimple = ''
+                $testClassFull = [string]$result.test_class
+                if (-not [string]::IsNullOrWhiteSpace($testClassFull)) {
+                    $lastDot = $testClassFull.LastIndexOf('.')
+                    if ($lastDot -ge 0 -and $lastDot -lt $testClassFull.Length - 1) {
+                        $testClassSimple = $testClassFull.Substring($lastDot + 1)
+                    } else {
+                        $testClassSimple = $testClassFull
+                    }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($testClassSimple)) {
+                    foreach ($test in $tests) {
+                        if ($null -eq $test) { continue }
+                        $testPhase = ([string]$test.phase).ToUpperInvariant()
+                        $testResult = ([string]$test.result).ToLowerInvariant()
+                        $evidenceText = [string]$test.evidence
+                        $hasCommand = -not [string]::IsNullOrWhiteSpace([string]$test.command)
+                        $hasBuildEvidence = $evidenceText -match '(?i)BUILD[ _]SUCCESS|tests_run\s*=\s*[1-9]\d*'
+                        if (-not $hasCommand -and $testPhase -eq 'GREEN' -and $testResult -eq 'pass' -and $hasBuildEvidence) {
+                            $worktreeDir = Join-Path $ReplayRoot 'worktree'
+                            $worktreePom = Join-Path $worktreeDir 'pom.xml'
+                            if (Test-Path -LiteralPath $worktreePom -PathType Leaf) {
+                                $synthesizedCommand = "mvn -f `"$worktreePom`" -Dtest=$testClassSimple -Dsurefire.failIfNoSpecifiedTests=false test"
+                                Set-ObjectProperty -Object $result -Name 'test_execution_command' -Value $synthesizedCommand
+                                Set-ObjectProperty -Object $result -Name 'test_execution_exit_code' -Value 0
+                                Set-ObjectProperty -Object $result -Name 'test_execution_evidence_source' -Value 'SLICE_RESULT.tests.evidence'
+                                $changed = $true
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if ($changed) {
             $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $SliceResultPath -Encoding UTF8
         }

@@ -4649,6 +4649,25 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
                 -BestOracleCoverage $bestOracleCoverage `
                 -NoImprovementCount $noImprovementCount `
                 -RunEvolutionActual $runEvolutionActual
+            if (Invoke-EarlyStopEvolutionAndRefresh `
+                -ReplayRoot $replayRoot `
+                -LogsRoot $logs `
+                -BlockerPath $blocker `
+                -ScriptRoot $scriptRoot `
+                -ProjectRoot $projectRoot `
+                -KnowledgeRepo $knowledgeRepo `
+                -Config $config `
+                -RunEvolutionActual $runEvolutionActual `
+                -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+                -Executor $executorActual `
+                -Sandbox $sandbox `
+                -Approval $approval `
+                -TimeoutMinutes $timeoutMinutes `
+                -EvolutionModel $evolutionModel `
+                -EvolutionReasoningEffort $evolutionReasoningEffort `
+                -RefreshReason 'plan artifact repair-failure evolution') {
+                continue
+            }
             Write-Host "Plan artifact repair failed, stopping: $reason"
             break
         }
@@ -5335,6 +5354,25 @@ Do not create new production files, test files, or worktree changes.
             -BestOracleCoverage $bestOracleCoverage `
             -NoImprovementCount $noImprovementCount `
             -RunEvolutionActual $runEvolutionActual
+        if (Invoke-EarlyStopEvolutionAndRefresh `
+            -ReplayRoot $replayRoot `
+            -LogsRoot $logs `
+            -BlockerPath $blocker `
+            -ScriptRoot $scriptRoot `
+            -ProjectRoot $projectRoot `
+            -KnowledgeRepo $knowledgeRepo `
+            -Config $config `
+            -RunEvolutionActual $runEvolutionActual `
+            -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+            -Executor $executorActual `
+            -Sandbox $sandbox `
+            -Approval $approval `
+            -TimeoutMinutes $timeoutMinutes `
+            -EvolutionModel $evolutionModel `
+            -EvolutionReasoningEffort $evolutionReasoningEffort `
+            -RefreshReason 'oracle analysis gate evolution') {
+            continue
+        }
         Write-Host $oracleGateReason
         break
     }
@@ -5569,6 +5607,25 @@ Do not create new production files, test files, or worktree changes.
             -NoImprovementCount $noImprovementCount `
             -RunEvolutionActual $runEvolutionActual `
             -StopStage 'PrePhase1WorktreeClean'
+        if (Invoke-EarlyStopEvolutionAndRefresh `
+            -ReplayRoot $replayRoot `
+            -LogsRoot $logs `
+            -BlockerPath $blocker `
+            -ScriptRoot $scriptRoot `
+            -ProjectRoot $projectRoot `
+            -KnowledgeRepo $knowledgeRepo `
+            -Config $config `
+            -RunEvolutionActual $runEvolutionActual `
+            -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+            -Executor $executorActual `
+            -Sandbox $sandbox `
+            -Approval $approval `
+            -TimeoutMinutes $timeoutMinutes `
+            -EvolutionModel $evolutionModel `
+            -EvolutionReasoningEffort $evolutionReasoningEffort `
+            -RefreshReason 'pre-phase1 worktree clean evolution') {
+            continue
+        }
         Write-Host "Pre-Phase1 worktree clean gate blocked replay: $reason"
         break
     }
@@ -5674,6 +5731,26 @@ Do not create new production files, test files, or worktree changes.
                 -NoImprovementCount $noImprovementCount `
                 -RunEvolutionActual $runEvolutionActual `
                 -StopStage 'Preflight'
+
+            if (Invoke-EarlyStopEvolutionAndRefresh `
+                -ReplayRoot $replayRoot `
+                -LogsRoot $logs `
+                -BlockerPath $blocker `
+                -ScriptRoot $scriptRoot `
+                -ProjectRoot $projectRoot `
+                -KnowledgeRepo $knowledgeRepo `
+                -Config $config `
+                -RunEvolutionActual $runEvolutionActual `
+                -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+                -Executor $executorActual `
+                -Sandbox $sandbox `
+                -Approval $approval `
+                -TimeoutMinutes $timeoutMinutes `
+                -EvolutionModel $evolutionModel `
+                -EvolutionReasoningEffort $evolutionReasoningEffort `
+                -RefreshReason 'preflight test-compilation evolution') {
+                continue
+            }
 
             break
         }
@@ -5789,6 +5866,25 @@ Do not create new production files, test files, or worktree changes.
                     -NoImprovementCount $noImprovementCount `
                     -RunEvolutionActual $runEvolutionActual `
                     -StopStage 'Phase1'
+                if (Invoke-EarlyStopEvolutionAndRefresh `
+                    -ReplayRoot $replayRoot `
+                    -LogsRoot $logs `
+                    -BlockerPath $blocker `
+                    -ScriptRoot $scriptRoot `
+                    -ProjectRoot $projectRoot `
+                    -KnowledgeRepo $knowledgeRepo `
+                    -Config $config `
+                    -RunEvolutionActual $runEvolutionActual `
+                    -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+                    -Executor $executorActual `
+                    -Sandbox $sandbox `
+                    -Approval $approval `
+                    -TimeoutMinutes $timeoutMinutes `
+                    -EvolutionModel $evolutionModel `
+                    -EvolutionReasoningEffort $evolutionReasoningEffort `
+                    -RefreshReason 'phase1 init-failure evolution') {
+                    continue
+                }
             }
             Write-Host "BLOCKED: $blocker"
             break
@@ -5821,6 +5917,25 @@ Do not create new production files, test files, or worktree changes.
             -NoImprovementCount $noImprovementCount `
             -RunEvolutionActual $runEvolutionActual `
             -StopStage 'Phase1'
+        if (Invoke-EarlyStopEvolutionAndRefresh `
+            -ReplayRoot $replayRoot `
+            -LogsRoot $logs `
+            -BlockerPath $blocker `
+            -ScriptRoot $scriptRoot `
+            -ProjectRoot $projectRoot `
+            -KnowledgeRepo $knowledgeRepo `
+            -Config $config `
+            -RunEvolutionActual $runEvolutionActual `
+            -UseLatestKnowledgeVersionActual ([bool]$UseLatestKnowledgeVersion) `
+            -Executor $executorActual `
+            -Sandbox $sandbox `
+            -Approval $approval `
+            -TimeoutMinutes $timeoutMinutes `
+            -EvolutionModel $evolutionModel `
+            -EvolutionReasoningEffort $evolutionReasoningEffort `
+            -RefreshReason 'phase1 missing-round-result evolution') {
+            continue
+        }
         Write-Host "BLOCKED: $blocker"
         break
     }

@@ -279,6 +279,92 @@ function Invoke-SliceResultSchemaNormalization {
         }
     }
 
+    # === Post-processing: red_result/green_result flat strings ===
+    # Some agents emit red_result and green_result as flat free-text strings
+    # rather than structured red_phase/green_phase objects. These must be
+    # injected into the tests[] array as RED/GREEN entries regardless of
+    # whether an earlier pass (test_result->GREEN) already populated tests[].
+    # Use $Slice.tests direct access to avoid PSObject.Properties indexer
+    # edge case with single-element arrays.
+    $existingTests = @()
+    if ($null -ne $Slice -and $null -ne $Slice.tests) {
+        $rawValue = $Slice.tests
+        if ($rawValue -is [System.Collections.IList]) {
+            $existingTests = @($rawValue)
+        } elseif ($rawValue -is [System.Management.Automation.PSCustomObject]) {
+            $existingTests = @($rawValue)
+        }
+    }
+    $hasRedPhaseInTests = $false
+    $hasGreenPhaseInTests = $false
+    foreach ($entry in $existingTests) {
+        $phase = if ($null -ne $entry.phase) { [string]$entry.phase } else { '' }
+        if ($phase.ToUpperInvariant() -eq 'RED') { $hasRedPhaseInTests = $true }
+        if ($phase.ToUpperInvariant() -eq 'GREEN') { $hasGreenPhaseInTests = $true }
+    }
+    $currentTests = @($existingTests)
+
+    $redResultValue = Get-SliceResultStringValue -Object $Slice -Name 'red_result'
+    $greenResultValue = Get-SliceResultStringValue -Object $Slice -Name 'green_result'
+    $command = Get-SliceResultStringValue -Object $Slice -Name 'test_execution_command'
+    if ([string]::IsNullOrWhiteSpace($command)) { $command = Get-SliceResultStringValue -Object $Slice -Name 'test_command' }
+
+    $testsAppended = $false
+    if (-not $hasRedPhaseInTests -and -not [string]::IsNullOrWhiteSpace($redResultValue)) {
+        $entry = [ordered]@{
+            phase = 'RED'
+            result = 'fail'
+            evidence = $redResultValue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($command)) {
+            $entry.command = $command
+        }
+        $currentTests += [pscustomobject]$entry
+        $normalizedFields.Add('tests:red_result_flat_string') | Out-Null
+        $testsAppended = $true
+    }
+
+    if (-not $hasGreenPhaseInTests -and -not [string]::IsNullOrWhiteSpace($greenResultValue)) {
+        $entry = [ordered]@{
+            phase = 'GREEN'
+            result = 'pass'
+            evidence = $greenResultValue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($command)) {
+            $entry.command = $command
+        }
+        $currentTests += [pscustomobject]$entry
+        $normalizedFields.Add('tests:green_result_flat_string') | Out-Null
+        $testsAppended = $true
+    }
+
+    if ($testsAppended) {
+        Set-SliceResultProperty -Object $Slice -Name 'tests' -Value @($currentTests)
+    }
+
+    # === Map build_status to test_compilation_exit_code ===
+    # Some agents emit build_status ("SUCCESS"/"FAILURE") instead of
+    # test_compilation_exit_code. Normalize this so the executable
+    # evidence gate can evaluate compilation evidence.
+    $buildStatus = Get-SliceResultStringValue -Object $Slice -Name 'build_status'
+    $existingCompileExit = Get-SliceResultIntValueOrNull -Object $Slice -Name 'test_compilation_exit_code'
+    $hasCompileExitCode = ($null -ne $existingCompileExit)
+    if (-not $hasCompileExitCode -and -not [string]::IsNullOrWhiteSpace($buildStatus)) {
+        $upperBuild = $buildStatus.ToUpperInvariant()
+        $mappedExitCode = $null
+        if ($upperBuild -match '^(SUCCESS|SUCCEEDED|PASSED|PASS|COMPLETED|DONE)$') {
+            $mappedExitCode = 0
+        } elseif ($upperBuild -match '^(FAIL(?:URE|ED)?|ERROR|BUILD_FAILURE)$') {
+            $mappedExitCode = 1
+        }
+        if ($null -ne $mappedExitCode) {
+            Set-SliceResultProperty -Object $Slice -Name 'test_compilation_exit_code' -Value $mappedExitCode
+            Set-SliceResultProperty -Object $Slice -Name 'test_compilation_evidence' -Value ($mappedExitCode -eq 0)
+            Set-SliceResultProperty -Object $Slice -Name 'test_compilation_evidence_source' -Value 'build_status'
+            $normalizedFields.Add('test_compilation_exit_code:build_status') | Out-Null
+        }
+    }
+
     if ($normalizedFields.Count -gt 0) {
         Add-SliceResultGapFlag -Slice $Slice -Flag 'agent_result_schema_normalized'
         Set-SliceResultProperty -Object $Slice -Name 'schema_normalization' -Value ([ordered]@{

@@ -1261,6 +1261,123 @@ function Ensure-PlanTestCompileEvidence {
     Sync-PlanTestCompileEvidenceContract -Plan $plan -Infra $infra -PlanResultJsonPath $PlanResultJsonPath -EvidencePath $evidencePath | Out-Null
 }
 
+function Invoke-PlanPythonContractVerification {
+    param(
+        [string]$ReplayRoot,
+        [string]$PlanResultJsonPath,
+        [string]$ProjectRoot
+    )
+
+    $oracleFilesPath = Join-Path $ReplayRoot 'ORACLE_FILES.json'
+    $oracleContractsPath = Join-Path $ReplayRoot 'ORACLE_CONTRACTS.json'
+    $firstSliceProofPath = Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md'
+    $pythonVerifyScript = Join-Path $PSScriptRoot 'plan_contract_verify.py'
+    $result = [ordered]@{
+        attempted = $false
+        exit_code = 0
+        output_tail = ''
+        script = $pythonVerifyScript
+    }
+
+    if (-not ((Test-Path -LiteralPath $PlanResultJsonPath) -and (Test-Path -LiteralPath $oracleFilesPath) -and (Test-Path -LiteralPath $pythonVerifyScript))) {
+        return [pscustomobject]$result
+    }
+
+    $pythonExe = 'python3'
+    $pythonCheck = Get-Command $pythonExe -ErrorAction SilentlyContinue
+    if ($null -eq $pythonCheck) { $pythonExe = 'python' }
+    $pythonArgs = @(
+        $pythonVerifyScript,
+        $PlanResultJsonPath,
+        $oracleFilesPath,
+        'strict-blind',
+        $ProjectRoot,
+        $oracleContractsPath,
+        $firstSliceProofPath,
+        '--enable_carrier_verify',
+        '--enable_exact_contract_verify'
+    )
+    $pythonOutput = & $pythonExe @pythonArgs 2>&1
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    $outputText = ($pythonOutput | Out-String)
+    if ($outputText.Length -gt 4000) {
+        $outputText = $outputText.Substring($outputText.Length - 4000)
+    }
+
+    $result.attempted = $true
+    $result.exit_code = $exitCode
+    $result.output_tail = $outputText
+    return [pscustomobject]$result
+}
+
+function Invoke-PlanVerificationBundle {
+    param(
+        [string]$ReplayRoot,
+        [string]$Worktree,
+        [string]$PlanResultJsonPath,
+        [string]$MavenSettings,
+        [string]$ProjectRoot,
+        [string]$SummaryPath,
+        [string]$Reason = 'plan verification bundle'
+    )
+
+    $summary = [ordered]@{
+        schema = 'plan_verification_bundle.v1'
+        reason = $Reason
+        replay_root = $ReplayRoot
+        plan_result_json = $PlanResultJsonPath
+        generated_at = (Get-Date -Format 'o')
+        machine_normalizer_exit_code = $null
+        test_compile_evidence_refreshed = $false
+        schema_failfast_exit_code = $null
+        powershell_verify_exit_code = $null
+        python_verify = $null
+        verification_status = 'FAIL'
+    }
+
+    $planMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
+    if (Test-Path -LiteralPath $planMachineNormalizer -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $planMachineNormalizer `
+            -ReplayRoot $ReplayRoot `
+            -PlanResultPath $PlanResultJsonPath `
+            -FirstSliceProofPath (Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md') | Out-Null
+        $summary.machine_normalizer_exit_code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    }
+
+    Ensure-PlanTestCompileEvidence -ReplayRoot $ReplayRoot -Worktree $Worktree -PlanResultJsonPath $PlanResultJsonPath -MavenSettings $MavenSettings | Out-Null
+    $summary.test_compile_evidence_refreshed = $true
+
+    $schemaScript = Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1'
+    if (Test-Path -LiteralPath $schemaScript -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $schemaScript -ReplayRoot $ReplayRoot -PlanResultPath $PlanResultJsonPath -Worktree $Worktree | Out-Null
+        $summary.schema_failfast_exit_code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    }
+
+    $verifyScript = Join-Path $PSScriptRoot 'Verify-PlanContract.ps1'
+    if (Test-Path -LiteralPath $verifyScript -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript -ReplayRoot $ReplayRoot -Stage Plan | Out-Null
+        $summary.powershell_verify_exit_code = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    } else {
+        $summary.powershell_verify_exit_code = 1
+    }
+
+    $pythonVerify = Invoke-PlanPythonContractVerification -ReplayRoot $ReplayRoot -PlanResultJsonPath $PlanResultJsonPath -ProjectRoot $ProjectRoot
+    $summary.python_verify = $pythonVerify
+
+    $schemaPass = ($null -eq $summary.schema_failfast_exit_code -or [int]$summary.schema_failfast_exit_code -eq 0)
+    $normalizerPass = ($null -eq $summary.machine_normalizer_exit_code -or [int]$summary.machine_normalizer_exit_code -eq 0)
+    $powershellPass = ([int]$summary.powershell_verify_exit_code -eq 0)
+    $pythonPass = (-not [bool]$pythonVerify.attempted) -or ([int]$pythonVerify.exit_code -eq 0)
+    if ($normalizerPass -and $schemaPass -and $powershellPass -and $pythonPass) {
+        $summary.verification_status = 'PASS'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SummaryPath)) {
+        $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $SummaryPath -Encoding UTF8
+    }
+    return [pscustomobject]$summary
+}
+
 function Repair-Phase0ManualOracleWaitText {
     param([string]$ReplayRoot)
 
@@ -4776,23 +4893,12 @@ Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If reject
     $planContractVerifyExit = $LASTEXITCODE
 
     # v459: Run Python plan_contract_verify.py for additional V457 schema and layer validation
-    $planResultPath = Join-Path $replayRoot 'PLAN_RESULT.json'
-    $oracleFilesPath = Join-Path $replayRoot 'ORACLE_FILES.json'
-    $oracleContractsPath = Join-Path $replayRoot 'ORACLE_CONTRACTS.json'
-    $firstSliceProofPath = Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md'
-    $pythonVerifyScript = Join-Path $PSScriptRoot 'plan_contract_verify.py'
-    if ((Test-Path -LiteralPath $planResultPath) -and (Test-Path -LiteralPath $oracleFilesPath) -and (Test-Path -LiteralPath $pythonVerifyScript)) {
-        $pythonExe = 'python3'
-        $pythonCheck = Get-Command $pythonExe -ErrorAction SilentlyContinue
-        if ($null -eq $pythonCheck) { $pythonExe = 'python' }
-        $pythonArgs = @($pythonVerifyScript, $planResultPath, $oracleFilesPath, 'strict-blind', $projectRoot, $oracleContractsPath, $firstSliceProofPath, '--enable_carrier_verify', '--enable_exact_contract_verify')
-        $pythonOutput = & $pythonExe @pythonArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            # Python verification failed, merge into PLAN_CONTRACT_VERIFY.json
-            Write-Host "Python plan_contract_verify.py failed: $pythonOutput"
-            # Update exit code if PowerShell passed but Python failed
-            if ($planContractVerifyExit -eq 0) { $planContractVerifyExit = 1 }
-        }
+    $planResultJsonForPython = Join-Path $replayRoot 'PLAN_RESULT.json'
+    $pythonPlanVerify = Invoke-PlanPythonContractVerification -ReplayRoot $replayRoot -PlanResultJsonPath $planResultJsonForPython -ProjectRoot $projectRoot
+    if ([bool]$pythonPlanVerify.attempted -and [int]$pythonPlanVerify.exit_code -ne 0) {
+        Write-Host "Python plan_contract_verify.py failed: $($pythonPlanVerify.output_tail)"
+        # Update exit code if PowerShell passed but Python failed.
+        if ($planContractVerifyExit -eq 0) { $planContractVerifyExit = 1 }
     }
     if ($planContractVerifyExit -ne 0) {
         $initialVerifyText = Read-TextIfExists $planContractVerify
@@ -4986,22 +5092,39 @@ Do not create new production files, test files, or worktree changes.
         $contractRepairArgs = Add-AgentModelArgs -BaseArgs $contractRepairArgs -Model $planModel -ReasoningEffort $planReasoningEffort
         Write-Host "Plan contract verification failed. Starting contract repair pass."
         & powershell @contractRepairArgs
-        $contractRepairExit = $LASTEXITCODE
+        $contractRepairExit = if ($null -eq $LASTEXITCODE) { 1 } else { [int]$LASTEXITCODE }
         Write-Host "Plan contract repair pass exit code: $contractRepairExit"
+        $contractRepairExecPath = Join-Path $contractRepairLogDir 'plan-contract-repair.exec.json'
+        $contractRepairProofPath = Join-Path $contractRepairLogDir 'plan-contract-repair.proofspec.json'
+        $contractRepairExecutionVerifyPath = Join-Path $replayRoot 'PLAN_CONTRACT_REPAIR_EXECUTION_VERIFY.json'
+        [ordered]@{
+            schema = 'plan_contract_repair_execution_verify.v1'
+            stage = 'PlanContractRepair'
+            exit_code = $contractRepairExit
+            completion_path = $contractRepairResultPath
+            completion_exists = (Test-Path -LiteralPath $contractRepairResultPath -PathType Leaf)
+            exec_metadata_path = $contractRepairExecPath
+            exec_metadata_exists = (Test-Path -LiteralPath $contractRepairExecPath -PathType Leaf)
+            proof_spec_path = $contractRepairProofPath
+            proof_spec_exists = (Test-Path -LiteralPath $contractRepairProofPath -PathType Leaf)
+            status = if ($contractRepairExit -eq 0 -and (Test-Path -LiteralPath $contractRepairProofPath -PathType Leaf) -and (Test-Path -LiteralPath $contractRepairResultPath -PathType Leaf)) { 'PASS' } else { 'FAIL' }
+            generated_at = (Get-Date -Format 'o')
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $contractRepairExecutionVerifyPath -Encoding UTF8
+        if ($contractRepairExit -ne 0) {
+            Write-Warning "Plan contract repair executor did not complete cleanly; final plan verification will decide whether replay can continue. Inspect $contractRepairExecutionVerifyPath."
+        }
         Resolve-PlanArtifactWorktreeLeak -ReplayRoot $replayRoot -Worktree $worktree -ArtifactNames $planArtifacts -Stage 'PlanContractRepair' | Out-Null
 
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Verify-PlanContract.ps1') -ReplayRoot $replayRoot -Stage Plan | Out-Null
-        $planContractVerifyExit = $LASTEXITCODE
-        $postRepairPlanMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
-        if (Test-Path -LiteralPath $postRepairPlanMachineNormalizer -PathType Leaf) {
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $postRepairPlanMachineNormalizer `
-                -ReplayRoot $replayRoot `
-                -PlanResultPath $planMachineContractPath `
-                -FirstSliceProofPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Post-repair plan machine contract normalization failed with exit code $LASTEXITCODE."
-            }
-        }
+        $postRepairVerify = Invoke-PlanVerificationBundle `
+            -ReplayRoot $replayRoot `
+            -Worktree $worktree `
+            -PlanResultJsonPath $planMachineContractPath `
+            -MavenSettings $mavenSettings `
+            -ProjectRoot $projectRoot `
+            -SummaryPath (Join-Path $replayRoot 'PLAN_CONTRACT_REPAIR_VERIFY.json') `
+            -Reason 'post plan contract repair'
+        $planContractVerifyExit = if ([string]$postRepairVerify.verification_status -eq 'PASS') { 0 } else { 1 }
+        Write-Host "Post-repair plan verification status: $($postRepairVerify.verification_status)"
     }
     if ($planContractVerifyExit -ne 0) {
         $verifyText = Read-TextIfExists $planContractVerify

@@ -158,6 +158,40 @@ function Convert-SelectedRealEntryToText {
     return (@($entries.ToArray()) -join ', ')
 }
 
+function Get-CarrierNameForExistenceCheck {
+    param([string]$CarrierText)
+
+    if ([string]::IsNullOrWhiteSpace($CarrierText)) { return '' }
+
+    $trimmed = $CarrierText.Trim().Trim('`').Trim()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) { return '' }
+
+    # Carrier search often records concrete evidence as
+    # "module/path/Foo.java:123 Foo.method". Existence checks must validate Foo,
+    # not the first path segment.
+    $javaPathMatch = [regex]::Match($trimmed, '(?i)(?:^|[\\/])([A-Za-z_$][A-Za-z0-9_$]*)\.java\b')
+    if ($javaPathMatch.Success) {
+        return $javaPathMatch.Groups[1].Value
+    }
+
+    $javaLeafMatch = [regex]::Match($trimmed, '(?i)^([A-Za-z_$][A-Za-z0-9_$]*)\.java\b')
+    if ($javaLeafMatch.Success) {
+        return $javaLeafMatch.Groups[1].Value
+    }
+
+    $methodCarrierMatch = [regex]::Match($trimmed, '\b([A-Za-z_$][A-Za-z0-9_$]*)[#.]([A-Za-z_$][A-Za-z0-9_$]*)\b')
+    if ($methodCarrierMatch.Success) {
+        return $methodCarrierMatch.Groups[1].Value
+    }
+
+    $plainMatch = [regex]::Match($trimmed, '^([A-Za-z_$][A-Za-z0-9_$]*)')
+    if ($plainMatch.Success) {
+        return $plainMatch.Groups[1].Value
+    }
+
+    return (($trimmed -split '[#(\s\.]')[0]).Trim()
+}
+
 function Test-PolicySpringHarnessResidue {
     param([string]$Text)
 
@@ -1285,13 +1319,7 @@ if ($Stage -eq 'Phase0') {
     }
     # v406: Normalize carrier name for matching - strip method names like ".save", ".update" etc.
     # This handles cases like "AiClaimModuleConfigService.save" matching "AiClaimModuleConfigService.java"
-    $carrierBaseNameForMatch = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
-        if ($selectedCarrierFromSearch -match '^([A-Za-z0-9_$]+)') {
-            $matches[1]
-        } else {
-            ($selectedCarrierFromSearch -split '[#(\s\.]')[0].Trim()
-        }
-    } else { '' }
+    $carrierBaseNameForMatch = Get-CarrierNameForExistenceCheck -CarrierText $selectedCarrierFromSearch
 
     if (-not $newServiceIsTrue -and
         -not [string]::IsNullOrWhiteSpace($existingProductionCarriers) -and
@@ -1306,19 +1334,14 @@ if ($Stage -eq 'Phase0') {
     # v382: Enhanced with retry logic and Get-ChildItem fallback for robustness
     # v391: Skip existence check for new services (new_service_proposed=true)
     $carrierNameForExistenceCheck = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
-        # Extract carrier name before first delimiter (#, ., (, or whitespace)
-        if ($selectedCarrierFromSearch -match '^([A-Za-z0-9_$]+)') {
-            $matches[1]
-        } else {
-            ($selectedCarrierFromSearch -split '[#(\s\.]')[0].Trim()
-        }
+        Get-CarrierNameForExistenceCheck -CarrierText $selectedCarrierFromSearch
     } elseif (-not [string]::IsNullOrWhiteSpace($planFields['first_slice'])) {
         # Try to extract carrier from first_slice if selected_carrier_from_search is missing
         $firstSliceValue = $planFields['first_slice']
         if ($firstSliceValue -match '([A-Za-z0-9_.$]+)[#\.]') {
             $matches[1]
         } else {
-            $firstSliceValue
+            Get-CarrierNameForExistenceCheck -CarrierText $firstSliceValue
         }
     } else {
         ''

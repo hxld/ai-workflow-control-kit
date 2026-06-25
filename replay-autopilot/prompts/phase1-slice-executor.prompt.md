@@ -78,11 +78,21 @@
 
 Before implementation, produce exactly one state in your slice reasoning and final `SLICE_RESULT`: `RUNNABLE_FIRST_SLICE` or `BLOCKED_NO_RUNNABLE_SLICE`. Do not implement until `{{RUNNABLE_SLICE_AUTHORIZATION}}` has `status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `red_command`/`green_command`; `{{CALLABLE_CARRIER_AUTHORIZATION}}` has `authorization_status=AUTHORIZED`; `{{TEST_CHARTER_CONTRACT}}` has `status=AUTHORIZED` when the slice is stateful or deploy-facing; `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true`; and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. A named test file or method without an executable Maven command using `-f {{WORKTREE}}\pom.xml` is not a slice plan. If any authorization file is absent, blocked, or non-authorizing, write `BLOCKED_NO_RUNNABLE_SLICE` / pre-slice blocker evidence instead of starting RED/GREEN work.
 
-For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory machine input before editing files. It must have `contract_status=AUTHORIZED` and non-empty `production_entry_qn`, `entry_invocation_method`, `required_side_effects`, `business_red_assertion`, `negative_guard_assertion`, `forbidden_test_surfaces`, `allowed_mock_boundaries`, and `maven_test_command_template`; otherwise write `BLOCKED_NO_RUNNABLE_SLICE` and do not start RED/GREEN work.
+For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory machine input before editing files. It must have `contract_status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `real_entry_fqn`, `test_harness_module`, `test_class`, `test_method`, `maven_test_command_template`, `red_command`, `green_command`, `expected_red_failure`, `green_business_assertion`, `production_entry_qn`, `entry_invocation_method`, `required_side_effects`, `business_red_assertion`, `negative_guard_assertion`, `forbidden_test_surfaces`, and `allowed_mock_boundaries`; otherwise write `BLOCKED_NO_RUNNABLE_SLICE` and do not start RED/GREEN work.
+
+Before slice execution, the runnable contract row is binding:
+
+`contract row -> real entry -> test harness module -> RED command -> expected RED failure -> GREEN command -> GREEN assertion`
+
+Every cell must be backed by `{{RUNNABLE_SLICE_AUTHORIZATION}}` and `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json`; empty cells are blocker evidence, not permission to continue planning.
 
 If the selected carrier mismatches, choose a same-family replacement from `{{REPLAY_CONTEXT_INDEX}}` before consuming S{{SLICE_INDEX}}; otherwise write a pre-slice blocker instead of starting RED/GREEN work.
 
 `{{SLICE_PLAN_CONTRACT}}` is binding for this slice. A passing compile is not proof. The slice is not GREEN unless the validation command executes a behavior test through the declared real entry and asserts the declared output or side effect.
+
+For `stateful_side_effect`, `core_entry`, `wire_payload_api_contract`, `generated_artifact_template_upload`, `deploy_export_page`, `external_integration`, and `lifecycle_cleanup_retention`, `{{TEST_CHARTER_CONTRACT}}` must have `side_effect_proof_required=true` plus non-empty `side_effect_target`, `capture_mechanism`, `must_fail_before_change`, and `forbidden_test_surface`. The GREEN claim must prove: "This GREEN proves the selected real entry caused this side effect." Helper return values, DTO construction, static method behavior, or substitute services do not close these families.
+
+Do not re-summarize the whole feature family after Phase 0. If a runnable contract field is missing, name the exact missing executable field (`command`, `test harness`, `invocation setup`, `assertion`, or `side-effect target`) and read only the compact artifact needed to fill that field; if the field is still missing, stop with `BLOCKED_NO_RUNNABLE_SLICE`.
 
 **BEFORE writing the RED test or GREEN implementation, you MUST validate the carrier:**
 

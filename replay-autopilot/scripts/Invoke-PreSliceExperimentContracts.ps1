@@ -86,6 +86,26 @@ function Get-TestHarnessModuleFromCommand {
     return ''
 }
 
+function Get-TestClassFromTestName {
+    param([string]$TestName)
+    if ([string]::IsNullOrWhiteSpace($TestName)) { return '' }
+    $trimmed = $TestName.Trim()
+    if ($trimmed -match '^(?<class>[A-Za-z_][A-Za-z0-9_$.]*)(?:[#.].*)?$') {
+        return $matches['class']
+    }
+    return ''
+}
+
+function Get-TestMethodFromTestName {
+    param([string]$TestName)
+    if ([string]::IsNullOrWhiteSpace($TestName)) { return '' }
+    $trimmed = $TestName.Trim()
+    if ($trimmed -match '^[A-Za-z_][A-Za-z0-9_$.]*[#.](?<method>[A-Za-z_][A-Za-z0-9_]*)$') {
+        return $matches['method']
+    }
+    return ''
+}
+
 function Get-CommandMavenSettings {
     param([string]$ConfiguredValue)
     if ([string]::IsNullOrWhiteSpace($ConfiguredValue)) { return '' }
@@ -185,29 +205,47 @@ $expectedGreenAssertion = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'green_assertion'),
     $downstream
 )
+$testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand
+$testClass = Get-FirstNonEmpty @(
+    (Get-PlanField -Text $planText -Name 'test_class'),
+    (Get-TestClassFromTestName -TestName $redTestName)
+)
+$testMethod = Get-FirstNonEmpty @(
+    (Get-PlanField -Text $planText -Name 'test_method'),
+    (Get-TestMethodFromTestName -TestName $redTestName)
+)
 
 $runnableIssues = New-Object System.Collections.Generic.List[string]
 $redUsesIsolatedPom = Test-CommandUsesIsolatedPom -Command $redCommand -Worktree $worktreeFull
 $greenUsesIsolatedPom = Test-CommandUsesIsolatedPom -Command $greenCommand -Worktree $worktreeFull
-if ([string]::IsNullOrWhiteSpace($redCommand)) { $runnableIssues.Add('red_command_missing') | Out-Null }
-if ([string]::IsNullOrWhiteSpace($greenCommand)) { $runnableIssues.Add('green_command_missing') | Out-Null }
-if (-not $redUsesIsolatedPom) { $runnableIssues.Add('red_command_missing_isolated_replay_pom') | Out-Null }
-if (-not $greenUsesIsolatedPom) { $runnableIssues.Add('green_command_missing_isolated_replay_pom') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $runnableIssues.Add('missing_real_entry_fqn') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $runnableIssues.Add('missing_test_harness_module') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($testClass)) { $runnableIssues.Add('missing_test_class') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($testMethod)) { $runnableIssues.Add('missing_test_method') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($greenCommand)) { $runnableIssues.Add('missing_maven_test_command_template') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($redCommand)) { $runnableIssues.Add('missing_red_command') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($greenCommand)) { $runnableIssues.Add('missing_green_command') | Out-Null }
+if (-not ($redUsesIsolatedPom -and $greenUsesIsolatedPom)) { $runnableIssues.Add('non_isolated_pom_command') | Out-Null }
 if (Test-ForbiddenMavenGoal -Command $redCommand) { $runnableIssues.Add('red_command_forbidden_maven_goal') | Out-Null }
 if (Test-ForbiddenMavenGoal -Command $greenCommand) { $runnableIssues.Add('green_command_forbidden_maven_goal') | Out-Null }
-if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $runnableIssues.Add('expected_red_failure_missing_or_forbidden') | Out-Null }
-if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $runnableIssues.Add('expected_green_assertion_missing_or_forbidden') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $runnableIssues.Add('missing_expected_red_failure') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $runnableIssues.Add('missing_green_business_assertion') | Out-Null }
 $runnableStatus = if ($runnableIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED_NO_RUNNABLE_SLICE' }
 $runnableAuthorization = [ordered]@{
     schema_version = 1
     slice_index = $SliceIndex
     status = $runnableStatus
+    real_entry_fqn = $selectedEntry
     isolated_pom = ([System.IO.Path]::Combine($worktreeFull, 'pom.xml'))
     maven_settings = Get-CommandMavenSettings -ConfiguredValue $MavenSettings
-    test_harness_module = Get-TestHarnessModuleFromCommand -Command $greenCommand
+    test_harness_module = $testHarnessModule
+    test_class = $testClass
+    test_method = $testMethod
+    maven_test_command_template = $greenCommand
     red_command = $redCommand
     green_command = $greenCommand
     expected_red_failure = $expectedRedFailure
+    green_business_assertion = $expectedGreenAssertion
     expected_green_assertion = $expectedGreenAssertion
     forbidden_maven_goals_checked = $true
     uses_isolated_replay_pom = ($redUsesIsolatedPom -and $greenUsesIsolatedPom)
@@ -297,12 +335,31 @@ if ([string]::IsNullOrWhiteSpace($greenBoundary) -or (Test-ForbiddenProofText $g
 if ([string]::IsNullOrWhiteSpace($validationCommand) -or (Test-ForbiddenProofText $validationCommand)) { $planBlockers.Add('validation_command_missing_or_forbidden') | Out-Null }
 if ($null -ne $contextValidation -and [string]$contextValidation.status -eq 'FAIL') { $planBlockers.Add('replay_context_index_validation_failed') | Out-Null }
 
-$requiresSideEffect = @('core_entry', 'stateful_side_effect', 'generated_artifact_template_upload', 'lifecycle_cleanup_retention') -contains $ForcedRequirementFamily
+$sideEffectProofFamilies = @(
+    'stateful_side_effect',
+    'core_entry',
+    'wire_payload_api_contract',
+    'generated_artifact_template_upload',
+    'deploy_export_page',
+    'external_integration',
+    'lifecycle_cleanup_retention'
+)
+$requiresSideEffect = $sideEffectProofFamilies -contains $ForcedRequirementFamily
 if ($requiresSideEffect -and ([string]::IsNullOrWhiteSpace($downstream) -or (Test-ForbiddenProofText $downstream))) {
     $planBlockers.Add('required_side_effect_or_output_proof_missing') | Out-Null
 }
 
 $mustNotBehavior = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'must_not_behavior'), (Get-PlanField -Text $planText -Name 'must_not'), 'do not use helper/static/mock/dto-only proof as closure')
+$captureMechanism = Get-FirstNonEmpty @(
+    (Get-PlanField -Text $planText -Name 'capture_mechanism'),
+    (Get-PlanField -Text $planText -Name 'side_effect_capture_mechanism'),
+    (Get-PlanField -Text $planText -Name 'db_verification'),
+    'behavior test assertion or collaborator argument capture'
+)
+$forbiddenTestSurface = Get-FirstNonEmpty @(
+    (Get-PlanField -Text $planText -Name 'forbidden_test_surface'),
+    $mustNotBehavior
+)
 $positiveAssertions = @($redAssertion, $expectedGreenAssertion, $downstream) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) } | Select-Object -Unique
 $negativeAssertions = @($mustNotBehavior) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) } | Select-Object -Unique
 $testCharterIssues = New-Object System.Collections.Generic.List[string]
@@ -310,6 +367,8 @@ if (-not $preAuthorized) { $testCharterIssues.Add('real_entry_not_authorized_for
 if ($positiveAssertions.Count -eq 0) { $testCharterIssues.Add('positive_assertions_missing') | Out-Null }
 if ($negativeAssertions.Count -eq 0) { $testCharterIssues.Add('negative_must_not_assertions_missing') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($downstream) -or (Test-ForbiddenProofText $downstream)) { $testCharterIssues.Add('state_or_output_surface_missing_or_forbidden') | Out-Null }
+if ($requiresSideEffect -and ([string]::IsNullOrWhiteSpace($captureMechanism) -or (Test-ForbiddenProofText $captureMechanism))) { $testCharterIssues.Add('capture_mechanism_missing_or_forbidden') | Out-Null }
+if ($requiresSideEffect -and ([string]::IsNullOrWhiteSpace($forbiddenTestSurface) -or (Test-ForbiddenProofText $forbiddenTestSurface))) { $testCharterIssues.Add('forbidden_test_surface_missing_or_forbidden') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $testCharterIssues.Add('red_phase_business_failure_missing') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $testCharterIssues.Add('green_phase_business_success_missing') | Out-Null }
 $testCharterStatus = if ($testCharterIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
@@ -317,6 +376,11 @@ $testCharterContract = [ordered]@{
     schema_version = 1
     slice_index = $SliceIndex
     status = $testCharterStatus
+    side_effect_proof_required = $requiresSideEffect
+    side_effect_target = $downstream
+    capture_mechanism = $captureMechanism
+    must_fail_before_change = $expectedRedFailure
+    forbidden_test_surface = $forbiddenTestSurface
     real_entry_invoked = $preAuthorized
     positive_assertions = @($positiveAssertions)
     negative_must_not_assertions = @($negativeAssertions)
@@ -360,10 +424,14 @@ $slicePlan = [ordered]@{
 }
 $slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
 
-if ($SliceIndex -eq 1) {
+    if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{
         schema_version = 1
         family_id = $ForcedRequirementFamily
+        real_entry_fqn = $selectedEntry
+        test_harness_module = $testHarnessModule
+        test_class = $testClass
+        test_method = $testMethod
         production_entry_qn = $selectedEntry
         entry_invocation_method = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_invocation_method'), (Get-PlanField -Text $planText -Name 'test_invocation_expression'), 'invoke the selected real production entry from the behavior test')
         required_side_effects = @($downstream) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) }
@@ -381,6 +449,9 @@ if ($SliceIndex -eq 1) {
         forbidden_substitute_surfaces = @('new_helper_only', 'new_service_without_existing_entry_call', 'dto_only', 'static_contract', 'mock_only', 'test_only')
         red_command = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'red_command'), $validationCommand)
         green_command = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'green_command'), $validationCommand)
+        uses_isolated_replay_pom = ($redUsesIsolatedPom -and $greenUsesIsolatedPom)
+        expected_red_failure = $expectedRedFailure
+        green_business_assertion = $expectedGreenAssertion
         assertion_names = @(
             $redAssertion,
             (Get-PlanField -Text $planText -Name 'assertion_names')
@@ -394,10 +465,13 @@ if ($SliceIndex -eq 1) {
         test_charter_contract = $testCharterContractPath
     }
     $firstContractMissing = New-Object System.Collections.Generic.List[string]
-    foreach ($fieldName in @('production_entry_qn', 'entry_invocation_method', 'business_red_assertion', 'negative_guard_assertion', 'maven_test_command_template')) {
+    foreach ($fieldName in @('real_entry_fqn', 'test_harness_module', 'test_class', 'test_method', 'production_entry_qn', 'entry_invocation_method', 'business_red_assertion', 'negative_guard_assertion', 'maven_test_command_template', 'red_command', 'green_command', 'expected_red_failure', 'green_business_assertion')) {
         if ([string]::IsNullOrWhiteSpace([string]$firstExecutableContract[$fieldName]) -or (Test-ForbiddenProofText ([string]$firstExecutableContract[$fieldName]))) {
             $firstContractMissing.Add($fieldName) | Out-Null
         }
+    }
+    if (-not [bool]$firstExecutableContract['uses_isolated_replay_pom']) {
+        $firstContractMissing.Add('uses_isolated_replay_pom') | Out-Null
     }
     foreach ($arrayFieldName in @('required_side_effects', 'forbidden_test_surfaces', 'allowed_mock_boundaries')) {
         if (@($firstExecutableContract[$arrayFieldName]).Count -eq 0) {

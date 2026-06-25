@@ -115,12 +115,30 @@ public class RealEntry {
     Assert-True ([bool]$dryRun.pre_authorized) 'dry-run must expose pre_authorized=true'
     Assert-True ([string]$plan.authorization -eq 'ALLOW') 'slice plan contract must authorize valid proof plan'
     Assert-True ([string]$firstExecutable.authorization -eq 'ALLOW') 'first slice executable contract must authorize valid proof plan'
+    Assert-True ([string]$firstExecutable.contract_status -eq 'AUTHORIZED') 'first slice executable contract must expose contract_status=AUTHORIZED'
+    Assert-True ([string]$firstExecutable.real_entry_fqn -match 'demo\.RealEntry') 'first slice executable contract must expose real_entry_fqn'
+    Assert-True ([string]$firstExecutable.test_harness_module -eq 'demo-harness') 'first slice executable contract must expose test_harness_module'
+    Assert-True ([string]$firstExecutable.test_class -eq 'RealEntryContractTest') 'first slice executable contract must expose test_class'
+    Assert-True ([string]$firstExecutable.test_method -eq 'returnsMappedPayload') 'first slice executable contract must expose test_method'
+    Assert-True ([bool]$firstExecutable.uses_isolated_replay_pom) 'first slice executable contract must prove isolated replay POM use'
+    Assert-True ([string]$firstExecutable.green_business_assertion -match 'assertEquals') 'first slice executable contract must expose green business assertion'
     Assert-True ([string]$firstExecutable.existing_entry_qn -match 'demo\.RealEntry') 'first slice executable contract must bind an existing entry qn'
     Assert-True ([string]$runnable.status -eq 'AUTHORIZED') 'runnable slice authorization must authorize copy-ready commands'
+    Assert-True ([string]$runnable.real_entry_fqn -match 'demo\.RealEntry') 'runnable authorization must expose real_entry_fqn'
+    Assert-True ([string]$runnable.test_harness_module -eq 'demo-harness') 'runnable authorization must expose test_harness_module'
+    Assert-True ([string]$runnable.test_class -eq 'RealEntryContractTest') 'runnable authorization must expose test_class'
+    Assert-True ([string]$runnable.test_method -eq 'returnsMappedPayload') 'runnable authorization must expose test_method'
+    Assert-True ([string]$runnable.maven_test_command_template -match '-pl demo-harness -am') 'runnable authorization must expose Maven test command template'
+    Assert-True ([string]$runnable.green_business_assertion -match 'assertEquals') 'runnable authorization must expose green business assertion'
     Assert-True ([bool]$runnable.uses_isolated_replay_pom) 'runnable slice authorization must require isolated replay POM'
     Assert-True ([string]$callable.authorization_status -eq 'AUTHORIZED') 'callable carrier authorization must expose authorization_status=AUTHORIZED'
     Assert-True ([string]$callable.carrier_origin -eq 'existing_production_entry') 'callable carrier authorization must bind existing production entry origin'
     Assert-True ([string]$charter.status -eq 'AUTHORIZED') 'test charter contract must authorize state/output and must-not proof'
+    Assert-True ([bool]$charter.side_effect_proof_required) 'test charter contract must require side-effect proof for core_entry'
+    Assert-True ([string]$charter.side_effect_target -match 'returned payload') 'test charter contract must expose side-effect target'
+    Assert-True ([string]$charter.capture_mechanism -match 'behavior test assertion') 'test charter contract must expose capture mechanism'
+    Assert-True ([string]$charter.must_fail_before_change -match 'assertEquals') 'test charter contract must expose business RED failure'
+    Assert-True ([string]$charter.forbidden_test_surface -match 'helper-only') 'test charter contract must expose forbidden test surface'
     Assert-True (@($charter.positive_assertions).Count -gt 0) 'test charter contract must include positive assertions'
 
     $blockedRoot = Join-Path $tempRoot 'blocked'
@@ -143,6 +161,57 @@ public class RealEntry {
     $blockedPre = Get-Content -LiteralPath (Join-Path $blockedRoot 'SLICE_RESULT_PRE_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([int]$blockedPre.slice_index -eq 0) 'blocked pre-slice result must preserve slice_index=0'
     Assert-True (-not [bool]$blockedPre.authorized_for_synthesis) 'blocked pre-slice result must not authorize synthesis'
+
+    $missingRoot = Join-Path $tempRoot 'missing-fields'
+    New-Item -ItemType Directory -Force -Path $missingRoot | Out-Null
+    @{
+        schema_version = 1
+        slice_index = 1
+        authorization = 'ALLOW'
+        real_entry = 'demo.RealEntry.handle(String): String'
+        selected_carrier = 'demo.RealEntry.handle(String): String'
+        production_boundary = 'demo.RealEntry.handle(String): String'
+        downstream_side_effect_or_output = 'returned payload value'
+        red_expectation = 'business assertion fails before mapping is fixed'
+        issues = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $missingRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+    @{
+        gate = 'callable_carrier_authorization'
+        slice_index = 1
+        authorization = 'ALLOW'
+        can_proceed = $true
+        selected_carrier = 'demo.RealEntry.handle(String): String'
+        selected_real_entry = 'demo.RealEntry.handle(String): String'
+        resolved_signature = @{ selected_carrier = @{ class_name = 'demo.RealEntry'; visibility = 'public'; formatted = 'String demo.RealEntry.handle(String)' } }
+        blockers = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $missingRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+    Write-Utf8 (Join-Path $missingRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
+- selected_carrier: demo.RealEntry.handle(String): String
+- selected_real_entry: demo.RealEntry.handle(String): String
+- first_red_test: RealEntryContractTest
+- expected_red_failure: assertEquals("mapped", result) fails before mapping is fixed
+- expected_green_assertion: assertEquals("mapped", result) passes through RealEntry
+- downstream_output_or_side_effect: returned payload value
+- production_boundary: demo.RealEntry.handle(String): String
+- must_not_behavior: must not use helper-only closure
+'@
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'Invoke-PreSliceExperimentContracts.ps1') `
+        -ReplayRoot $missingRoot `
+        -Worktree $worktree `
+        -SliceIndex 1 `
+        -ForcedRequirementFamily deploy_export_page `
+        -ForcedSliceType deploy_surface_slice 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -ne 0) 'missing executable contract fields should stop before executor'
+    $missingRunnable = Get-Content -LiteralPath (Join-Path $missingRoot 'RUNNABLE_SLICE_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $missingCodes = @($missingRunnable.issues | ForEach-Object { [string]$_ })
+    Assert-True ($missingCodes -contains 'missing_test_harness_module') 'missing -pl module must emit missing_test_harness_module'
+    Assert-True ($missingCodes -contains 'missing_test_method') 'missing method must emit missing_test_method'
+    Assert-True ($missingCodes -contains 'missing_maven_test_command_template') 'missing command template must emit missing_maven_test_command_template'
+    Assert-True ($missingCodes -contains 'missing_red_command') 'missing red command must emit missing_red_command'
+    Assert-True ($missingCodes -contains 'missing_green_command') 'missing green command must emit missing_green_command'
+    Assert-True ($missingCodes -contains 'non_isolated_pom_command') 'missing isolated POM proof must emit non_isolated_pom_command'
+    $missingCharter = Get-Content -LiteralPath (Join-Path $missingRoot 'TEST_CHARTER_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([bool]$missingCharter.side_effect_proof_required) 'deploy_export_page must require side-effect proof charter'
 
     $runnerText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8
     $promptText = Get-Content -LiteralPath (Join-Path $autopilotRoot 'prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8

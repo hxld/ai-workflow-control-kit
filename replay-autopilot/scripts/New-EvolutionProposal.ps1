@@ -49,6 +49,80 @@ function Get-SummaryFlagCount {
     return $null
 }
 
+function New-VerifiableRuleItem {
+    param(
+        [string]$Id,
+        [string]$Fingerprint,
+        [string]$Severity = 'P0',
+        [string]$OwnerLayer = 'replay-autopilot',
+        [string]$MachineGate,
+        [string]$PreventionGate,
+        [string]$RequiredFix,
+        [string]$RegressionTest,
+        [string]$NextValidation
+    )
+
+    return [pscustomobject][ordered]@{
+        id = $Id
+        fingerprint = $Fingerprint
+        severity = $Severity
+        owner_layer = $OwnerLayer
+        trigger = [ordered]@{
+            fingerprint = $Fingerprint
+            repeated = $true
+            replay_count = 1
+        }
+        must_fix = $true
+        prevention_gate = $PreventionGate
+        required_fix = $RequiredFix
+        regression_test = $RegressionTest
+        next_validation = $NextValidation
+        machine_gate = $MachineGate
+        acceptance = @(
+            "Invoked runner, prompt, verifier, schema, or gate change addresses machine_gate=$MachineGate.",
+            "Regression evidence is present and PASS for: $RegressionTest",
+            "Next validation evidence is present and PASS for: $NextValidation"
+        )
+        verification_status = 'PENDING'
+    }
+}
+
+function Write-VerifiableRules {
+    param(
+        [string]$Root,
+        [object[]]$Rules
+    )
+
+    if (@($Rules).Count -eq 0) {
+        return
+    }
+
+    $rulesPath = Join-Path $Root 'VERIFIABLE_RULES.json'
+    $rulesMdPath = Join-Path $Root 'VERIFIABLE_RULES.md'
+    $generatedAt = (Get-Date).ToString('s')
+    $pack = [ordered]@{
+        schema = 'replay_verifiable_rule_pack.v1'
+        generated_at = $generatedAt
+        replay_root = $Root
+        source_audit_pack = (Join-Path $Root 'PLAN_CONTRACT_VERIFY.json')
+        rules = @($Rules)
+    }
+    $pack | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $rulesPath -Encoding UTF8
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('# Verifiable Replay Rules') | Out-Null
+    $lines.Add('') | Out-Null
+    $lines.Add("- generated_at: $generatedAt") | Out-Null
+    $lines.Add("- source_audit_pack: $(Join-Path $Root 'PLAN_CONTRACT_VERIFY.json')") | Out-Null
+    $lines.Add('') | Out-Null
+    $lines.Add('| Rule | Fingerprint | Severity | Machine Gate | Verification Status |') | Out-Null
+    $lines.Add('| --- | --- | --- | --- | --- |') | Out-Null
+    foreach ($rule in @($Rules)) {
+        $lines.Add("| $($rule.id) | $($rule.fingerprint) | $($rule.severity) | $($rule.machine_gate) | $($rule.verification_status) |") | Out-Null
+    }
+    Set-Content -LiteralPath $rulesMdPath -Encoding UTF8 -Value ($lines -join "`n")
+}
+
 $root = [System.IO.Path]::GetFullPath($ReplayRoot)
 if (-not (Test-Path -LiteralPath $root)) {
     throw "Replay root not found: $root"
@@ -181,6 +255,7 @@ $detected = @(foreach ($key in $flagMap.Keys) {
 })
 
 $planContractVerifyPath = Join-Path $root 'PLAN_CONTRACT_VERIFY.json'
+$verifiableRules = New-Object System.Collections.Generic.List[object]
 if (Test-Path -LiteralPath $planContractVerifyPath) {
     try {
         $planContract = Get-Content -LiteralPath $planContractVerifyPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -197,6 +272,14 @@ if (Test-Path -LiteralPath $planContractVerifyPath) {
                     ActionClass = 'tooling-evolution-needed'
                 }
             }
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_plan_oracle_overlap_enforced' `
+                -Fingerprint 'oracle_overlap_below_threshold' `
+                -MachineGate 'plan_oracle_overlap_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Make invoked plan repair and verification fail closed unless oracle production file overlap reaches the threshold or a verifier-recognized exemption is present.' `
+                -RegressionTest 'scripts\Test-v600-OracleOverlapEvolutionProposalDetection.ps1' `
+                -NextValidation 'scripts\Validate-VerifiableRuleClosure.ps1')) | Out-Null
         }
         if (($contractIssues | Where-Object { $_ -match 'oracle_high_weight_overlap_below_threshold' } | Select-Object -First 1)) {
             $alreadyDetected = $detected | Where-Object { $_.Flag -eq 'plan_high_weight_oracle_overlap_gap' }
@@ -209,6 +292,44 @@ if (Test-Path -LiteralPath $planContractVerifyPath) {
                     ActionClass = 'tooling-evolution-needed'
                 }
             }
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_plan_high_weight_oracle_overlap_enforced' `
+                -Fingerprint 'oracle_high_weight_overlap_below_threshold' `
+                -MachineGate 'plan_high_weight_oracle_overlap_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Make invoked plan repair and verification fail closed unless high-weight oracle production file coverage reaches the threshold or a verifier-recognized exemption is present.' `
+                -RegressionTest 'scripts\Test-v600-OracleOverlapEvolutionProposalDetection.ps1' `
+                -NextValidation 'scripts\Validate-VerifiableRuleClosure.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match '(?i)_plan_missing:.*Context' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_source_chain_context_contract_enforced' `
+                -Fingerprint 'source_chain_context_contract_missing' `
+                -MachineGate 'source_chain_context_contract_enforced' `
+                -PreventionGate 'Requirement Contract Gate' `
+                -RequiredFix 'Require source-chain plans to name the upstream context carrier and the real builder path before Phase 1 can proceed.' `
+                -RegressionTest 'scripts\Test-v626-PlanContractPolicyRebuildIntentGuard.ps1' `
+                -NextValidation 'scripts\Verify-PlanContract.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match '(?i)_plan_missing:.*siblings' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_sibling_surface_coverage_enforced' `
+                -Fingerprint 'sibling_surface_coverage_missing' `
+                -MachineGate 'sibling_surface_coverage_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Require first-slice plans to cover required sibling execution surfaces, or remain blocked.' `
+                -RegressionTest 'scripts\Test-v491-PolicyRebuildVerifierSiblingAndNoSpring.ps1' `
+                -NextValidation 'scripts\Verify-PlanContract.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match 'plan_status_not_proceed' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_blocked_plan_status_stops_replay' `
+                -Fingerprint 'plan_status_not_proceed' `
+                -MachineGate 'blocked_plan_status_stops_replay' `
+                -PreventionGate 'Core-First Budget Gate' `
+                -RequiredFix 'Keep the replay stopped when the plan contract status is BLOCKED, and route to evolution with closeable machine gates.' `
+                -RegressionTest 'scripts\Test-v598-VerifiableRuleClosureGate.ps1' `
+                -NextValidation 'scripts\Run-ReplayLoop.ps1')) | Out-Null
         }
     } catch {
     }
@@ -297,4 +418,5 @@ $(if ($shouldEvolve) { 'Run a controlled tooling/prompt enforcement evolution us
 "@
 
 Set-Content -LiteralPath $OutPath -Value $proposal -Encoding UTF8
+Write-VerifiableRules -Root $root -Rules @($verifiableRules.ToArray())
 Write-Host "Wrote evolution proposal: $OutPath"

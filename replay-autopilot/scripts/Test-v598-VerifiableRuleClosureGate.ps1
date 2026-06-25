@@ -66,6 +66,26 @@ try {
     Assert-True ($passResult.status -eq 'PASS') 'Closed rule should write PASS status.'
     Assert-True ($passResult.closed_rules.Count -eq 1) 'Closed rule should be listed.'
 
+    $missingRulesRoot = Join-Path $tempRoot 'missing-rules-replay'
+    New-Item -ItemType Directory -Force -Path $missingRulesRoot | Out-Null
+    @(
+        '# Replay Evolution Proposal',
+        '',
+        '- should_evolve: True',
+        '- reason: plan contract failed'
+    ) | Set-Content -LiteralPath (Join-Path $missingRulesRoot 'EVOLUTION_PROPOSAL.md') -Encoding UTF8
+    [ordered]@{
+        verification_status = 'FAIL'
+        issues = @('plan_status_not_proceed:BLOCKED')
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $missingRulesRoot 'PLAN_CONTRACT_VERIFY.json') -Encoding UTF8
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sut -ReplayRoot $missingRulesRoot -ControlRoot $controlRoot *> (Join-Path $tempRoot 'missing-rules.out')
+    $missingRulesExit = $LASTEXITCODE
+    Assert-True ($missingRulesExit -ne 0) "Expected missing rules to fail when evolution is required, got $missingRulesExit."
+    $missingRulesResult = Get-Content -LiteralPath (Join-Path $missingRulesRoot 'VERIFIABLE_RULE_CLOSURE.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ($missingRulesResult.status -eq 'FAIL') 'Missing rules should write FAIL status for required evolution.'
+    Assert-True (@($missingRulesResult.issues) -contains 'verifiable_rules_missing_for_required_evolution') 'Missing rules failure should be machine-readable.'
+
     Write-Host 'Test-v598-VerifiableRuleClosureGate PASS'
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue

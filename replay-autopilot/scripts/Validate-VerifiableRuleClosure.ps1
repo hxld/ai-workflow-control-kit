@@ -122,6 +122,42 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 $outputPathFull = Resolve-AbsolutePath $OutputPath
 
 if (-not (Test-Path -LiteralPath $rulesPathFull -PathType Leaf)) {
+    $proposalText = Read-TextIfExists -Path (Join-Path $root 'EVOLUTION_PROPOSAL.md')
+    $stopDecisionText = Read-TextIfExists -Path (Join-Path $root 'STOP_OR_CONTINUE_DECISION.md')
+    $planVerify = $null
+    try {
+        $planVerify = Read-JsonIfExists -Path (Join-Path $root 'PLAN_CONTRACT_VERIFY.json')
+    } catch {
+        $planVerify = $null
+    }
+    $planVerifyFailed = $null -ne $planVerify -and (
+        [string]$planVerify.verification_status -eq 'FAIL' -or
+        @($planVerify.issues).Count -gt 0
+    )
+    $evolutionRequiredWithoutRules = (
+        $proposalText -match '(?im)^\s*-\s*should_evolve\s*:\s*True\s*$' -or
+        $stopDecisionText -match '(?i)STOP_AND_EVOLVE' -or
+        $planVerifyFailed
+    )
+    if ($evolutionRequiredWithoutRules) {
+        $result = [ordered]@{
+            schema = 'verifiable_rule_closure.v1'
+            status = 'FAIL'
+            required = $true
+            reason = 'verifiable_rules_missing_for_required_evolution'
+            replay_root = $root
+            rules_path = $rulesPathFull
+            must_fix_count = 1
+            closed_rules = @()
+            open_rules = @()
+            issues = @('verifiable_rules_missing_for_required_evolution')
+            generated_at = (Get-Date).ToString('s')
+        }
+        Write-ClosureResult -Path $outputPathFull -ControlRootPath $ControlRoot -Result $result
+        Write-Host "Verifiable rule closure FAIL: $outputPathFull"
+        Write-Host ' - verifiable_rules_missing_for_required_evolution'
+        exit 1
+    }
     $result = [ordered]@{
         schema = 'verifiable_rule_closure.v1'
         status = 'PASS'

@@ -45,6 +45,8 @@ try {
     Assert-True -Name 'proposal_contains_oracle_overlap_gap' -Condition ($proposalText -match 'plan_oracle_overlap_gap')
     Assert-True -Name 'proposal_has_should_evolve_true' -Condition ($proposalText -match 'should_evolve:\s*True')
     Assert-True -Name 'proposal_has_gap_in_detected_table' -Condition ($proposalText -match 'Surface Coverage Gate.*plan_oracle_overlap_gap')
+    $rules1 = Get-Content -LiteralPath (Join-Path $tempRoot 'VERIFIABLE_RULES.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True -Name 'oracle_overlap_rule_pack_written' -Condition (@($rules1.rules | Where-Object { $_.machine_gate -eq 'plan_oracle_overlap_enforced' }).Count -eq 1)
 
     Write-Host "`n[Test 2] No PLAN_CONTRACT_VERIFY.json produces normal output without oracle overlap gap" -ForegroundColor Yellow
     $tempRoot2 = Join-Path $env:TEMP ("replay-v600-noverify-" + [guid]::NewGuid().ToString('N'))
@@ -80,6 +82,8 @@ try {
 
     Assert-True -Name 'high_weight_gap_detected' -Condition ($proposalText3 -match 'plan_high_weight_oracle_overlap_gap')
     Assert-True -Name 'high_weight_gap_in_table' -Condition ($proposalText3 -match 'Surface Coverage Gate.*plan_high_weight_oracle_overlap_gap')
+    $rules3 = Get-Content -LiteralPath (Join-Path $tempRoot3 'VERIFIABLE_RULES.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True -Name 'high_weight_rule_pack_written' -Condition (@($rules3.rules | Where-Object { $_.machine_gate -eq 'plan_high_weight_oracle_overlap_enforced' }).Count -eq 1)
 
     Remove-Item -LiteralPath $tempRoot3 -Recurse -Force -ErrorAction SilentlyContinue
 

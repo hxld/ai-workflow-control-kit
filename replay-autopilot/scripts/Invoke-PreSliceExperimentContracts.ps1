@@ -123,6 +123,10 @@ $runnableAuthorizationPath = Join-Path $replayRootFull ('RUNNABLE_SLICE_AUTHORIZ
 $testCharterContractPath = Join-Path $replayRootFull ('TEST_CHARTER_{0:D2}.json' -f $SliceIndex)
 $preSliceBlockerPath = Join-Path $replayRootFull ('SLICE_RESULT_PRE_{0:D2}.json' -f $SliceIndex)
 $contextIndexPath = Join-Path $replayRootFull 'replay-context-index.json'
+$upperContextIndexPath = Join-Path $replayRootFull 'REPLAY_CONTEXT_INDEX.json'
+if (-not (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) -and (Test-Path -LiteralPath $upperContextIndexPath -PathType Leaf)) {
+    $contextIndexPath = $upperContextIndexPath
+}
 $contextValidationPath = Join-Path $replayRootFull 'REPLAY_CONTEXT_INDEX_VALIDATION.json'
 
 if ($ValidateOnly) {
@@ -523,6 +527,45 @@ $carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath
     $firstExecutableContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $firstExecutableContractPath -Encoding UTF8
     if ($firstContractMissing.Count -gt 0) {
         foreach ($missingField in @($firstContractMissing | Select-Object -Unique)) { $planBlockers.Add("first_slice_execution_contract_missing_$missingField") | Out-Null }
+    }
+}
+
+$preSliceAuthorizationGatePath = Join-Path $replayRootFull 'PRE_SLICE_AUTHORIZATION_GATE.json'
+$proofTypePolicyGatePath = Join-Path $replayRootFull 'PROOF_TYPE_POLICY_GATE.json'
+$contextIndexContractCheckPath = Join-Path $replayRootFull 'REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json'
+if (Test-Path -LiteralPath $firstExecutableContractPath -PathType Leaf) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'pre_slice_authorization_gate.ps1') `
+        -ReplayRoot $replayRootFull `
+        -Worktree $worktreeFull `
+        -Contract $firstExecutableContractPath `
+        -FamilyLedger (Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json') `
+        -AllowedPomPath ([System.IO.Path]::Combine($worktreeFull, 'pom.xml')) `
+        -OutputPath $preSliceAuthorizationGatePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $planBlockers.Add('pre_slice_authorization_gate_failed') | Out-Null
+    }
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'proof_type_policy_gate.ps1') `
+        -ReplayRoot $replayRootFull `
+        -TestCharter $testCharterContractPath `
+        -FamilyLedger (Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json') `
+        -Contract $firstExecutableContractPath `
+        -OutputPath $proofTypePolicyGatePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $planBlockers.Add('proof_type_policy_gate_failed') | Out-Null
+    }
+
+    if (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'replay_context_index_contract_check.ps1') `
+            -ReplayRoot $replayRootFull `
+            -Index $contextIndexPath `
+            -Contract $firstExecutableContractPath `
+            -OutputPath $contextIndexContractCheckPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $planBlockers.Add('replay_context_index_contract_check_failed') | Out-Null
+        }
+    } else {
+        $planBlockers.Add('replay_context_index_missing_for_contract_check') | Out-Null
     }
 }
 

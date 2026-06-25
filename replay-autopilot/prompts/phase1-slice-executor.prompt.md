@@ -33,6 +33,9 @@
 - canonical slice execution contract: {{REPLAY_ROOT}}\SLICE_EXECUTION_CONTRACT_01.json
 - carrier invocation contract: {{REPLAY_ROOT}}\CARRIER_INVOCATION_CONTRACT_01.json
 - family proof ledger: {{REPLAY_ROOT}}\FAMILY_PROOF_LEDGER_01.json
+- pre-slice authorization gate: {{REPLAY_ROOT}}\PRE_SLICE_AUTHORIZATION_GATE.json
+- proof-type policy gate: {{REPLAY_ROOT}}\PROOF_TYPE_POLICY_GATE.json
+- replay context index contract check: {{REPLAY_ROOT}}\REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json
 - replay context index: {{REPLAY_CONTEXT_INDEX}}
 - slice progress json: {{SLICE_PROGRESS}}
 - slice progress md: {{SLICE_PROGRESS_MD}}
@@ -87,6 +90,9 @@ The canonical experiment artifacts are binding, not optional documentation:
 - `SLICE_EXECUTION_CONTRACT_01.json` must exist before implementation and must contain `family_id`, `production_entry_qn`, `test_class`, `test_method`, exact `red_command`, exact `green_command`, `isolated_pom_path`, `maven_settings_arg`, `red_assertion`, `side_effect_or_output_probe`, and `must_not_assertion`.
 - `CARRIER_INVOCATION_CONTRACT_01.json` must report `resolved=true`, `signature_match=true`, `test_invokes_entry=true`, and `carrier_origin=existing_production`. `NEW_PLANNED_CARRIER`, planned-only services, helper-only carriers, DTO-only carriers, and unresolved signatures are blockers.
 - `FAMILY_PROOF_LEDGER_01.json` is produced after GREEN. A passing test is non-authorizing unless this ledger accepts the family-required proof kind and the slice proves the declared real entry caused the declared side effect or output plus the must-not assertion.
+- `PRE_SLICE_AUTHORIZATION_GATE.json` must report `status=PASS` before RED/GREEN. It rejects missing callable entry signatures, empty RED/GREEN commands, Maven commands without `-f {{WORKTREE}}\pom.xml`, `-pl` without `-am`, forbidden Maven goals, and missing side-effect/output probes.
+- `PROOF_TYPE_POLICY_GATE.json` must report `status=PASS` before test writing. `mock_only`, `static_only`, `helper_only`, `file_presence`, DTO field presence, and assertion-free collaborator wiring are non-authorizing proof types even if Mockito is used around a real entry.
+- `REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json` must report `status=PASS` when a replay context index exists. It must show reuse of callable carriers, harness modules, valid Maven command templates, forbidden proof type policy, and side-effect probe examples, or name a specific invalidation reason.
 
 Before slice execution, the runnable contract row is binding:
 

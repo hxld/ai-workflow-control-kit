@@ -55,6 +55,12 @@ try {
     @{
         carrier_candidates = @(@{ signature = 'demo.RealEntry.handle(String): String' })
         real_entry_candidates = @(@{ signature = 'demo.RealEntry.handle(String): String' })
+        callable_carriers = @(@{ signature = 'demo.RealEntry.handle(String): String' })
+        failed_carrier_authorizations = @(@{ signature = 'demo.BadEntry.handle()'; reason = 'synthetic_carrier' })
+        test_harness_modules = @('demo-harness')
+        valid_maven_command_templates = @(@{ module = 'demo-harness'; command = $command })
+        forbidden_proof_types_by_family = @{ core_entry = @('mock_only', 'static_only', 'helper_only', 'file_presence') }
+        side_effect_probe_examples = @(@{ family = 'core_entry'; probe = 'returned payload value' })
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'replay-context-index.json') -Encoding UTF8
     @{
         families = @(@{ id = 'core_entry'; required = $true; proof_required = 'real_entry_behavior' })

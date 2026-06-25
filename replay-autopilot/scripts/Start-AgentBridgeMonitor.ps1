@@ -4,24 +4,32 @@ param(
     [string]$ReportRoot = '',
     [int]$IntervalMinutes = 10,
     [int]$MaxReports = 24,
-    [ValidateSet('claude', 'none')]
-    [string]$Executor = 'claude',
+    [ValidateSet('codex', 'claude', 'none')]
+    [string]$Executor = 'codex',
     [int]$ClaudeTimeoutMinutes = 20,
+    [int]$ExecutorTimeoutMinutes = 0,
     [switch]$AutoAdvanceStaleDone,
     [int]$AutoAdvanceStaleMinutes = 2,
     [switch]$NoAutoRestartRunLoop,
-    [ValidateSet('claude', 'manual')]
-    [string]$BridgeClaudeExecutor = 'claude',
+    [ValidateSet('codex', 'claude', 'manual')]
+    [string]$BridgeClaudeExecutor = 'codex',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$BridgeCodexExecutor = 'codex',
+    [ValidateSet('codex', 'claude', 'manual', '')]
+    [string]$BridgePrimaryExecutor = '',
+    [ValidateSet('codex', 'claude', 'manual', '')]
+    [string]$BridgeReviewExecutor = '',
     [string]$BridgeClaudeWorkDir = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
     [string]$BridgeCodexWorkDir = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT",
+    [string]$BridgePrimaryWorkDir = '',
+    [string]$BridgeReviewWorkDir = '',
     [string[]]$ProtectedGitRoots = @("$env:AI_WORKFLOW_PROJECT_ROOT"),
     [int]$BridgeMaxCycles = 4,
     [int]$BridgeTimeoutMinutes = 360,
     [int]$BridgeCompletionQuietSeconds = 30,
     [switch]$BridgeUseProtectedRootWriteDeny,
     [switch]$BridgeAllowUnsafeProtectedRootWriteDeny,
+    [switch]$CodexOnly,
     [switch]$Once,
     [switch]$ValidateOnly
 )
@@ -296,10 +304,14 @@ function Invoke-BridgeAction {
         '-Action', $Action,
         '-BridgeRoot', $BridgeRootFull,
         '-ArchiveRoot', $ArchiveRootFull,
-        '-ClaudeExecutor', $BridgeClaudeExecutor,
-        '-CodexExecutor', $BridgeCodexExecutor,
-        '-ClaudeWorkDir', $BridgeClaudeWorkDir,
-        '-CodexWorkDir', $BridgeCodexWorkDir,
+        '-ClaudeExecutor', $script:BridgePrimaryExecutor,
+        '-CodexExecutor', $script:BridgeReviewExecutor,
+        '-PrimaryExecutor', $script:BridgePrimaryExecutor,
+        '-ReviewExecutor', $script:BridgeReviewExecutor,
+        '-ClaudeWorkDir', $script:BridgePrimaryWorkDir,
+        '-CodexWorkDir', $script:BridgeReviewWorkDir,
+        '-PrimaryWorkDir', $script:BridgePrimaryWorkDir,
+        '-ReviewWorkDir', $script:BridgeReviewWorkDir,
         '-MaxCycles', ([string]$BridgeMaxCycles),
         '-TimeoutMinutes', ([string]$BridgeTimeoutMinutes),
         '-CompletionQuietSeconds', ([string]$BridgeCompletionQuietSeconds),
@@ -310,6 +322,9 @@ function Invoke-BridgeAction {
     }
     if ($BridgeAllowUnsafeProtectedRootWriteDeny) {
         $args += '-AllowUnsafeProtectedRootWriteDeny'
+    }
+    if ($CodexOnly) {
+        $args += '-CodexOnly'
     }
     if ($ProtectedGitRoots.Count -gt 0) {
         $args += '-ProtectedGitRoots'
@@ -340,10 +355,14 @@ function Start-BridgeRunLoop {
         '-Action RunLoop',
         "-BridgeRoot `"$BridgeRootFull`"",
         "-ArchiveRoot `"$ArchiveRootFull`"",
-        "-ClaudeExecutor $BridgeClaudeExecutor",
-        "-CodexExecutor $BridgeCodexExecutor",
-        "-ClaudeWorkDir `"$BridgeClaudeWorkDir`"",
-        "-CodexWorkDir `"$BridgeCodexWorkDir`"",
+        "-ClaudeExecutor $script:BridgePrimaryExecutor",
+        "-CodexExecutor $script:BridgeReviewExecutor",
+        "-PrimaryExecutor $script:BridgePrimaryExecutor",
+        "-ReviewExecutor $script:BridgeReviewExecutor",
+        "-ClaudeWorkDir `"$script:BridgePrimaryWorkDir`"",
+        "-CodexWorkDir `"$script:BridgeReviewWorkDir`"",
+        "-PrimaryWorkDir `"$script:BridgePrimaryWorkDir`"",
+        "-ReviewWorkDir `"$script:BridgeReviewWorkDir`"",
         $protectedArgs,
         "-MaxCycles $BridgeMaxCycles",
         "-TimeoutMinutes $BridgeTimeoutMinutes",
@@ -356,7 +375,10 @@ function Start-BridgeRunLoop {
     if ($BridgeAllowUnsafeProtectedRootWriteDeny) {
         $argLine += ' -AllowUnsafeProtectedRootWriteDeny'
     }
-    return Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -WorkingDirectory $BridgeClaudeWorkDir -WindowStyle Hidden -PassThru
+    if ($CodexOnly) {
+        $argLine += ' -CodexOnly'
+    }
+    return Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -WorkingDirectory $script:BridgePrimaryWorkDir -WindowStyle Hidden -PassThru
 }
 
 function Invoke-AutoAdvanceIfStaleDone {
@@ -596,6 +618,36 @@ if ([string]::IsNullOrWhiteSpace($ReportRoot)) {
 }
 $invokeScript = Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1'
 $bridgeScript = Join-Path $PSScriptRoot 'Start-AgentBridge.ps1'
+$script:MonitorExecutor = if ($CodexOnly -and $Executor -ne 'none') { 'codex' } else { $Executor }
+$script:MonitorTimeoutMinutes = if ($ExecutorTimeoutMinutes -gt 0) { $ExecutorTimeoutMinutes } else { $ClaudeTimeoutMinutes }
+$script:BridgePrimaryExecutor = if ($CodexOnly) {
+    'codex'
+} elseif (-not [string]::IsNullOrWhiteSpace($BridgePrimaryExecutor)) {
+    $BridgePrimaryExecutor
+} else {
+    $BridgeClaudeExecutor
+}
+$script:BridgeReviewExecutor = if ($CodexOnly) {
+    'codex'
+} elseif (-not [string]::IsNullOrWhiteSpace($BridgeReviewExecutor)) {
+    $BridgeReviewExecutor
+} else {
+    $BridgeCodexExecutor
+}
+$script:BridgePrimaryWorkDir = if (-not [string]::IsNullOrWhiteSpace($BridgePrimaryWorkDir)) {
+    $BridgePrimaryWorkDir
+} elseif (-not [string]::IsNullOrWhiteSpace($BridgeClaudeWorkDir)) {
+    $BridgeClaudeWorkDir
+} else {
+    $bridgeRootFull
+}
+$script:BridgeReviewWorkDir = if (-not [string]::IsNullOrWhiteSpace($BridgeReviewWorkDir)) {
+    $BridgeReviewWorkDir
+} elseif (-not [string]::IsNullOrWhiteSpace($BridgeCodexWorkDir)) {
+    $BridgeCodexWorkDir
+} else {
+    $bridgeRootFull
+}
 
 if ($ValidateOnly) {
     [ordered]@{
@@ -603,9 +655,21 @@ if ($ValidateOnly) {
         bridge_root = $bridgeRootFull
         archive_root = $archiveRootFull
         report_root = $reportRootFull
-        executor = $Executor
+        executor = $script:MonitorExecutor
+        executor_timeout_minutes = $script:MonitorTimeoutMinutes
+        claude_timeout_minutes = $ClaudeTimeoutMinutes
         interval_minutes = $IntervalMinutes
         max_reports = $MaxReports
+        bridge_primary_executor = $script:BridgePrimaryExecutor
+        bridge_review_executor = $script:BridgeReviewExecutor
+        bridge_primary_work_dir = $script:BridgePrimaryWorkDir
+        bridge_review_work_dir = $script:BridgeReviewWorkDir
+        codex_only = [bool]$CodexOnly
+        compatibility = [ordered]@{
+            bridge_claude_executor = 'legacy alias for primary executor'
+            bridge_codex_executor = 'legacy alias for review executor'
+            claude_timeout_minutes = 'legacy alias used when ExecutorTimeoutMinutes is not set'
+        }
         auto_advance_stale_done = [bool]$AutoAdvanceStaleDone
         auto_advance_stale_minutes = $AutoAdvanceStaleMinutes
         auto_restart_runloop = -not [bool]$NoAutoRestartRunLoop
@@ -637,19 +701,19 @@ for ($i = 1; $i -le $count; $i++) {
     Write-TextFile -Path $inputPath -Value (New-MonitorInput -BridgeRootFull $bridgeRootFull -ReportRootFull $reportRootFull -ReportIndex $i)
     Write-TextFile -Path $promptPath -Value (New-MonitorPrompt -InputPath $inputPath -ReportPath $reportPath -LatestPath $latestPath -DonePath $donePath)
 
-    if ($Executor -eq 'claude') {
+    if ($script:MonitorExecutor -ne 'none') {
         try {
             & powershell -NoProfile -ExecutionPolicy Bypass -File $invokeScript `
                 -PromptPath $promptPath `
                 -WorkDir $bridgeRootFull `
                 -LogDir $logDir `
-                -Executor claude `
+                -Executor $script:MonitorExecutor `
                 -CompletionPath $donePath `
                 -CompletionQuietSeconds 10 `
-                -TimeoutMinutes $ClaudeTimeoutMinutes `
+                -TimeoutMinutes $script:MonitorTimeoutMinutes `
                 -Name ("bridge-monitor-{0:D3}" -f $i) | Out-Null
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $donePath)) {
-                Write-FallbackReport -ReportPath $reportPath -LatestPath $latestPath -InputPath $inputPath -Reason "Claude monitor failed or did not write done flag. exit=$LASTEXITCODE"
+                Write-FallbackReport -ReportPath $reportPath -LatestPath $latestPath -InputPath $inputPath -Reason "Monitor executor $script:MonitorExecutor failed or did not write done flag. exit=$LASTEXITCODE"
             }
         } catch {
             Write-FallbackReport -ReportPath $reportPath -LatestPath $latestPath -InputPath $inputPath -Reason $_.Exception.Message

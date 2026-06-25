@@ -183,6 +183,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action RunLoop -CodexOnly -MaxCycles 1
 ```
 
+Monitor 入口也默认使用 Codex，并会把 `-CodexOnly` 传给 bridge run loop：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridgeMonitor.ps1 -CodexOnly
+```
+
+旧参数 `-BridgeClaudeExecutor`、`-BridgeCodexExecutor` 和 `-ClaudeTimeoutMinutes` 仍保留为兼容别名；新脚本优先使用 `-BridgePrimaryExecutor`、`-BridgeReviewExecutor` 和 `-ExecutorTimeoutMinutes`。
+
 保护边界：
 
 - 默认只用 `ProtectedGitRoots` 的 git dirty watchdog 做 fail-closed 检查，不修改受保护仓库 ACL。

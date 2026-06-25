@@ -55,6 +55,7 @@ if ($ValidateOnly) {
         bridge_script = $bridgeScript
         monitor_script = $monitorScript
         temp_root = $tempRoot
+        default_executor = ((& powershell -NoProfile -ExecutionPolicy Bypass -File $monitorScript -BridgeRoot $bridgeRoot -ArchiveRoot $archiveRoot -ReportRoot $reportRoot -ValidateOnly | ConvertFrom-Json).executor)
     } | ConvertTo-Json -Depth 6
     exit 0
 }
@@ -72,7 +73,31 @@ try {
 
     $statePath = Join-Path $bridgeRoot 'STATE.json'
 
-    # Case 1: stale Claude done state is auto-advanced into Codex review.
+    $monitorValidate = & powershell -NoProfile -ExecutionPolicy Bypass -File $monitorScript `
+        -BridgeRoot $bridgeRoot `
+        -ArchiveRoot $archiveRoot `
+        -ReportRoot $reportRoot `
+        -ValidateOnly | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0) 'Monitor ValidateOnly should succeed'
+    Assert-True ($monitorValidate.executor -eq 'codex') 'Monitor should default to codex executor'
+    Assert-True ($monitorValidate.bridge_primary_executor -eq 'codex') 'Monitor bridge primary executor should default to codex'
+    Assert-True ($monitorValidate.bridge_review_executor -eq 'codex') 'Monitor bridge review executor should default to codex'
+
+    $monitorCodexOnly = & powershell -NoProfile -ExecutionPolicy Bypass -File $monitorScript `
+        -BridgeRoot $bridgeRoot `
+        -ArchiveRoot $archiveRoot `
+        -ReportRoot $reportRoot `
+        -Executor claude `
+        -BridgePrimaryExecutor claude `
+        -BridgeReviewExecutor claude `
+        -CodexOnly `
+        -ValidateOnly | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0) 'Monitor CodexOnly ValidateOnly should succeed'
+    Assert-True ($monitorCodexOnly.executor -eq 'codex') 'CodexOnly should force monitor executor to codex'
+    Assert-True ($monitorCodexOnly.bridge_primary_executor -eq 'codex') 'CodexOnly should force bridge primary executor to codex'
+    Assert-True ($monitorCodexOnly.bridge_review_executor -eq 'codex') 'CodexOnly should force bridge review executor to codex'
+
+    # Case 1: stale primary done state is auto-advanced into review.
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_RESULT.md') -Value '# Claude result' -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_DONE.flag') -Value 'done' -Encoding UTF8
     New-Item -ItemType File -Force -Path (Join-Path $bridgeRoot 'LOCK') | Out-Null
@@ -88,18 +113,18 @@ try {
         -AutoAdvanceStaleMinutes 0 `
         -ProtectedGitRoots $tempRoot `
         -NoAutoRestartRunLoop | Out-Null
-    Assert-True ($LASTEXITCODE -eq 0) 'Monitor Claude auto-advance should succeed'
+    Assert-True ($LASTEXITCODE -eq 0) 'Monitor primary auto-advance should succeed'
     $state1 = Read-JsonFile -Path $statePath
-    Assert-True ($state1.status -eq 'WAITING_CODEX_REVIEW') 'Claude auto-advance should set WAITING_CODEX_REVIEW'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_REVIEW_PROMPT.md') -Raw -Encoding UTF8) -match 'DECISION.json') 'Codex prompt should be prepared'
+    Assert-True ($state1.status -eq 'WAITING_CODEX_REVIEW') 'Primary auto-advance should set WAITING_CODEX_REVIEW'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_REVIEW_PROMPT.md') -Raw -Encoding UTF8) -match 'DECISION.json') 'Review prompt should be prepared'
 
-    # Case 2: stale Codex done state is auto-advanced into the next Claude cycle.
+    # Case 2: stale review done state is auto-advanced into the next primary cycle.
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_REVIEW.md') -Value '# Codex review' -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'NEXT_CLAUDE_PROMPT.md') -Value 'Continue next step.' -Encoding UTF8
     [ordered]@{
         decision = 'CONTINUE'
         reason = 'more work'
-        next_actor = 'claude'
+        next_actor = 'primary'
         coverage_signal = ''
         blocker = ''
         created_at = (Get-Date).ToUniversalTime().ToString('o')
@@ -118,11 +143,11 @@ try {
         -AutoAdvanceStaleMinutes 0 `
         -ProtectedGitRoots $tempRoot `
         -NoAutoRestartRunLoop | Out-Null
-    Assert-True ($LASTEXITCODE -eq 0) 'Monitor Codex auto-advance should succeed'
+    Assert-True ($LASTEXITCODE -eq 0) 'Monitor review auto-advance should succeed'
     $state2 = Read-JsonFile -Path $statePath
-    Assert-True ($state2.status -eq 'WAITING_CLAUDE') 'Codex auto-advance should set WAITING_CLAUDE'
-    Assert-True ([int]$state2.cycle -eq 2) 'Codex CONTINUE should increment cycle'
-    Assert-True ((Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_PROMPT.md') -Raw -Encoding UTF8) -match 'Continue next step') 'Next Claude prompt should be installed'
+    Assert-True ($state2.status -eq 'WAITING_CLAUDE') 'Review auto-advance should set WAITING_CLAUDE'
+    Assert-True ([int]$state2.cycle -eq 2) 'Review CONTINUE should increment cycle'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_PROMPT.md') -Raw -Encoding UTF8) -match 'Continue next step') 'Next primary prompt should be installed'
 
     $watchdogFiles = @(Get-ChildItem -LiteralPath $reportRoot -Filter 'watchdog-auto-advance-*.json')
     Assert-True ($watchdogFiles.Count -ge 2) 'Watchdog should write auto-advance evidence files'
@@ -150,10 +175,12 @@ try {
 
     [ordered]@{
         status = 'PASS'
-        assertions = 10
+        assertions = 17
         cases = @(
-            'stale_claude_done_advances_to_codex_review',
-            'stale_codex_done_advances_to_next_claude',
+            'monitor_defaults_to_codex',
+            'codex_only_forces_monitor_and_bridge_executors',
+            'stale_primary_done_advances_to_review',
+            'stale_review_done_advances_to_next_primary',
             'watchdog_writes_evidence',
             'protected_root_dirty_stops_bridge'
         )

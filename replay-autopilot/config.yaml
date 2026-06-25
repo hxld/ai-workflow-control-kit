@@ -35,9 +35,9 @@ stop_loss_min_oracle_improvement: 8
 stop_loss_low_cap_threshold: 45
 stop_loss_low_cap_rounds: 2
 stop_loss_repeated_gap_threshold: 2
-executor: claude
-require_executor: claude
-allow_codex_executor: false
+executor: codex
+require_executor: codex
+allow_codex_executor: true
 executor_timeout_minutes: 240
 executor_resource_preflight_probe: false
 executor_resource_preflight_bypass: false
@@ -90,7 +90,7 @@ external_practice_auto_search: false
 external_practice_run_agent: false
 external_practice_auto_apply: false
 external_practice_allow_fallback: true
-external_practice_primary_executor: claude
+external_practice_primary_executor: codex
 external_practice_fallback_executor: codex
 external_practice_timeout_minutes: 180
 external_practice_fallback_timeout_minutes: 120

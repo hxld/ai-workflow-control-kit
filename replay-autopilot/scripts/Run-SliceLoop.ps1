@@ -22,7 +22,7 @@ param(
     [string]$RunLabel = '',
     [string]$RoundId = 'r01',
     [ValidateSet('codex', 'claude', 'manual')]
-    [string]$Executor = 'claude',
+    [string]$Executor = 'codex',
     [ValidateSet('codex', 'claude', 'manual', '')]
     [string]$RequireExecutor = '',
     [switch]$AllowCodexExecutor,
@@ -42,7 +42,7 @@ if (-not [string]::IsNullOrWhiteSpace($RequireExecutor) -and $Executor -ne $Requ
     throw "Executor policy violation: actual executor '$Executor' does not match required executor '$RequireExecutor'."
 }
 if ($Executor -eq 'codex' -and -not $AllowCodexExecutor) {
-    throw "Executor policy violation: Codex executor is blocked by default for slice execution. Use -Executor claude, or pass -AllowCodexExecutor only for an explicitly approved Codex run."
+    throw "Executor policy violation: Codex executor requires explicit authorization for slice execution. Pass -AllowCodexExecutor for a Codex-primary run."
 }
 
 function Resolve-AbsolutePath {
@@ -1952,7 +1952,7 @@ function Invoke-TestCharterRepairGate {
         $ForcedDecision,
         [Parameter(Mandatory = $true)]
         $FailedGate,
-        [string]$Executor = 'claude',
+        [string]$Executor = 'codex',
         [string]$Sandbox = 'danger-full-access',
         [string]$Approval = 'never',
         [int]$TimeoutMinutes = 10,

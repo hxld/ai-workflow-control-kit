@@ -3,7 +3,7 @@ param(
     [string]$EvidenceRoot,
     [string]$ReplayRootBase = '',
     [ValidateSet('codex', 'claude', 'manual')]
-    [string]$Executor = 'claude',
+    [string]$Executor = 'codex',
     [ValidateSet('codex', 'claude', 'manual', '')]
     [string]$RequireExecutor = '',
     [string]$Model = '',
@@ -182,6 +182,7 @@ function Invoke-LiveProbe {
     $metaPath = Join-Path $logDir 'executor-resource-preflight.exec.json'
     $stdoutLog = Join-Path $logDir 'executor-resource-preflight.stdout.log'
     $stderrLog = Join-Path $logDir 'executor-resource-preflight.stderr.log'
+    $lastMessage = Join-Path $logDir 'executor-resource-preflight.last-message.md'
 
     $exitCode = 1
     $failureCategory = ''
@@ -193,6 +194,34 @@ function Invoke-LiveProbe {
         $cmd = Get-Command 'claude.cmd' -ErrorAction SilentlyContinue
         if (-not $cmd) { $cmd = Get-Command 'claude' -ErrorAction Stop }
         $args = @('--print', '--permission-mode', 'bypassPermissions', '--output-format', 'text', '--max-turns', '1')
+        if (-not [string]::IsNullOrWhiteSpace($Model)) {
+            $args += @('--model', $Model)
+        }
+        $args += 'OK'
+
+        $process = Start-Process -FilePath $cmd.Source -ArgumentList $args -WorkingDirectory $workDir -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+        $effectiveTimeoutSeconds = [Math]::Max(1, $TimeoutSeconds)
+        $exited = $process.WaitForExit($effectiveTimeoutSeconds * 1000)
+        if (-not $exited) {
+            Stop-ProcessTreeById -ProcessId $process.Id
+            Start-Sleep -Milliseconds 500
+            $exitCode = 86
+            $failureCategory = 'executor_resource_blocker'
+            $completionMode = 'probe_timeout'
+        } else {
+            $exitCode = if ($null -eq $process.ExitCode) { 1 } else { [int]$process.ExitCode }
+        }
+    } elseif ($Executor -eq 'codex') {
+        $cmd = Get-Command 'codex.cmd' -ErrorAction SilentlyContinue
+        if (-not $cmd) { $cmd = Get-Command 'codex' -ErrorAction Stop }
+        $args = @(
+            'exec',
+            '-c', 'features.hooks=false',
+            '-c', 'model_context_window=200000',
+            '--cd', $workDir,
+            '--output-last-message', $lastMessage,
+            '--dangerously-bypass-approvals-and-sandbox'
+        )
         if (-not [string]::IsNullOrWhiteSpace($Model)) {
             $args += @('--model', $Model)
         }
@@ -236,7 +265,16 @@ function Invoke-LiveProbe {
     $ended = Get-Date
     $stdoutText = Read-TextIfExists -Path $stdoutLog
     $stderrText = Read-TextIfExists -Path $stderrLog
+    $lastMessageText = Read-TextIfExists -Path $lastMessage
     $combinedText = "$stdoutText`n$stderrText"
+    if ($Executor -eq 'codex' -and $exitCode -ne 0) {
+        $hasCompletionText = -not [string]::IsNullOrWhiteSpace(($lastMessageText + $stdoutText).Trim())
+        $hasHardError = $combinedText -match '(?i)unexpected argument|error:\s|authentication|unauthorized|login|credit|required account credit|insufficient credits|\b402\b|\b429\b|\b503\b|rate.?limit|usage limit|timeout|No available channel|server-side issue|inference gateway'
+        if ($hasCompletionText -and -not $hasHardError) {
+            $exitCode = 0
+            $completionMode = 'probe_completion_text'
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($failureCategory)) {
         if (Test-CreditBlockerText -Text $combinedText) {
             $failureCategory = 'executor_credit_required'
@@ -249,7 +287,7 @@ function Invoke-LiveProbe {
             if ($exitCode -ne 0) { $exitCode = 87 }
         }
     }
-    if ($exitCode -eq 0 -and $Executor -eq 'claude') {
+    if ($exitCode -eq 0 -and @('claude', 'codex') -contains $Executor) {
         $completion = [ordered]@{
             status = 'OK'
             probe = 'executor_resource_preflight'

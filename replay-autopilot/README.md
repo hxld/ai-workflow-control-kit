@@ -209,19 +209,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.
 `config.yaml` 支持按阶段配置模型。当前默认策略是 Claude Code 执行、Codex 只在显式授权时使用；避免误耗 Codex 额度：
 
 ```yaml
-executor: claude
-require_executor: claude
-allow_codex_executor: false
-claude_phase0_model: claude-opus-4-7
-claude_plan_model: claude-opus-4-7
-claude_phase1_model: claude-sonnet-4-6
-claude_phase2_model: claude-opus-4-7
-claude_deep_review_model: claude-opus-4-7
-claude_evolution_model: claude-opus-4-7
+executor: codex
+require_executor: codex
+allow_codex_executor: true
+codex_model:
+codex_reasoning_effort: medium
+phase0_model:
+plan_model:
+phase1_model:
+phase2_model:
+deep_review_model:
+evolution_model:
 phase1_max_slices: 3
 ```
 
-`Run-ReplayLoop.ps1` 会在每轮 replay root 写入 `EXECUTOR_AUDIT.json`，记录 Phase0 / Plan / Phase1 / Phase2 / DeepReview / Evolution 的实际 executor 与 model。若实际 executor 与 `require_executor` 不一致，或 Codex 未通过 `-AllowCodexExecutor` / `allow_codex_executor:true` 显式授权，runner 会直接停线。
+`Run-ReplayLoop.ps1` 会在每轮 replay root 写入 `EXECUTOR_AUDIT.json`，记录 Phase0 / Plan / Phase1 / Phase2 / DeepReview / Evolution 的实际 executor 与 model。默认推荐使用 Codex-primary：`executor: codex`、`require_executor: codex`、`allow_codex_executor: true`。若实际 executor 与 `require_executor` 不一致，或 Codex 未通过 `-AllowCodexExecutor` / `allow_codex_executor:true` 显式授权，runner 会直接停线。
 
 ## Phase 0 / 0.5 Planning Gate
 

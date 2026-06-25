@@ -633,7 +633,7 @@ function Invoke-ControlPlaneSummarySafe {
         $minOracleImprovement = Get-ConfigValueOrDefault -Config $Config -Key 'control_summary_min_oracle_improvement' -DefaultValue (Get-ConfigValueOrDefault -Config $Config -Key 'stop_loss_min_oracle_improvement' -DefaultValue '8')
         $lowCapThreshold = Get-ConfigValueOrDefault -Config $Config -Key 'control_summary_low_cap_threshold' -DefaultValue (Get-ConfigValueOrDefault -Config $Config -Key 'stop_loss_low_cap_threshold' -DefaultValue '45')
         $repeatBlockerThreshold = Get-ConfigValueOrDefault -Config $Config -Key 'control_summary_repeat_blocker_threshold' -DefaultValue (Get-ConfigValueOrDefault -Config $Config -Key 'stop_loss_repeated_gap_threshold' -DefaultValue '2')
-        $requiredExecutor = Get-ConfigValueOrDefault -Config $Config -Key 'require_executor' -DefaultValue 'claude'
+        $requiredExecutor = Get-ConfigValueOrDefault -Config $Config -Key 'require_executor' -DefaultValue ''
 
         $controlArgs = @(
             '-NoProfile',
@@ -1440,7 +1440,7 @@ function Assert-ExecutorPolicy {
         throw "Executor policy violation: actual executor '$ActualExecutor' does not match required executor '$RequiredExecutor'. Pass -Executor $RequiredExecutor or update require_executor intentionally."
     }
     if ($ActualExecutor -eq 'codex' -and -not $CodexAllowed) {
-        throw "Executor policy violation: Codex executor is blocked by default. Use -Executor claude, or pass -AllowCodexExecutor / allow_codex_executor:true only for an explicitly approved Codex run."
+        throw "Executor policy violation: Codex executor requires explicit authorization. Set allow_codex_executor:true or pass -AllowCodexExecutor for a Codex-primary run."
     }
 }
 

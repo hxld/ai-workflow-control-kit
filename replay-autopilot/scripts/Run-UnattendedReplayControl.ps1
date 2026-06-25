@@ -513,7 +513,7 @@ $knowledgeRepo = Resolve-AbsolutePath (Require-Key $config 'knowledge_repo')
 $replayRootBaseTemplate = Resolve-AbsolutePath (Require-Key $config 'replay_root_base')
 $cycleRoundsActual = if ($CycleRounds -gt 0) { $CycleRounds } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_cycle_rounds' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'max_rounds' -DefaultValue '3')) }
 $maxCyclesActual = if ($MaxCycles -gt 0) { $MaxCycles } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_max_cycles' -DefaultValue '3') }
-$executorActual = if (-not [string]::IsNullOrWhiteSpace($Executor)) { $Executor } else { Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'claude' }
+$executorActual = if (-not [string]::IsNullOrWhiteSpace($Executor)) { $Executor } else { Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'codex' }
 $requiredExecutorActual = if (-not [string]::IsNullOrWhiteSpace($RequireExecutor)) { $RequireExecutor } else { Get-ConfigValueOrDefault -Config $config -Key 'require_executor' -DefaultValue '' }
 $allowCodexExecutorActual = [bool]$AllowCodexExecutor -or (Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'allow_codex_executor' -DefaultValue 'false'))
 $runEvolutionActual = [bool]$RunEvolution -or (Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_run_evolution' -DefaultValue 'true'))
@@ -538,7 +538,7 @@ if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual) -and $executorAct
     throw "Executor policy violation: actual executor '$executorActual' does not match required executor '$requiredExecutorActual'."
 }
 if ($executorActual -eq 'codex' -and -not $allowCodexExecutorActual) {
-    throw "Executor policy violation: Codex executor is blocked by default."
+    throw "Executor policy violation: Codex executor requires explicit authorization."
 }
 if ($cycleRoundsActual -lt 1) { throw "CycleRounds must be >= 1." }
 if ($maxCyclesActual -lt 1) { throw "MaxCycles must be >= 1." }

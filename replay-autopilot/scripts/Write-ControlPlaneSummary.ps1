@@ -8,7 +8,7 @@ param(
     [int]$MinOracleImprovement = 8,
     [int]$LowCapThreshold = 45,
     [int]$RepeatBlockerThreshold = 2,
-    [string]$RequireExecutor = 'claude',
+    [string]$RequireExecutor = '',
     [switch]$ValidateOnly,
     [switch]$Quiet
 )

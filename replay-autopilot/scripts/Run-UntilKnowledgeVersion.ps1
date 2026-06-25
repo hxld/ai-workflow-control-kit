@@ -278,7 +278,7 @@ $config = Read-SimpleYaml $configPathFull
 $projectRoot = Resolve-AbsolutePath (Require-Key $config 'project_root')
 $knowledgeRepo = Resolve-AbsolutePath (Require-Key $config 'knowledge_repo')
 $replayRootBaseTemplate = Resolve-AbsolutePath (Require-Key $config 'replay_root_base')
-$executorActual = if ($config.ContainsKey('executor') -and -not [string]::IsNullOrWhiteSpace($config['executor'])) { $config['executor'] } else { 'claude' }
+$executorActual = if ($config.ContainsKey('executor') -and -not [string]::IsNullOrWhiteSpace($config['executor'])) { $config['executor'] } else { 'codex' }
 if (@('codex', 'claude', 'manual') -notcontains $executorActual) {
     throw "Unsupported executor in config: $executorActual"
 }
@@ -294,7 +294,7 @@ if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual) -and $executorAct
 }
     $allowCodexExecutorActual = [bool]$AllowCodexExecutor -or (Convert-ToBool $(if ($config.ContainsKey('allow_codex_executor')) { $config['allow_codex_executor'] } else { '' }))
 if ($executorActual -eq 'codex' -and -not $allowCodexExecutorActual) {
-    throw "Executor policy violation: Codex executor is blocked by default. Use executor: claude, or pass -AllowCodexExecutor / allow_codex_executor:true only for an explicitly approved Codex run."
+    throw "Executor policy violation: Codex executor requires explicit authorization. Set allow_codex_executor:true or pass -AllowCodexExecutor for a Codex-primary run."
 }
 $timeoutMinutes = if ($config.ContainsKey('executor_timeout_minutes') -and -not [string]::IsNullOrWhiteSpace($config['executor_timeout_minutes'])) { [int]$config['executor_timeout_minutes'] } else { 240 }
 $sandbox = if ($config.ContainsKey('codex_sandbox')) { $config['codex_sandbox'] } else { 'danger-full-access' }

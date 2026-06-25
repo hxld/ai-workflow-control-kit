@@ -3,11 +3,11 @@ param(
     [string]$ReplayRoot,
     [string]$HistoryRoot = '',
     [ValidateSet('codex', 'claude', 'manual')]
-    [string]$Executor = 'claude',
+    [string]$Executor = 'codex',
     [ValidateSet('codex', 'claude', 'manual', '')]
     [string]$RequireExecutor = '',
     [switch]$AllowCodexExecutor,
-    [string]$Model = 'claude-opus-4-7',
+    [string]$Model = '',
     [string]$ReasoningEffort = '',
     [string]$Sandbox = 'danger-full-access',
     [string]$Approval = 'never',
@@ -23,7 +23,7 @@ if (-not [string]::IsNullOrWhiteSpace($RequireExecutor) -and $Executor -ne $Requ
     throw "Executor policy violation: actual executor '$Executor' does not match required executor '$RequireExecutor'."
 }
 if ($Executor -eq 'codex' -and -not $AllowCodexExecutor) {
-    throw "Executor policy violation: Codex executor is blocked by default for deep review. Use -Executor claude, or pass -AllowCodexExecutor only for an explicitly approved Codex run."
+    throw "Executor policy violation: Codex executor requires explicit authorization for deep review. Pass -AllowCodexExecutor for a Codex-primary run."
 }
 
 function Resolve-AbsolutePath {

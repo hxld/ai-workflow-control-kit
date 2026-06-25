@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$LogDir,
     [ValidateSet('codex', 'claude', 'manual')]
-    [string]$Executor = 'claude',
+    [string]$Executor = 'codex',
     [string]$Model = '',
     [string]$ReasoningEffort = '',
     [string]$Sandbox = 'danger-full-access',

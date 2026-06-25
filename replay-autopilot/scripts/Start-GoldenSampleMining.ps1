@@ -547,7 +547,7 @@ if ($RunAgent) {
         Replace('{{GOLDEN_SAMPLE_PROMPT}}', (Join-Path $OutputRoot 'GOLDEN_SAMPLE_PROMPT.md')).
         Replace('{{OUTPUT_PATH}}', (Join-Path $OutputRoot 'GOLDEN_SAMPLE_AI_REVIEW.md'))
     Set-Content -LiteralPath $agentPrompt -Value $promptText -Encoding UTF8
-    $executor = Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'claude'
+    $executor = Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'codex'
     $timeoutMinutes = [int](Get-ConfigValueOrDefault -Config $config -Key 'executor_timeout_minutes' -DefaultValue '120')
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-AgentPrompt.ps1') `
         -PromptPath $agentPrompt `

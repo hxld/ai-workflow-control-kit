@@ -37,14 +37,15 @@ $cases = New-Object System.Collections.Generic.List[string]
 
 try {
     $configText = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8
-    $cases.Add((Assert-True 'config_defaults_to_claude' ($configText -match '(?m)^executor:\s*claude\s*$'))) | Out-Null
-    $cases.Add((Assert-True 'config_requires_claude' ($configText -match '(?m)^require_executor:\s*claude\s*$'))) | Out-Null
-    $cases.Add((Assert-True 'config_blocks_codex_by_default' ($configText -match '(?m)^allow_codex_executor:\s*false\s*$'))) | Out-Null
+    $cases.Add((Assert-True 'config_defaults_to_codex' ($configText -match '(?m)^executor:\s*codex\s*$'))) | Out-Null
+    $cases.Add((Assert-True 'config_requires_codex' ($configText -match '(?m)^require_executor:\s*codex\s*$'))) | Out-Null
+    $cases.Add((Assert-True 'config_authorizes_codex_primary' ($configText -match '(?m)^allow_codex_executor:\s*true\s*$'))) | Out-Null
 
     $defaultRun = Invoke-Capture -CommandArgs @('-NoProfile','-ExecutionPolicy','Bypass','-File',$runLoop,'-ValidateOnly')
     $cases.Add((Assert-True 'default_runloop_validate_passes' ($defaultRun.ExitCode -eq 0))) | Out-Null
-    $cases.Add((Assert-True 'default_runloop_uses_claude' ($defaultRun.Output -match 'Executor\s+:\s+claude'))) | Out-Null
-    $cases.Add((Assert-True 'default_phase0_uses_claude_model' ($defaultRun.Output -match 'Phase0Model\s+:\s+claude-'))) | Out-Null
+    $cases.Add((Assert-True 'default_runloop_uses_codex' ($defaultRun.Output -match 'Executor\s+:\s+codex'))) | Out-Null
+    $cases.Add((Assert-True 'default_runloop_requires_codex' ($defaultRun.Output -match 'RequireExecutor\s+:\s+codex'))) | Out-Null
+    $cases.Add((Assert-True 'default_runloop_authorizes_codex' ($defaultRun.Output -match 'AllowCodexExecutor\s+:\s+True'))) | Out-Null
     $cases.Add((Assert-True 'default_runloop_does_not_use_gpt_phase0' ($defaultRun.Output -notmatch 'Phase0Model\s+:\s+gpt-'))) | Out-Null
 
     $codexConfig = Join-Path $tempRoot 'codex-blocked.yaml'
@@ -56,7 +57,7 @@ try {
 
     $blockedRun = Invoke-Capture -CommandArgs @('-NoProfile','-ExecutionPolicy','Bypass','-File',$runLoop,'-ConfigPath',$codexConfig,'-ValidateOnly')
     $cases.Add((Assert-True 'codex_without_allow_is_blocked' ($blockedRun.ExitCode -ne 0))) | Out-Null
-    $cases.Add((Assert-True 'codex_blocker_message_clear' ($blockedRun.Output -match 'Codex executor is blocked by default'))) | Out-Null
+    $cases.Add((Assert-True 'codex_blocker_message_clear' ($blockedRun.Output -match 'Codex executor requires explicit authorization'))) | Out-Null
 
     $allowedRun = Invoke-Capture -CommandArgs @('-NoProfile','-ExecutionPolicy','Bypass','-File',$runLoop,'-ConfigPath',$codexConfig,'-AllowCodexExecutor','-ValidateOnly')
     $cases.Add((Assert-True 'codex_allowed_requires_explicit_flag' ($allowedRun.ExitCode -eq 0 -and $allowedRun.Output -match 'Executor\s+:\s+codex'))) | Out-Null
@@ -71,9 +72,9 @@ try {
     $sliceSource = Get-Content -LiteralPath $sliceLoop -Raw -Encoding UTF8
     $deepReviewSource = Get-Content -LiteralPath $deepReview -Raw -Encoding UTF8
     $invokeSource = Get-Content -LiteralPath $invokeAgent -Raw -Encoding UTF8
-    $cases.Add((Assert-True 'slice_loop_default_claude' ($sliceSource -match '\[string\]\$Executor = ''claude'''))) | Out-Null
-    $cases.Add((Assert-True 'deep_review_default_claude' ($deepReviewSource -match '\[string\]\$Executor = ''claude'''))) | Out-Null
-    $cases.Add((Assert-True 'invoke_agent_default_claude' ($invokeSource -match '\[string\]\$Executor = ''claude'''))) | Out-Null
+    $cases.Add((Assert-True 'slice_loop_default_codex' ($sliceSource -match '\[string\]\$Executor = ''codex'''))) | Out-Null
+    $cases.Add((Assert-True 'deep_review_default_codex' ($deepReviewSource -match '\[string\]\$Executor = ''codex'''))) | Out-Null
+    $cases.Add((Assert-True 'invoke_agent_default_codex' ($invokeSource -match '\[string\]\$Executor = ''codex'''))) | Out-Null
 } finally {
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force

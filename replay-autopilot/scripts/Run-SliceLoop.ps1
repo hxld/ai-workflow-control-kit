@@ -2319,6 +2319,42 @@ function Invoke-SideEffectLedgerGate {
     return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $jsonResultPath; Blocker = 'side_effect_ledger_failed' }
 }
 
+function Invoke-FamilyProofLedgerGate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [Parameter(Mandatory = $true)]
+        [string]$RunnerContractPath
+    )
+
+    $gateScript = Join-Path $PSScriptRoot 'verify_family_proof_ledger.ps1'
+    $familyLedgerPath = Join-Path $ReplayRoot 'REQUIREMENT_FAMILY_LEDGER.json'
+    $sliceContractPath = Join-Path $ReplayRoot ('SLICE_EXECUTION_CONTRACT_{0:D2}.json' -f $SliceIndex)
+    $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $SliceIndex)
+    $outputPath = Join-Path $ReplayRoot ('FAMILY_PROOF_LEDGER_{0:D2}.json' -f $SliceIndex)
+
+    if (-not (Test-Path -LiteralPath $gateScript -PathType Leaf)) {
+        return [pscustomobject]@{ CanProceed = $false; ResultPath = ''; Blocker = 'family_proof_ledger_script_missing' }
+    }
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript `
+        -FamilyLedger $familyLedgerPath `
+        -SliceContract $sliceContractPath `
+        -SliceResult $sliceResultPath `
+        -OutputPath $outputPath | Out-Null
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -eq 0) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} family proof ledger pass | family_proof_ledger | side_effect_ledger_gap,wrong_test_surface,exact_contract_gap | executable_evidence | result={1}. |" -f $SliceIndex, $outputPath)
+        return [pscustomobject]@{ CanProceed = $true; ResultPath = $outputPath; Blocker = '' }
+    }
+
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} family proof ledger stop | family_proof_ledger | side_effect_ledger_gap,wrong_test_surface,exact_contract_gap | non_authorizing_evidence | exit_code={1}; result={2}. |" -f $SliceIndex, $exitCode, $outputPath)
+    return [pscustomobject]@{ CanProceed = $false; ResultPath = $outputPath; Blocker = 'family_proof_ledger_failed' }
+}
+
 function Invoke-Phase0PrecheckGate {
     <#
     .SYNOPSIS
@@ -4849,6 +4885,33 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice experiment contract stop | {1} | {2} | tooling_enforcement_stop | Invoke-PreSliceExperimentContracts exit_code={3}; dry_run={4}; runnable={5}; callable={6}; charter={7}; contract={8}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('RUNNABLE_SLICE_AUTHORIZATION_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('TEST_CHARTER_{0:D2}.json' -f $i)), (Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'))
             $blockedBeforeExecutor = $true
             $hasExistingResult = $true
+        } else {
+            $sliceExecutionContractPath = Join-Path $replayRootFull ('SLICE_EXECUTION_CONTRACT_{0:D2}.json' -f $i)
+            $baselineCarrierIndexPath = Join-Path $replayRootFull 'replay-context-index\baseline-carriers.json'
+            if (-not (Test-Path -LiteralPath $baselineCarrierIndexPath -PathType Leaf)) {
+                $baselineCarrierIndexPath = Join-Path $replayRootFull 'replay-context-index.json'
+            }
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify_first_slice_runnable_contract.ps1') `
+                -Contract $sliceExecutionContractPath `
+                -ReplayRoot $replayRootFull | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "first-slice runnable contract verification stopped before executor"
+                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} first-slice runnable contract stop | {1} | {2} | first_slice_runnable_contract | exit_code={3}; contract={4}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, $sliceExecutionContractPath)
+                $blockedBeforeExecutor = $true
+                $hasExistingResult = $true
+            }
+            if (-not $blockedBeforeExecutor) {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify_carrier_invocation_contract.ps1') `
+                    -Contract $sliceExecutionContractPath `
+                    -CarrierIndex $baselineCarrierIndexPath `
+                    -OutputPath (Join-Path $replayRootFull ('CARRIER_INVOCATION_CONTRACT_{0:D2}.json' -f $i)) | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "carrier invocation contract verification stopped before executor"
+                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} carrier invocation contract stop | {1} | {2} | carrier_invocation_contract | exit_code={3}; contract={4}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('CARRIER_INVOCATION_CONTRACT_{0:D2}.json' -f $i)))
+                    $blockedBeforeExecutor = $true
+                    $hasExistingResult = $true
+                }
+            }
         }
     }
 
@@ -5160,6 +5223,12 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     if (-not [bool]$sideEffectGate.CanProceed) {
         Write-Host "Side effect ledger gate failed for slice ${i}: $($sideEffectGate.Blocker)"
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger: $($sideEffectGate.Blocker)"
+        break
+    }
+    $familyProofLedgerGate = Invoke-FamilyProofLedgerGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
+    if (-not [bool]$familyProofLedgerGate.CanProceed) {
+        Write-Host "Family proof ledger gate failed for slice ${i}: $($familyProofLedgerGate.Blocker)"
+        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "family_proof_ledger: $($familyProofLedgerGate.Blocker)"
         break
     }
     # v378: TODO detector gate after GREEN phase

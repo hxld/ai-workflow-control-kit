@@ -108,7 +108,7 @@ function Get-TestMethodFromTestName {
 
 function Get-CommandMavenSettings {
     param([string]$ConfiguredValue)
-    if ([string]::IsNullOrWhiteSpace($ConfiguredValue)) { return '' }
+    if ([string]::IsNullOrWhiteSpace($ConfiguredValue)) { return '-Dproject.build.sourceEncoding=UTF-8 -Dfile.encoding=UTF-8' }
     return ('-s ' + $ConfiguredValue + ' -Dproject.build.sourceEncoding=UTF-8 -Dfile.encoding=UTF-8')
 }
 
@@ -117,6 +117,8 @@ $worktreeFull = Resolve-AbsolutePath $Worktree
 $dryRunPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $SliceIndex)
 $slicePlanPath = Join-Path $replayRootFull ('SLICE_PLAN_CONTRACT_{0:D2}.json' -f $SliceIndex)
 $firstExecutableContractPath = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'
+$sliceExecutionContractPath = Join-Path $replayRootFull ('SLICE_EXECUTION_CONTRACT_{0:D2}.json' -f $SliceIndex)
+$carrierInvocationContractPath = Join-Path $replayRootFull ('CARRIER_INVOCATION_CONTRACT_{0:D2}.json' -f $SliceIndex)
 $runnableAuthorizationPath = Join-Path $replayRootFull ('RUNNABLE_SLICE_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
 $testCharterContractPath = Join-Path $replayRootFull ('TEST_CHARTER_{0:D2}.json' -f $SliceIndex)
 $preSliceBlockerPath = Join-Path $replayRootFull ('SLICE_RESULT_PRE_{0:D2}.json' -f $SliceIndex)
@@ -423,6 +425,44 @@ $slicePlan = [ordered]@{
     authorization = if ($planBlockers.Count -eq 0) { 'ALLOW' } else { 'STOP' }
 }
 $slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
+
+$sliceExecutionContract = [ordered]@{
+    schema = 'slice_execution_contract.v1'
+    family_id = $ForcedRequirementFamily
+    production_entry_qn = $selectedEntry
+    test_class = $testClass
+    test_method = $testMethod
+    red_command = $redCommand
+    green_command = $greenCommand
+    isolated_pom_path = ([System.IO.Path]::Combine($worktreeFull, 'pom.xml'))
+    maven_settings_arg = Get-CommandMavenSettings -ConfiguredValue $MavenSettings
+    red_assertion = $expectedRedFailure
+    side_effect_or_output_probe = $downstream
+    must_not_assertion = $mustNotBehavior
+    entry_invocation_method = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_invocation_method'), (Get-PlanField -Text $planText -Name 'test_invocation_expression'), 'invoke the selected real production entry from the behavior test')
+    contract_status = if ($planBlockers.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    issues = @($planBlockers | Select-Object -Unique)
+}
+$sliceExecutionContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sliceExecutionContractPath -Encoding UTF8
+
+$baselineCarrierIndexPath = Join-Path $replayRootFull 'replay-context-index\baseline-carriers.json'
+if (-not (Test-Path -LiteralPath $baselineCarrierIndexPath -PathType Leaf)) {
+    $baselineCarrierIndexPath = Join-Path $replayRootFull 'replay-context-index.json'
+}
+$carrierInvocationContract = [ordered]@{
+    schema = 'carrier_invocation_contract.v1'
+    status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'PASS' } else { 'FAIL' }
+    resolved = $preAuthorized
+    signature_match = $preAuthorized
+    test_invokes_entry = -not [string]::IsNullOrWhiteSpace($sliceExecutionContract.entry_invocation_method)
+    carrier_origin = if ($preAuthorized) { 'existing_production' } else { 'unresolved' }
+    production_entry_qn = $selectedEntry
+    test_invocation_method = $sliceExecutionContract.entry_invocation_method
+    contract = $sliceExecutionContractPath
+    carrier_index = $baselineCarrierIndexPath
+    issues = @($carrierBlockers | Select-Object -Unique)
+}
+$carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierInvocationContractPath -Encoding UTF8
 
     if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{

@@ -30,6 +30,9 @@
 - carrier authorization dry-run: {{CARRIER_AUTHORIZATION_DRY_RUN}}
 - slice plan contract: {{SLICE_PLAN_CONTRACT}}
 - first-slice execution contract: {{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json
+- canonical slice execution contract: {{REPLAY_ROOT}}\SLICE_EXECUTION_CONTRACT_01.json
+- carrier invocation contract: {{REPLAY_ROOT}}\CARRIER_INVOCATION_CONTRACT_01.json
+- family proof ledger: {{REPLAY_ROOT}}\FAMILY_PROOF_LEDGER_01.json
 - replay context index: {{REPLAY_CONTEXT_INDEX}}
 - slice progress json: {{SLICE_PROGRESS}}
 - slice progress md: {{SLICE_PROGRESS_MD}}
@@ -79,6 +82,11 @@
 Before implementation, produce exactly one state in your slice reasoning and final `SLICE_RESULT`: `RUNNABLE_FIRST_SLICE` or `BLOCKED_NO_RUNNABLE_SLICE`. Do not implement until `{{RUNNABLE_SLICE_AUTHORIZATION}}` has `status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `red_command`/`green_command`; `{{CALLABLE_CARRIER_AUTHORIZATION}}` has `authorization_status=AUTHORIZED`; `{{TEST_CHARTER_CONTRACT}}` has `status=AUTHORIZED` when the slice is stateful or deploy-facing; `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true`; and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. A named test file or method without an executable Maven command using `-f {{WORKTREE}}\pom.xml` is not a slice plan. If any authorization file is absent, blocked, or non-authorizing, write `BLOCKED_NO_RUNNABLE_SLICE` / pre-slice blocker evidence instead of starting RED/GREEN work.
 
 For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory machine input before editing files. It must have `contract_status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `real_entry_fqn`, `test_harness_module`, `test_class`, `test_method`, `maven_test_command_template`, `red_command`, `green_command`, `expected_red_failure`, `green_business_assertion`, `production_entry_qn`, `entry_invocation_method`, `required_side_effects`, `business_red_assertion`, `negative_guard_assertion`, `forbidden_test_surfaces`, and `allowed_mock_boundaries`; otherwise write `BLOCKED_NO_RUNNABLE_SLICE` and do not start RED/GREEN work.
+
+The canonical experiment artifacts are binding, not optional documentation:
+- `SLICE_EXECUTION_CONTRACT_01.json` must exist before implementation and must contain `family_id`, `production_entry_qn`, `test_class`, `test_method`, exact `red_command`, exact `green_command`, `isolated_pom_path`, `maven_settings_arg`, `red_assertion`, `side_effect_or_output_probe`, and `must_not_assertion`.
+- `CARRIER_INVOCATION_CONTRACT_01.json` must report `resolved=true`, `signature_match=true`, `test_invokes_entry=true`, and `carrier_origin=existing_production`. `NEW_PLANNED_CARRIER`, planned-only services, helper-only carriers, DTO-only carriers, and unresolved signatures are blockers.
+- `FAMILY_PROOF_LEDGER_01.json` is produced after GREEN. A passing test is non-authorizing unless this ledger accepts the family-required proof kind and the slice proves the declared real entry caused the declared side effect or output plus the must-not assertion.
 
 Before slice execution, the runnable contract row is binding:
 

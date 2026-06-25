@@ -28,12 +28,14 @@ $workDir = Join-Path $tempRoot 'work'
 $logDir = Join-Path $tempRoot 'logs'
 $sleepLogDir = Join-Path $tempRoot 'logs-sleep'
 $usageLogDir = Join-Path $tempRoot 'logs-usage'
+$capacityLogDir = Join-Path $tempRoot 'logs-capacity'
 $promptPath = Join-Path $tempRoot 'PROMPT.md'
 $completionPath = Join-Path $tempRoot 'DONE.md'
 $sleepCompletionPath = Join-Path $tempRoot 'DONE-SLEEP.md'
 $usageCompletionPath = Join-Path $tempRoot 'DONE-USAGE.md'
+$capacityCompletionPath = Join-Path $tempRoot 'DONE-CAPACITY.md'
 $sleepPidPath = Join-Path $tempRoot 'sleep-pid.txt'
-New-Item -ItemType Directory -Force -Path $fakeBin, $workDir, $logDir, $sleepLogDir, $usageLogDir | Out-Null
+New-Item -ItemType Directory -Force -Path $fakeBin, $workDir, $logDir, $sleepLogDir, $usageLogDir, $capacityLogDir | Out-Null
 Set-Content -LiteralPath $promptPath -Value 'write completion then exit nonzero' -Encoding UTF8
 
 $fakeCodexPath = Join-Path $fakeBin 'codex.cmd'
@@ -49,6 +51,10 @@ if "%FAKE_CODEX_MODE%"=="sleep-after-completion" (
 )
 if "%FAKE_CODEX_MODE%"=="usage-limit" (
   echo ERROR: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at May 18th, 2026 12:01 AM.
+  exit /b 1
+)
+if "%FAKE_CODEX_MODE%"=="capacity" (
+  echo Selected model is at capacity. Please try a different model.
   exit /b 1
 )
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-Content -LiteralPath $env:FAKE_COMPLETION_PATH -Value 'completed despite executor exit' -Encoding UTF8"
@@ -129,6 +135,22 @@ try {
     if ($LASTEXITCODE -ne 86) {
         throw "Invoke-AgentPrompt expected usage-limit exit code 86, got $LASTEXITCODE"
     }
+
+    $env:FAKE_COMPLETION_PATH = $capacityCompletionPath
+    $env:FAKE_CODEX_MODE = 'capacity'
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $invokeScript `
+        -PromptPath $promptPath `
+        -WorkDir $workDir `
+        -LogDir $capacityLogDir `
+        -Executor codex `
+        -CompletionPath $capacityCompletionPath `
+        -CompletionQuietSeconds 15 `
+        -TimeoutMinutes 1 `
+        -Name fake-capacity | Out-Null
+
+    if ($LASTEXITCODE -ne 86) {
+        throw "Invoke-AgentPrompt expected capacity exit code 86, got $LASTEXITCODE"
+    }
 } finally {
     if ($null -ne $sentinel) {
         Stop-Process -Id $sentinel.Id -Force -ErrorAction SilentlyContinue
@@ -200,6 +222,15 @@ if ($usageMeta.failure_category -ne 'usage_limit') {
     throw "Expected usage_limit failure_category, got $($usageMeta.failure_category)"
 }
 
+$capacityMetaPath = Join-Path $capacityLogDir 'fake-capacity.exec.json'
+if (-not (Test-Path -LiteralPath $capacityMetaPath)) {
+    throw "Capacity execution metadata was not written: $capacityMetaPath"
+}
+$capacityMeta = Get-Content -LiteralPath $capacityMetaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($capacityMeta.failure_category -ne 'usage_limit') {
+    throw "Expected usage_limit failure_category for capacity, got $($capacityMeta.failure_category)"
+}
+
 [ordered]@{
     status = 'PASS'
     cases = @(
@@ -207,7 +238,8 @@ if ($usageMeta.failure_category -ne 'usage_limit') {
         'completion_file_stops_running_job_without_unsupported_force_parameter',
         'completion_file_kills_matching_executor_child_processes',
         'completion_file_does_not_kill_matching_non_descendant_processes',
-        'usage_limit_exits_with_resource_code'
+        'usage_limit_exits_with_resource_code',
+        'capacity_exits_with_resource_code'
     )
     temp_root = $tempRoot
 } | ConvertTo-Json -Depth 6

@@ -213,10 +213,10 @@ function Get-BlockerRule {
             return [ordered]@{
                 blocker = $Fingerprint
                 root_cause_layer = 'executor_reliability'
-                root_cause = 'Executor exits, rate limits, or transient API failures interrupt the pipeline.'
+                root_cause = 'Executor exits, model capacity, rate limits, or transient API failures interrupt the pipeline.'
                 required_fix = 'Use bounded retry/fallback and record executor failure class without consuming it as coverage failure.'
                 prevention_gate = 'Transient executor errors retry; persistent executor errors stop with evidence.'
-                regression_test = 'Executor retry fixture treats 429 as transient and bounded.'
+                regression_test = 'Executor retry fixture treats 429 and model capacity as transient and bounded.'
                 next_validation = 'Run status distinguishes infrastructure stop from implementation blocker.'
                 machine_gate = 'executor_retry_and_classification_required'
                 severity = 'P1'

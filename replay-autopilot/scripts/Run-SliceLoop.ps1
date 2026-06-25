@@ -466,7 +466,7 @@ function Test-TransientExecutorError {
     param([string]$StdoutLogPath)
     if (-not (Test-Path -LiteralPath $StdoutLogPath)) { return $false }
     $logText = Get-Content -LiteralPath $StdoutLogPath -Raw -Encoding UTF8
-    return ($logText -match '(?i)429|rate.?limit|too.?many.?requests|throttl')
+    return ($logText -match '(?i)429|rate.?limit|too.?many.?requests|throttl|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity')
 }
 
 function Get-LatestExecutorMetadata {

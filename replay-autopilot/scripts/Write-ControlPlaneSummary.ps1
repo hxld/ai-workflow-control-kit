@@ -311,7 +311,7 @@ function Get-FingerprintsFromText {
         'phase0_format_drift' = 'phase0_status.*not found|STOP_PHASE0_PARSE_FAILURE|phase0 parse|exploration_missing|selected_real_entry_missing|requirement literal inventory'
         'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|protected main project root|protected root'
         'executor_credit_required' = 'executor_credit_required|402\s+Credit|required account credit|credit required|positive balance|required for this model|insufficient credits|not enough credits'
-        'executor_resource_or_crash' = '429|503|rate limit|usage_limit|timeout|API 400|API 503|No available channel|server-side issue|inference gateway|executor_failed_without_result|executor crash'
+        'executor_resource_or_crash' = '429|503|rate limit|usage_limit|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity|timeout|API 400|API 503|No available channel|server-side issue|inference gateway|executor_failed_without_result|executor crash'
         'evolution_validation_fail' = 'FAIL_AFTER_REPAIR|EVOLUTION_RESULT_VERIFY|knowledge_repo_commit_or_push_blocked|validation.*fail'
         'low_verification_cap' = 'verification_capped_coverage:\s*(?:0|[1-9]|[1-3][0-9]|4[0-5])\b'
     }
@@ -362,7 +362,7 @@ function Get-ExecutorFailureEvidenceText {
         foreach ($logPath in @($stdoutLog, $stderrLog)) {
             if ([string]::IsNullOrWhiteSpace($logPath) -or -not (Test-Path -LiteralPath $logPath)) { continue }
             $text = Read-TextIfExists $logPath
-            if ($text -match '(?i)\b402\b|\b503\b|credit required|positive balance|required for this model|insufficient credits|not enough credits|usage limit|rate.?limit|too.?many.?requests|no available channel|server-side issue|inference gateway|gateway|authentication|unauthorized') {
+            if ($text -match '(?i)\b402\b|\b503\b|credit required|positive balance|required for this model|insufficient credits|not enough credits|usage limit|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity|rate.?limit|too.?many.?requests|no available channel|server-side issue|inference gateway|gateway|authentication|unauthorized') {
                 $excerpt = $text.Trim()
                 if ($excerpt.Length -gt 1200) { $excerpt = $excerpt.Substring(0, 1200) }
                 $evidence.Add(("executor_log: {0}`n{1}" -f $logPath, $excerpt)) | Out-Null

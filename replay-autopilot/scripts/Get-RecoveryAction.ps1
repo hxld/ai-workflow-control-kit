@@ -36,11 +36,11 @@ if ($blockerLower -match 'executor_credit_required|402\s+credit|required account
         'Recovery: Restore Claude/executor credit, or intentionally change executor policy with audit disclosure.',
         'Action: Do NOT score this run, do NOT evolve replay skills from it, and do NOT start another unattended replay until the resource blocker is cleared.'
     )
-} elseif ($blockerLower -match 'usage_limit|rate.?limit|too.?many.?requests|throttl|429') {
+} elseif ($blockerLower -match 'usage_limit|rate.?limit|too.?many.?requests|throttl|429|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity') {
     $recoveryAction = 'RETRY_AFTER_QUOTA_RESET'
     $shouldRetry = $true
     $concreteAction = @(
-        'Blocker: executor hit model usage limit.',
+        'Blocker: executor hit model usage limit or temporary model capacity.',
         'Recovery: Resume after quota resets or switch executor.',
         'Action: Do NOT score this run or evolve skills. This is a resource blocker, not workflow coverage evidence.'
     )

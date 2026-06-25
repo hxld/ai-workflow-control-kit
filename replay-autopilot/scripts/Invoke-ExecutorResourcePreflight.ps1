@@ -9,6 +9,8 @@ param(
     [string]$Model = '',
     [string]$OutputPath = '',
     [int]$ProbeTimeoutSeconds = 60,
+    [int]$MaxResourceRetries = 2,
+    [int]$RetryDelaySeconds = 60,
     [switch]$Probe,
     [switch]$ValidateOnly,
     [switch]$Quiet
@@ -53,6 +55,12 @@ function Test-CreditBlockerText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
     return ($Text -match '(?i)executor_credit_required|\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits')
+}
+
+function Test-CapacityBlockerText {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    return ($Text -match '(?i)selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity')
 }
 
 function Stop-ProcessTreeById {
@@ -269,7 +277,7 @@ function Invoke-LiveProbe {
     $combinedText = "$stdoutText`n$stderrText"
     if ($Executor -eq 'codex' -and $exitCode -ne 0) {
         $hasCompletionText = -not [string]::IsNullOrWhiteSpace(($lastMessageText + $stdoutText).Trim())
-        $hasHardError = $combinedText -match '(?i)unexpected argument|error:\s|authentication|unauthorized|login|credit|required account credit|insufficient credits|\b402\b|\b429\b|\b503\b|rate.?limit|usage limit|timeout|No available channel|server-side issue|inference gateway'
+        $hasHardError = $combinedText -match '(?i)unexpected argument|error:\s|authentication|unauthorized|login|credit|required account credit|insufficient credits|\b402\b|\b429\b|\b503\b|rate.?limit|usage limit|timeout|No available channel|server-side issue|inference gateway|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity'
         if ($hasCompletionText -and -not $hasHardError) {
             $exitCode = 0
             $completionMode = 'probe_completion_text'
@@ -279,7 +287,7 @@ function Invoke-LiveProbe {
         if (Test-CreditBlockerText -Text $combinedText) {
             $failureCategory = 'executor_credit_required'
             $exitCode = 86
-        } elseif ($combinedText -match '(?i)\b503\b|no available channel|server-side issue|inference gateway|gateway|rate.?limit|too.?many.?requests|usage limit|timeout') {
+        } elseif (Test-CapacityBlockerText -Text $combinedText -or $combinedText -match '(?i)\b503\b|no available channel|server-side issue|inference gateway|gateway|rate.?limit|too.?many.?requests|usage limit|timeout') {
             $failureCategory = 'executor_resource_blocker'
             if ($exitCode -ne 0) { $exitCode = 86 }
         } elseif ($combinedText -match '(?i)authentication|unauthorized|login') {
@@ -315,6 +323,7 @@ function Invoke-LiveProbe {
         exit_code = $exitCode
         meta_path = $metaPath
         stdout_log = if ($null -ne $meta) { [string]$meta.stdout_log } else { $stdoutLog }
+        stderr_log = if ($null -ne $meta) { [string]$meta.stderr_log } else { $stderrLog }
         failure_category = if ($null -ne $meta) { [string]$meta.failure_category } else { '' }
         probe_root = $probeRoot
         completion_path = $completionPath
@@ -337,6 +346,8 @@ if ($ValidateOnly) {
         model = $Model
         output_path = $outputPathFull
         probe_timeout_seconds = $ProbeTimeoutSeconds
+        max_resource_retries = $MaxResourceRetries
+        retry_delay_seconds = $RetryDelaySeconds
         probe = [bool]$Probe
     } | ConvertTo-Json -Depth 6
     exit 0
@@ -406,7 +417,33 @@ if ($null -ne $recentBlocker -and -not $Probe) {
 
 if ($Probe) {
     $probeOutputRoot = Join-Path $evidenceRootFull '_control\executor-resource-probes'
-    $probeResult = Invoke-LiveProbe -Executor $Executor -Model $Model -OutputRoot $probeOutputRoot -TimeoutSeconds $ProbeTimeoutSeconds
+    $probeResult = $null
+    $attempt = 0
+    $maxResourceRetriesSafe = [Math]::Max(0, $MaxResourceRetries)
+    $retryDelaySafe = [Math]::Max(0, $RetryDelaySeconds)
+    while ($true) {
+        $attempt++
+        $probeResult = Invoke-LiveProbe -Executor $Executor -Model $Model -OutputRoot $probeOutputRoot -TimeoutSeconds $ProbeTimeoutSeconds
+        if ($probeResult.exit_code -eq 0) { break }
+
+        $probeText = ''
+        foreach ($probeLogPath in @([string]$probeResult.stdout_log, [string]$probeResult.stderr_log)) {
+            if (-not [string]::IsNullOrWhiteSpace($probeLogPath) -and (Test-Path -LiteralPath $probeLogPath)) {
+                $probeText += "`n" + (Read-TextIfExists -Path $probeLogPath)
+            }
+        }
+        if ($attempt -le $maxResourceRetriesSafe -and (Test-CapacityBlockerText -Text $probeText)) {
+            if (-not $Quiet) {
+                Write-Host "Executor resource preflight: capacity blocker detected; retrying probe attempt $attempt/$maxResourceRetriesSafe in ${retryDelaySafe}s"
+            }
+            if ($retryDelaySafe -gt 0) {
+                Start-Sleep -Seconds $retryDelaySafe
+            }
+            continue
+        }
+        break
+    }
+
     if ($probeResult.exit_code -eq 0) {
         $result = [ordered]@{
             schema = 'executor_resource_preflight.v1'
@@ -420,6 +457,7 @@ if ($Probe) {
             reason = 'live_probe_passed'
             source = [string]$probeResult.meta_path
             probe = [bool]$Probe
+            attempts = $attempt
             probe_root = [string]$probeResult.probe_root
             recommended_next_step = 'Executor probe passed; replay may start if other gates allow it.'
         }
@@ -445,7 +483,9 @@ if ($Probe) {
         reason = 'live_probe_failed'
         source = [string]$probeResult.meta_path
         stdout_log = [string]$probeResult.stdout_log
+        stderr_log = [string]$probeResult.stderr_log
         probe = [bool]$Probe
+        attempts = $attempt
         probe_root = [string]$probeResult.probe_root
         recommended_next_step = 'Fix executor resource/authentication before replay starts. Do not score this as implementation or verifier progress.'
     }

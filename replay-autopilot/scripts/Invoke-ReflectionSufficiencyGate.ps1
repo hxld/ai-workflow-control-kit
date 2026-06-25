@@ -94,7 +94,7 @@ function Test-TextAddressesBlocker {
             return $lower -match '(phase0|phase 0|format[_ -]?drift|machine[_ -]?contract|exact[_ -]?heading|status[_ -]?field)'
         }
         'executor_resource_or_crash' {
-            return $lower -match '(executor|retry|rate[_ -]?limit|429|timeout|api 400|crash|fallback)'
+            return $lower -match '(executor|retry|rate[_ -]?limit|429|capacity|timeout|api 400|crash|fallback)'
         }
         'schema_contract_discovery_gap' {
             return $lower -match '(schema[_ -]?discovery|schema[_ -]?contract|confirmed|inferred|blocked|payload[_ -]?schema)'

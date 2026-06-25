@@ -1033,7 +1033,7 @@ if ($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
     }
     if ($failureText -match '(?i)\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits') {
         $failureCategory = 'executor_credit_required'
-    } elseif ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at') {
+    } elseif ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity') {
         $failureCategory = 'usage_limit'
     } elseif ($failureText -match '(?i)not logged in|login required|authentication|unauthorized') {
         $failureCategory = 'auth'

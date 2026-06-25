@@ -29,6 +29,7 @@
 - test charter machine contract: {{TEST_CHARTER_CONTRACT}}
 - carrier authorization dry-run: {{CARRIER_AUTHORIZATION_DRY_RUN}}
 - slice plan contract: {{SLICE_PLAN_CONTRACT}}
+- first-slice execution contract: {{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json
 - replay context index: {{REPLAY_CONTEXT_INDEX}}
 - slice progress json: {{SLICE_PROGRESS}}
 - slice progress md: {{SLICE_PROGRESS_MD}}
@@ -76,6 +77,8 @@
 【P0: Pre-Implementation Carrier Validation (CRITICAL BLOCKER)】
 
 Before implementation, produce exactly one state in your slice reasoning and final `SLICE_RESULT`: `RUNNABLE_FIRST_SLICE` or `BLOCKED_NO_RUNNABLE_SLICE`. Do not implement until `{{RUNNABLE_SLICE_AUTHORIZATION}}` has `status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `red_command`/`green_command`; `{{CALLABLE_CARRIER_AUTHORIZATION}}` has `authorization_status=AUTHORIZED`; `{{TEST_CHARTER_CONTRACT}}` has `status=AUTHORIZED` when the slice is stateful or deploy-facing; `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true`; and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. A named test file or method without an executable Maven command using `-f {{WORKTREE}}\pom.xml` is not a slice plan. If any authorization file is absent, blocked, or non-authorizing, write `BLOCKED_NO_RUNNABLE_SLICE` / pre-slice blocker evidence instead of starting RED/GREEN work.
+
+For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory machine input before editing files. It must have `contract_status=AUTHORIZED` and non-empty `production_entry_qn`, `entry_invocation_method`, `required_side_effects`, `business_red_assertion`, `negative_guard_assertion`, `forbidden_test_surfaces`, `allowed_mock_boundaries`, and `maven_test_command_template`; otherwise write `BLOCKED_NO_RUNNABLE_SLICE` and do not start RED/GREEN work.
 
 If the selected carrier mismatches, choose a same-family replacement from `{{REPLAY_CONTEXT_INDEX}}` before consuming S{{SLICE_INDEX}}; otherwise write a pre-slice blocker instead of starting RED/GREEN work.
 
@@ -147,6 +150,7 @@ If you proceed WITHOUT carrier validation:
    如果 test-compile 失败、测试未执行、0 tests run、只创建测试文件、只描述 git diff、或只写“GREEN fix applied”，必须设置 `coverage_delta=0`，`slice_status=PARTIAL|BLOCKED`，`gap_flags` 包含 `test_compilation_failed` 或 `no_test_execution_evidence`。
 11. 禁止修改任何 `pom.xml`、禁止新增 JUnit/Mockito/Spring Test 依赖。若无法在现有 harness 中写出业务 RED，写 BLOCKED JSON，并说明 `red_business_assertion_not_observed`。
 12. 对本轮 `SOURCE_CHAIN_CONTRACT.json.next_required_slice` 指定的 source-chain，测试必须从真实 carrier 链路产生值；手工构造 terminal DTO、只断言字段存在、只跑旧测试都不能授权 GREEN。
+   - For TaskProcessor/source-chain slices, invoke the real selected production entry. Mock collaborators and deterministic inputs are allowed; directly returning a hand-built final request instead of invoking the production builder/entry is not allowed.
 13. 如果 `PLAN_RESULT.md`、`FIRST_SLICE_PROOF_PLAN.md` 或 `TEST_CHARTER.md` 写了 "oracle changes already present"、"implementation already present"、"tests should pass with proper setup"，不要把这些话当成授权。你必须读取当前 worktree 源码并判断 source-chain 是否真的闭合；如果缺少 upstream assignment，就先写 RED，再补最小 GREEN 生产 diff。
 14. 对 source-chain / rebuild-path slice，已有的 downstream copy（例如 `taskData.setPrimaryId(request.getPrimaryId())`、`taskData.setSecondaryId(request.getSecondaryId())`）不是闭合证据。必须验证并实现 source/buildContext -> request 的赋值，再由 request -> taskData/payload 验证业务断言。
 

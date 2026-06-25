@@ -1887,6 +1887,12 @@ function Convert-TestCharterDiagnosticList {
         if ($item.PSObject.Properties['patterns']) {
             $entry['patterns'] = @(Get-StringArray $item.patterns)
         }
+        if ($item.PSObject.Properties['classifications']) {
+            $entry['classifications'] = @(Get-StringArray $item.classifications)
+        }
+        if ($item.PSObject.Properties['repairable_charter_failure']) {
+            $entry['repairable_charter_failure'] = [bool]$item.repairable_charter_failure
+        }
         if ($entry.Count -eq 0) {
             $entry['message'] = [string]$item
         }
@@ -1928,6 +1934,8 @@ function Invoke-TestCharterPrevalidatorGate {
         can_proceed = $true
         failures = @()
         warnings = @()
+        source_chain_classifications = @()
+        repairable_charter_failure = $false
     }
 
     if (-not (Test-Path -LiteralPath $gateScript)) {
@@ -1990,6 +1998,12 @@ function Invoke-TestCharterPrevalidatorGate {
         if ($null -ne $jsonOutput) {
             $result.failures = @(Convert-TestCharterDiagnosticList $jsonOutput.failures)
             $result.warnings = @(Convert-TestCharterDiagnosticList $jsonOutput.warnings)
+            if ($jsonOutput.PSObject.Properties['source_chain_classifications']) {
+                $result.source_chain_classifications = @($jsonOutput.source_chain_classifications)
+            }
+            if ($jsonOutput.PSObject.Properties['repairable_charter_failure']) {
+                $result.repairable_charter_failure = [bool]$jsonOutput.repairable_charter_failure
+            }
             if ($jsonOutput.PSObject.Properties['failure_count']) {
                 $result.failure_count = [int]$jsonOutput.failure_count
             }
@@ -2002,7 +2016,13 @@ function Invoke-TestCharterPrevalidatorGate {
 
     ([pscustomobject]$result) | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
 
-    return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $resultPath; Blocker = 'test_charter_validation_failed' }
+    return [pscustomobject]@{
+        CanProceed = $result.can_proceed
+        ResultPath = $resultPath
+        Blocker = 'test_charter_validation_failed'
+        RepairableCharterFailure = [bool]$result.repairable_charter_failure
+        SourceChainClassifications = @($result.source_chain_classifications)
+    }
 }
 
 function Invoke-TestCharterRepairGate {
@@ -2088,11 +2108,11 @@ function Invoke-TestCharterRepairGate {
         '',
         'TEST_CHARTER.md must include markdown labels recognized by scripts/test_charter_prevalidator.py:',
         '- `Entry Point: <exact production entry method(s)>`',
-        '- `Test Class: <no-Spring JUnit/Mockito test class in claim-server or the selected test module>`',
+        '- `Test Class: <no-Spring JUnit/Mockito test class in the selected test module>`',
         '- `DB Verification: <AtomicReference capture, mock ArgumentCaptor, or SELECT/query verification method>`',
         '- `Side Effects:` followed by bullet lines that each include verify/assert/query language.',
         '',
-        'For source-chain rebuild requirements, the entry point must name the real rebuildTaskData carrier(s), and the verification must prove policyNum and insureNum move from the production source chain into the rebuilt task data / AI input data. Do not describe a synthetic or hand-built TaskData-only proof.',
+        'For source-chain rebuild requirements, the entry point must name the real production carrier(s), and the verification must prove declared source fields move from the production source chain into the rebuilt downstream data or payload. Do not describe a synthetic or hand-built terminal-data-only proof.',
         '',
         'After editing, run this validation command and continue editing until it reports can_proceed=true:',
         "powershell -NoProfile -ExecutionPolicy Bypass -File `"$validator`" -WorkDir `"$ReplayRoot`" -PassThru",
@@ -4834,7 +4854,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
 
     if (-not $blockedBeforeExecutor) {
         $preImplementationCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$preImplementationCharterGate.CanProceed) {
+        if ((-not [bool]$preImplementationCharterGate.CanProceed) -and [bool]$preImplementationCharterGate.RepairableCharterFailure) {
             Write-Host "Test charter prevalidation failed before executor for slice ${i}. Starting test charter repair pass."
             $preImplementationCharterGate = Invoke-TestCharterRepairGate `
                 -ReplayRoot $replayRootFull `
@@ -4849,6 +4869,8 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 -TimeoutMinutes $sliceTimeoutMinutes `
                 -Model $Model `
                 -ReasoningEffort $ReasoningEffort
+        } elseif (-not [bool]$preImplementationCharterGate.CanProceed) {
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} test charter repair skipped | {1} | {2} | non_repairable_charter_failure | result={3}; repairable_charter_failure=false. |" -f $i, $forced.family_id, $forced.slice_type, $preImplementationCharterGate.ResultPath)
         }
         if (-not [bool]$preImplementationCharterGate.CanProceed) {
             Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode 0 -Reason "pre-implementation test charter gate stopped before executor: $($preImplementationCharterGate.Blocker)"

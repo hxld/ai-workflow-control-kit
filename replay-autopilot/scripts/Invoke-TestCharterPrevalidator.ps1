@@ -89,6 +89,8 @@ if ($PassThru) {
         warnings = $resultObj.warnings
         failure_count = $resultObj.failure_count
         warning_count = $resultObj.warning_count
+        source_chain_classifications = $resultObj.source_chain_classifications
+        repairable_charter_failure = [bool]$resultObj.repairable_charter_failure
     } | ConvertTo-Json -Depth 12
     exit $exitCode
 }

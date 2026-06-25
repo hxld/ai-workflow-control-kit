@@ -364,6 +364,14 @@ if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{
         schema_version = 1
         family_id = $ForcedRequirementFamily
+        production_entry_qn = $selectedEntry
+        entry_invocation_method = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_invocation_method'), (Get-PlanField -Text $planText -Name 'test_invocation_expression'), 'invoke the selected real production entry from the behavior test')
+        required_side_effects = @($downstream) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) }
+        business_red_assertion = $expectedRedFailure
+        negative_guard_assertion = $mustNotBehavior
+        forbidden_test_surfaces = @('helper_only', 'static_only', 'dto_only', 'service_only_when_plan_selected_public_entry', 'test_only', 'synthetic_carrier')
+        allowed_mock_boundaries = @('collaborator_dependency', 'dao_mapper_gateway', 'common_request_assembly_helper.buildRequestCommon', 'request_builder_function collaborator input')
+        maven_test_command_template = $greenCommand
         existing_entry_qn = $selectedEntry
         entry_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }))
         method_signature = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'method_signature'), $selectedCarrier)
@@ -385,10 +393,29 @@ if ($SliceIndex -eq 1) {
         callable_carrier_authorization = Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
         test_charter_contract = $testCharterContractPath
     }
+    $firstContractMissing = New-Object System.Collections.Generic.List[string]
+    foreach ($fieldName in @('production_entry_qn', 'entry_invocation_method', 'business_red_assertion', 'negative_guard_assertion', 'maven_test_command_template')) {
+        if ([string]::IsNullOrWhiteSpace([string]$firstExecutableContract[$fieldName]) -or (Test-ForbiddenProofText ([string]$firstExecutableContract[$fieldName]))) {
+            $firstContractMissing.Add($fieldName) | Out-Null
+        }
+    }
+    foreach ($arrayFieldName in @('required_side_effects', 'forbidden_test_surfaces', 'allowed_mock_boundaries')) {
+        if (@($firstExecutableContract[$arrayFieldName]).Count -eq 0) {
+            $firstContractMissing.Add($arrayFieldName) | Out-Null
+        }
+    }
+    $firstExecutableContract['contract_status'] = if ($firstContractMissing.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    $firstExecutableContract['contract_missing_fields'] = @($firstContractMissing | Select-Object -Unique)
     $firstExecutableContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $firstExecutableContractPath -Encoding UTF8
+    if ($firstContractMissing.Count -gt 0) {
+        foreach ($missingField in @($firstContractMissing | Select-Object -Unique)) { $planBlockers.Add("first_slice_execution_contract_missing_$missingField") | Out-Null }
+    }
 }
 
 if ($planBlockers.Count -gt 0) {
+    $slicePlan.blockers = @($planBlockers | Select-Object -Unique)
+    $slicePlan.authorization = 'STOP'
+    $slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
     [ordered]@{
         schema_version = 1
         slice_index = 0

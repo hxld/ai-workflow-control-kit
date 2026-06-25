@@ -47,6 +47,54 @@ def simple_java_name(name: str) -> str:
     return cleaned.split(".")[-1]
 
 
+def normalize_carrier_string(carrier_str: str) -> str:
+    """Normalize common carrier evidence into Class.method signature text."""
+    if not carrier_str:
+        return ""
+
+    text = str(carrier_str).strip().strip("`").strip()
+    text = text.strip('"').strip("'").strip()
+    if text.startswith("new ") or text.startswith("call "):
+        text = text.split(" ", 1)[1].strip()
+
+    if ".java" not in text.lower():
+        return text.rstrip(".").strip()
+
+    path_text = text.replace("\\", "/")
+    class_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\.java\b", path_text)
+    if not class_match:
+        return text.rstrip(".").strip()
+
+    class_name = class_match.group(1)
+    suffix = path_text[class_match.end():].strip()
+    method_match = re.search(
+        r"#\s*([A-Za-z_][A-Za-z0-9_]*)(\s*\([^)]*\))?(\s*:\s*[^,|;]+)?",
+        suffix,
+    )
+    if not method_match:
+        method_match = re.search(
+            r"(?:^|[\s:#])(?:(?:[A-Za-z_][A-Za-z0-9_]*)\.)?"
+            r"([A-Za-z_][A-Za-z0-9_]*)(\s*\([^)]*\))?(\s*:\s*[^,|;]+)?",
+            suffix,
+        )
+
+    if not method_match:
+        return class_name
+
+    method_name = method_match.group(1)
+    params = (method_match.group(2) or "").strip()
+    return_type = (method_match.group(3) or "").strip()
+    return f"{class_name}.{method_name}{params}{return_type}".strip()
+
+
+def carrier_requires_exact_signature(carrier_str: str) -> bool:
+    """Return true when the carrier text provides params or return type."""
+    normalized = normalize_carrier_string(carrier_str)
+    if "(" in normalized and ")" in normalized:
+        return True
+    return bool(re.search(r"(?<![A-Za-z]):\s*[A-Za-z_][A-Za-z0-9_<>, ?\[\].]*\s*$", normalized))
+
+
 class MethodSignature:
     """Represents a Java method signature."""
 
@@ -101,10 +149,8 @@ def parse_carrier_string(carrier_str: str) -> Optional[MethodSignature]:
     if not carrier_str:
         return None
 
-    # Remove common artifacts
-    carrier_str = carrier_str.strip()
-    if carrier_str.startswith("new ") or carrier_str.startswith("call "):
-        carrier_str = carrier_str.split(" ", 1)[1].strip()
+    # Remove common artifacts and normalize path-shaped evidence.
+    carrier_str = normalize_carrier_string(carrier_str)
 
     # Extract return type if present
     return_type = "void"
@@ -322,6 +368,8 @@ def verify_carrier_signature(
         Dict with verification result
     """
     # Parse planned carrier
+    normalized_plan_carrier = normalize_carrier_string(plan_carrier)
+    exact_signature_required = carrier_requires_exact_signature(plan_carrier)
     plan_sig = parse_carrier_string(plan_carrier)
     if not plan_sig:
         return {
@@ -330,7 +378,8 @@ def verify_carrier_signature(
             "blockers": ["carrier_parse_failed"],
             "error": "carrier_parse_failed",
             "message": f"Failed to parse carrier string: {plan_carrier}",
-            "carrier_provided": plan_carrier
+            "carrier_provided": plan_carrier,
+            "normalized_carrier": normalized_plan_carrier,
         }
 
     # Search for implementation in worktree
@@ -348,6 +397,8 @@ def verify_carrier_signature(
             "error": "carrier_not_found",
             "message": f"No implementation found for {plan_sig.class_name}.{plan_sig.method_name}",
             "planned_signature": plan_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "search_query": f"class {plan_sig.class_name} method {plan_sig.method_name}"
         }
 
@@ -366,6 +417,8 @@ def verify_carrier_signature(
             "error": "method_signature_not_found",
             "message": f"Method {plan_sig.method_name} not found in class {plan_sig.class_name}",
             "planned_signature": plan_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "file_path": impl_match["file_path"]
         }
 
@@ -390,6 +443,8 @@ def verify_carrier_signature(
             "planned_signature": plan_sig.to_dict(),
             "implemented_signature": impl_sig.to_dict(),
             "resolved_signature": impl_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "file_path": impl_match["file_path"],
             "selected_real_entry": selected_real_entry,
             "test_invocation_path": test_invocation_path,
@@ -398,7 +453,7 @@ def verify_carrier_signature(
         }
 
     # Compare signatures
-    if not signatures_match(plan_sig, impl_sig):
+    if exact_signature_required and not signatures_match(plan_sig, impl_sig):
         diffs = signature_diff(plan_sig, impl_sig)
         return {
             "status": "FAIL",
@@ -409,6 +464,8 @@ def verify_carrier_signature(
             "planned_signature": plan_sig.to_dict(),
             "implemented_signature": impl_sig.to_dict(),
             "resolved_signature": impl_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "differences": diffs,
             "file_path": impl_match["file_path"]
         }
@@ -421,6 +478,8 @@ def verify_carrier_signature(
         "planned_signature": plan_sig.to_dict(),
         "implemented_signature": impl_sig.to_dict(),
         "resolved_signature": impl_sig.to_dict(),
+        "normalized_carrier": normalized_plan_carrier,
+        "exact_signature_required": exact_signature_required,
         "file_path": impl_match["file_path"],
         "selected_real_entry": selected_real_entry,
         "test_invocation_path": test_invocation_path,
@@ -506,6 +565,14 @@ def verify_pre_red_authorization(input_data: Dict) -> Dict:
         "resolved_signature": {
             "selected_real_entry": entry_result.get("implemented_signature") if entry_result else None,
             "selected_carrier": carrier_result.get("implemented_signature") if carrier_result else None,
+        },
+        "normalized_carriers": {
+            "selected_real_entry": entry_result.get("normalized_carrier") if entry_result else None,
+            "selected_carrier": carrier_result.get("normalized_carrier") if carrier_result else None,
+        },
+        "exact_signature_required": {
+            "selected_real_entry": entry_result.get("exact_signature_required") if entry_result else None,
+            "selected_carrier": carrier_result.get("exact_signature_required") if carrier_result else None,
         },
         "reachable_from_entry": reachable_from_entry,
         "selected_real_entry": selected_real_entry,

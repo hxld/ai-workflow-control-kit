@@ -787,6 +787,8 @@ $testCompilationEvidence = $false
 $testExecutionEvidence = $false
 $testCompilationEvidenceSource = ''
 $testExecutionEvidenceSource = ''
+$independentBehaviorCommandCaptured = $false
+$behaviorCommandIssues = New-Object System.Collections.Generic.List[string]
 
 if ($null -ne $explicitCompileGate) {
     $testCompilationExitCode = Get-ObjectIntValueOrNull -Object $explicitCompileGate -Names @('exit_code', 'test_compilation_exit_code')
@@ -813,6 +815,30 @@ foreach ($test in $tests) {
     $resultText = ([string](Get-ObjectPropertyValue -Object $test -Name 'result')).ToLowerInvariant()
     $evidenceText = [string](Get-ObjectPropertyValue -Object $test -Name 'evidence')
 
+    if ($phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
+        if ([string]::IsNullOrWhiteSpace($commandText)) {
+            Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing'
+        } elseif ($commandText -notmatch '(?i)\bmvn(?:\.cmd)?\b') {
+            Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_not_maven'
+        } else {
+            if ($commandText -notmatch '(?i)(?:^|\s)-f\s+\S*pom\.xml\b') {
+                Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_isolated_pom'
+            }
+            if ($commandText -notmatch '(?i)(?:^|\s)-Dtest=') {
+                Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_test_filter'
+            }
+            if ($commandText -notmatch '(?i)(?:^|\s)-am(?:\s|$)') {
+                Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_reactor_am'
+            }
+            if ($commandText -notmatch '(?i)(?:^|\s)-D(?:project\.build\.sourceEncoding|file\.encoding)=UTF-8') {
+                Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_encoding_arg'
+            }
+            if ($commandText -notmatch '(?i)(?:^|\s)-s\s+\S+') {
+                Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_maven_settings'
+            }
+        }
+    }
+
     if ($commandText -match '(?i)\bmvn(?:\.cmd)?\b' -and $commandText -match '(?i)\btest-compile\b' -and $resultText -eq 'pass') {
         $testCompilationEvidence = $true
         if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests' }
@@ -820,14 +846,12 @@ foreach ($test in $tests) {
     if ($commandText -match '(?i)\bmvn(?:\.cmd)?\b' -and $phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
         $testCompilationEvidence = $true
         $testExecutionEvidence = $true
+        $independentBehaviorCommandCaptured = $true
         if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests' }
         if ([string]::IsNullOrWhiteSpace($testExecutionEvidenceSource)) { $testExecutionEvidenceSource = 'SLICE_RESULT.tests' }
     }
-    if ($evidenceText -match '(?i)\bBUILD SUCCESS\b' -and $phaseText -in @('GREEN', 'VERIFY')) {
-        $testCompilationEvidence = $true
-        $testExecutionEvidence = $true
-        if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests.evidence' }
-        if ([string]::IsNullOrWhiteSpace($testExecutionEvidenceSource)) { $testExecutionEvidenceSource = 'SLICE_RESULT.tests.evidence' }
+    if ($evidenceText -match '(?i)\bBUILD SUCCESS\b' -and $phaseText -in @('GREEN', 'VERIFY') -and [string]::IsNullOrWhiteSpace($commandText)) {
+        Add-UniqueString -List $behaviorCommandIssues -Value 'natural_language_build_success_without_command'
     }
 }
 
@@ -863,6 +887,18 @@ if ($requiresCoverageExecutionEvidence) {
     } elseif (-not $testExecutionEvidence) {
         $issues.Add('no_test_execution_evidence') | Out-Null
         if ($gapFlags -notcontains 'no_test_execution_evidence') { $gapFlags += 'no_test_execution_evidence' }
+        $coverageDelta = 0
+    }
+    if (-not $independentBehaviorCommandCaptured) {
+        $issues.Add('independent_behavior_command_missing') | Out-Null
+        if ($gapFlags -notcontains 'test_command_evidence_missing') { $gapFlags += 'test_command_evidence_missing' }
+        $coverageDelta = 0
+    }
+    if ($behaviorCommandIssues.Count -gt 0) {
+        foreach ($commandIssue in @($behaviorCommandIssues | Select-Object -Unique)) {
+            $issues.Add([string]$commandIssue) | Out-Null
+        }
+        if ($gapFlags -notcontains 'test_command_evidence_missing') { $gapFlags += 'test_command_evidence_missing' }
         $coverageDelta = 0
     }
 }

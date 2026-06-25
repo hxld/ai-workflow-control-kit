@@ -1,0 +1,153 @@
+#!/usr/bin/env pwsh
+param([switch]$KeepTemp)
+
+$ErrorActionPreference = 'Stop'
+
+function Assert-True {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw "FAIL: $Message" }
+    Write-Host "  PASS: $Message"
+}
+
+function Write-Utf8 {
+    param([string]$Path, [string]$Text)
+    $parent = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    Set-Content -LiteralPath $Path -Value $Text -Encoding UTF8
+}
+
+$testRoot = Split-Path -Parent $PSCommandPath
+$scriptsRoot = Split-Path -Parent $testRoot
+$autopilotRoot = Split-Path -Parent $scriptsRoot
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v647-preslice-contracts-" + [guid]::NewGuid().ToString('N'))
+
+try {
+    New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
+    $worktree = Join-Path $tempRoot 'worktree'
+    $sourceDir = Join-Path $worktree 'src\main\java\demo'
+    New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
+    Write-Utf8 (Join-Path $sourceDir 'RealEntry.java') @'
+package demo;
+
+public class RealEntry {
+    public String handle(String value) {
+        return value;
+    }
+}
+'@
+
+    $passRoot = Join-Path $tempRoot 'pass'
+    New-Item -ItemType Directory -Force -Path $passRoot | Out-Null
+    @{
+        schema_version = 1
+        slice_index = 1
+        authorization = 'ALLOW'
+        real_entry = 'demo.RealEntry.handle(String): String'
+        selected_carrier = 'demo.RealEntry.handle(String): String'
+        production_boundary = 'demo.RealEntry.handle(String): String'
+        downstream_side_effect_or_output = 'returned payload value'
+        red_expectation = 'RealEntryContractTest should fail before the return mapping is fixed'
+        issues = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $passRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+    @{
+        gate = 'callable_carrier_authorization'
+        slice_index = 1
+        authorization = 'ALLOW'
+        can_proceed = $true
+        selected_carrier = 'demo.RealEntry.handle(String): String'
+        selected_real_entry = 'demo.RealEntry.handle(String): String'
+        resolved_signature = @{
+            selected_carrier = @{
+                class_name = 'demo.RealEntry'
+                visibility = 'public'
+                formatted = 'String demo.RealEntry.handle(String)'
+            }
+        }
+        blockers = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $passRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+    @{
+        status = 'PASS'
+        issues = @()
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $passRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.json') -Encoding UTF8
+    @{
+        freshness_metadata = @{ initial_after_start_replay_round = 'abc1234' }
+        carrier_candidates = @(@{ signature = 'demo.RealEntry.handle(String): String'; family_id = 'core_entry'; callable_status = 'callable' })
+        families = @(@{ id = 'core_entry'; weight = 100 })
+        callable_status = @{ 'demo.RealEntry.handle(String): String' = 'callable' }
+        test_harness_module = @{ core_entry = 'demo-harness' }
+        proof_type = @{ core_entry = 'real_entry_behavior' }
+        forbidden_proof = @('helper_only', 'mock_only', 'static_only')
+        failed_signature_cache = @()
+        real_entry_candidates = @(@{ signature = 'demo.RealEntry.handle(String): String' })
+    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $passRoot 'replay-context-index.json') -Encoding UTF8
+    Write-Utf8 (Join-Path $passRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
+- selected_carrier: demo.RealEntry.handle(String): String
+- selected_real_entry: demo.RealEntry.handle(String): String
+- first_red_test: RealEntryContractTest#returnsMappedPayload
+- red_assertion: assertEquals("mapped", result)
+- downstream_output_or_side_effect: returned payload value
+- production_boundary: demo.RealEntry.handle(String): String
+- green_change_boundary: RealEntry.handle return mapping
+- validation_command: mvn --% -f WORKTREE\pom.xml -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test
+'@
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'Invoke-PreSliceExperimentContracts.ps1') `
+        -ReplayRoot $passRoot `
+        -Worktree $worktree `
+        -SliceIndex 1 `
+        -ForcedRequirementFamily core_entry `
+        -ForcedSliceType stateful_core_slice
+    Assert-True ($LASTEXITCODE -eq 0) 'authorizing pre-slice contract should pass'
+    $dryRun = Get-Content -LiteralPath (Join-Path $passRoot 'CARRIER_AUTHORIZATION_DRY_RUN_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $plan = Get-Content -LiteralPath (Join-Path $passRoot 'SLICE_PLAN_CONTRACT_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $firstExecutable = Get-Content -LiteralPath (Join-Path $passRoot 'FIRST_SLICE_EXECUTABLE_CONTRACT.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([bool]$dryRun.pre_authorized) 'dry-run must expose pre_authorized=true'
+    Assert-True ([string]$plan.authorization -eq 'ALLOW') 'slice plan contract must authorize valid proof plan'
+    Assert-True ([string]$firstExecutable.authorization -eq 'ALLOW') 'first slice executable contract must authorize valid proof plan'
+    Assert-True ([string]$firstExecutable.existing_entry_qn -match 'demo\.RealEntry') 'first slice executable contract must bind an existing entry qn'
+
+    $blockedRoot = Join-Path $tempRoot 'blocked'
+    New-Item -ItemType Directory -Force -Path $blockedRoot | Out-Null
+    @{
+        schema_version = 1
+        slice_index = 1
+        authorization = 'STOP'
+        selected_carrier = 'helper_only'
+        real_entry = 'none'
+        issues = @('helper_or_static_only_carrier_for_high_weight_family')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $blockedRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'Invoke-PreSliceExperimentContracts.ps1') `
+        -ReplayRoot $blockedRoot `
+        -Worktree $worktree `
+        -SliceIndex 1 `
+        -ForcedRequirementFamily core_entry `
+        -ForcedSliceType stateful_core_slice 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -ne 0) 'non-authorizing carrier should fail before executor'
+    $blockedPre = Get-Content -LiteralPath (Join-Path $blockedRoot 'SLICE_RESULT_PRE_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([int]$blockedPre.slice_index -eq 0) 'blocked pre-slice result must preserve slice_index=0'
+    Assert-True (-not [bool]$blockedPre.authorized_for_synthesis) 'blocked pre-slice result must not authorize synthesis'
+
+    $runnerText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8
+    $promptText = Get-Content -LiteralPath (Join-Path $autopilotRoot 'prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
+    Assert-True ($runnerText -match 'Invoke-PreSliceExperimentContracts\.ps1') 'Run-SliceLoop must invoke the pre-slice experiment contract gate'
+    Assert-True ($runnerText -match 'CARRIER_AUTHORIZATION_DRY_RUN') 'Run-SliceLoop must surface carrier dry-run artifact'
+    Assert-True ($runnerText -match 'FIRST_SLICE_EXECUTABLE_CONTRACT') 'Run-SliceLoop must surface first slice executable contract artifact'
+    Assert-True ($promptText -match 'pre_authorized=true') 'Phase1 prompt must block implementation until carrier dry-run is pre-authorized'
+    Assert-True ($promptText -match 'authorization=ALLOW') 'Phase1 prompt must bind SLICE_PLAN_CONTRACT authorization'
+
+    Write-Host 'v647 Pre-Slice Experiment Contracts: PASS'
+    exit 0
+} catch {
+    Write-Host "TEST FAILED: $_" -ForegroundColor Red
+    Write-Host "Call stack: $($_.ScriptStackTrace)" -ForegroundColor DarkRed
+    exit 1
+} finally {
+    if (-not $KeepTemp -and (Test-Path -LiteralPath $tempRoot)) {
+        $resolvedTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+        $resolvedRoot = [System.IO.Path]::GetFullPath($tempRoot)
+        if ($resolvedRoot.StartsWith($resolvedTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $resolvedRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

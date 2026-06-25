@@ -4800,6 +4800,38 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     }
 
     if (-not $blockedBeforeExecutor) {
+        $preSliceExperimentArgs = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', (Join-Path $PSScriptRoot 'Invoke-PreSliceExperimentContracts.ps1'),
+            '-ReplayRoot', $replayRootFull,
+            '-Worktree', $worktreeFull,
+            '-SliceIndex', $i
+        )
+        if (-not [string]::IsNullOrWhiteSpace([string]$forced.family_id)) {
+            $preSliceExperimentArgs += @('-ForcedRequirementFamily', ([string]$forced.family_id))
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$forced.slice_type)) {
+            $preSliceExperimentArgs += @('-ForcedSliceType', ([string]$forced.slice_type))
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$forced.target_sibling_surface)) {
+            $preSliceExperimentArgs += @('-ForcedSiblingSurface', ([string]$forced.target_sibling_surface))
+        }
+        & powershell @preSliceExperimentArgs | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            $preSliceBlockerPath = Join-Path $replayRootFull ('SLICE_RESULT_PRE_{0:D2}.json' -f $i)
+            if (Test-Path -LiteralPath $preSliceBlockerPath) {
+                Copy-Item -LiteralPath $preSliceBlockerPath -Destination $sliceResult -Force
+            } else {
+                Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "pre-slice experiment contract stopped before executor"
+            }
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice experiment contract stop | {1} | {2} | tooling_enforcement_stop | Invoke-PreSliceExperimentContracts exit_code={3}; dry_run={4}; contract={5}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $i)), (Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'))
+            $blockedBeforeExecutor = $true
+            $hasExistingResult = $true
+        }
+    }
+
+    if (-not $blockedBeforeExecutor) {
         $preImplementationCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$preImplementationCharterGate.CanProceed) {
             Write-Host "Test charter prevalidation failed before executor for slice ${i}. Starting test charter repair pass."

@@ -24,6 +24,9 @@
 - next slice exact contract subset: {{NEXT_SLICE_EXACT_CONTRACT}}
 - side-effect evidence harness: {{SIDE_EFFECT_EVIDENCE}}
 - pre-slice cap display: {{PRE_SLICE_CAP_DISPLAY}}
+- carrier authorization dry-run: {{CARRIER_AUTHORIZATION_DRY_RUN}}
+- slice plan contract: {{SLICE_PLAN_CONTRACT}}
+- replay context index: {{REPLAY_CONTEXT_INDEX}}
 - slice progress json: {{SLICE_PROGRESS}}
 - slice progress md: {{SLICE_PROGRESS_MD}}
 - requirement family ledger: {{REQUIREMENT_FAMILY_LEDGER}}
@@ -40,7 +43,7 @@
 4. 本轮 Phase 0/0.5 产物：ROUND_CONTRACT.md、PHASE0_RESULT.md、EXPLORATION_REPORT.md、PLAN_RESULT.md、REPLAY_PLAN.md、IMPLEMENTATION_CONTRACT.md、EXPECTED_DIFF_MATRIX.md、SIDE_EFFECT_LEDGER.md、TEST_CHARTER.md、FIRST_SLICE_PROOF_PLAN.md。
 5. 本轮 slice 进度文件：SLICE_PROGRESS.json、SLICE_RESULT_*.json、SLICE_VERIFY_*.json。
 6. 本轮 family contract 与 requirement family ledger：FAMILY_CONTRACT.json、REQUIREMENT_FAMILY_LEDGER.json。
-7. 本轮 slice 证据合约：CARRIER_AUTHORIZATION_*.json、CARRIER_RANK_*.json、EXACT_CONTRACT_ASSERTION_MATRIX_*.json、NEXT_SLICE_EXACT_CONTRACT_*.json、SIDE_EFFECT_EVIDENCE_*.json、PRE_SLICE_CAP_DISPLAY_*.json。
+7. 本轮 slice 证据合约：CARRIER_AUTHORIZATION_*.json、CARRIER_AUTHORIZATION_DRY_RUN_*.json、CARRIER_RANK_*.json、SLICE_PLAN_CONTRACT_*.json、EXACT_CONTRACT_ASSERTION_MATRIX_*.json、NEXT_SLICE_EXACT_CONTRACT_*.json、SIDE_EFFECT_EVIDENCE_*.json、PRE_SLICE_CAP_DISPLAY_*.json、replay-context-index.json。
 8. FEATURE_CLASSIFICATION.json 只能作为 verifier 校准输入；不能替代 requirement_source 和代码事实。
 9. BASELINE_INDEX.md 只能作为中性结构索引。
 10. SURFACE_CARRIER_SCAN.md 只能作为中性生产承载点候选清单；必须读源码确认后才能使用。
@@ -68,6 +71,10 @@
 - `PROJECT_ROOT` 只用于读取 repo rules 和上下文，不是执行目录。所有 `git status`、Maven、测试、编译、源码读写都必须在 `{{WORKTREE}}` 或以 `-f {{WORKTREE}}\pom.xml` 执行。
 
 【P0: Pre-Implementation Carrier Validation (CRITICAL BLOCKER)】
+
+Do not implement until `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true` and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. If the selected carrier mismatches, choose a same-family replacement from `{{REPLAY_CONTEXT_INDEX}}` before consuming S{{SLICE_INDEX}}; otherwise write a pre-slice blocker instead of starting RED/GREEN work.
+
+`{{SLICE_PLAN_CONTRACT}}` is binding for this slice. A passing compile is not proof. The slice is not GREEN unless the validation command executes a behavior test through the declared real entry and asserts the declared output or side effect.
 
 **BEFORE writing the RED test or GREEN implementation, you MUST validate the carrier:**
 

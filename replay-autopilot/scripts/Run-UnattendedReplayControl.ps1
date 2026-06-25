@@ -526,6 +526,9 @@ $zeroCapEvolutionContinueLimit = Convert-ToIntOrDefault -Value (Get-ConfigValueO
 if ($zeroCapEvolutionContinueLimit -lt 0) { $zeroCapEvolutionContinueLimit = 0 }
 $zeroCapNextAction = Get-ConfigValueOrDefault -Config $config -Key 'control_zero_cap_next_action' -DefaultValue 'golden_slice'
 $reflectionGateEnabled = Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_reflection_gate_enabled' -DefaultValue 'true')
+$controlSummaryAuxiliaryTimeoutSeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $config -Key 'control_summary_auxiliary_timeout_seconds' -DefaultValue '90') -DefaultValue 90
+if ($controlSummaryAuxiliaryTimeoutSeconds -lt 1) { $controlSummaryAuxiliaryTimeoutSeconds = 1 }
+$controlSummarySkipAuxiliaryArtifacts = Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_summary_skip_auxiliary_artifacts' -DefaultValue 'false')
 $continueKinds = @('CONTINUE', 'EVOLVE', 'UPGRADE')
 
 if (@('codex', 'claude', 'manual') -notcontains $executorActual) {
@@ -578,6 +581,8 @@ if ($ValidateOnly) {
         zero_cap_evolution_continue_limit = $zeroCapEvolutionContinueLimit
         zero_cap_next_action = $zeroCapNextAction
         reflection_gate_enabled = $reflectionGateEnabled
+        control_summary_auxiliary_timeout_seconds = $controlSummaryAuxiliaryTimeoutSeconds
+        control_summary_skip_auxiliary_artifacts = $controlSummarySkipAuxiliaryArtifacts
         continue_decision_kinds = $continueKinds
     } | ConvertTo-Json -Depth 8
     exit 0
@@ -671,13 +676,17 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
             '-ExecutionPolicy', 'Bypass',
             '-File', $controlScript,
             '-EvidenceRoot', $evidenceRoot,
-            '-TargetCoverage', [string]$targetCoverage
+            '-TargetCoverage', [string]$targetCoverage,
+            '-AuxiliaryTimeoutSeconds', [string]$controlSummaryAuxiliaryTimeoutSeconds
         )
         if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual)) {
             $controlArgs += @('-RequireExecutor', $requiredExecutorActual)
         }
         if (-not [string]::IsNullOrWhiteSpace($currentReplayRoot)) {
             $controlArgs += @('-ReplayRoot', $currentReplayRoot)
+        }
+        if ($controlSummarySkipAuxiliaryArtifacts) {
+            $controlArgs += '-SkipAuxiliaryArtifacts'
         }
         $controlArgs += '-Quiet'
         & powershell @controlArgs

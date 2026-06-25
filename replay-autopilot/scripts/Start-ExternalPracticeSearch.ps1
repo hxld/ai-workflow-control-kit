@@ -177,6 +177,33 @@ function Invoke-ExternalPracticeAgentAttempt {
     }
 }
 
+function Resolve-ExternalPracticeDefaultModel {
+    param(
+        [hashtable]$Config,
+        [string]$Executor
+    )
+
+    if ($Executor -eq 'codex') {
+        return Get-ConfigValueOrDefault -Config $Config -Key 'codex_model' -DefaultValue ''
+    }
+    if ($Executor -eq 'claude') {
+        return Get-ConfigValueOrDefault -Config $Config -Key 'claude_deep_review_model' -DefaultValue (Get-ConfigValueOrDefault -Config $Config -Key 'claude_model' -DefaultValue '')
+    }
+    return ''
+}
+
+function Resolve-ExternalPracticeDefaultReasoningEffort {
+    param(
+        [hashtable]$Config,
+        [string]$Executor
+    )
+
+    if ($Executor -eq 'codex') {
+        return Get-ConfigValueOrDefault -Config $Config -Key 'codex_reasoning_effort' -DefaultValue 'medium'
+    }
+    return ''
+}
+
 function Write-ExternalPracticePrompt {
     param(
         [string]$Path,
@@ -364,8 +391,10 @@ $sopPath = Join-Path $OutputRoot 'EXTERNAL_PRACTICE_SOP.md'
 if ($RunAgent) {
     $executor = Get-ConfigValueOrDefault -Config $config -Key 'external_practice_primary_executor' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'codex')
     $timeoutMinutes = [int](Get-ConfigValueOrDefault -Config $config -Key 'external_practice_timeout_minutes' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'executor_timeout_minutes' -DefaultValue '120'))
-    $model = Get-ConfigValueOrDefault -Config $config -Key 'external_practice_model' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'claude_deep_review_model' -DefaultValue '')
-    $reasoningEffort = Get-ConfigValueOrDefault -Config $config -Key 'external_practice_reasoning_effort' -DefaultValue ''
+    $modelDefault = Resolve-ExternalPracticeDefaultModel -Config $config -Executor $executor
+    $reasoningDefault = Resolve-ExternalPracticeDefaultReasoningEffort -Config $config -Executor $executor
+    $model = Get-ConfigValueOrDefault -Config $config -Key 'external_practice_model' -DefaultValue $modelDefault
+    $reasoningEffort = Get-ConfigValueOrDefault -Config $config -Key 'external_practice_reasoning_effort' -DefaultValue $reasoningDefault
     $attempts = New-Object System.Collections.Generic.List[object]
     $primaryAttempt = Invoke-ExternalPracticeAgentAttempt -Executor $executor -PromptPath $promptPath -OutputRoot $OutputRoot -DecisionPath $decisionPath -SopPath $sopPath -Config $config -AttemptName 'external-practice-search-primary' -Model $model -ReasoningEffort $reasoningEffort -TimeoutMinutes $timeoutMinutes
     $attempts.Add($primaryAttempt) | Out-Null

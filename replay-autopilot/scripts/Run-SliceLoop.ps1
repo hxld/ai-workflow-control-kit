@@ -335,6 +335,31 @@ function Read-TextIfExists {
     return ''
 }
 
+function Get-PlanField {
+    param([string]$Text, [string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    $escaped = [regex]::Escape($Name)
+    $lines = @($Text -split "\r?\n")
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $line = [string]$lines[$i]
+        if ($line -match "^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?(?:#{1,4}\s*)?$escaped\s*\*{0,2}\s*:\s*`?([^`\r\n]*)`?\s*$") {
+            $value = $matches[1].Trim().Trim('`').Trim()
+            if ([string]::IsNullOrWhiteSpace($value)) {
+                for ($j = $i + 1; $j -lt $lines.Count; $j++) {
+                    $next = [string]$lines[$j]
+                    if ([string]::IsNullOrWhiteSpace($next)) { continue }
+                    if ($next -match '^\s*:\s*`?([^`\r\n]+)`?\s*$') {
+                        $value = $matches[1].Trim().Trim('`').Trim()
+                    }
+                    break
+                }
+            }
+            return $value.TrimEnd('.').Trim()
+        }
+    }
+    return ''
+}
+
 function Get-SafeInt {
     param(
         [AllowNull()]
@@ -1557,6 +1582,48 @@ function Invoke-ContractVerificationGate {
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $resultPath -Encoding UTF8
 
     return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $resultPath; Blocker = 'contract_verification_failed' }
+}
+
+function Invoke-CallableCarrierAuthorizationGate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [Parameter(Mandatory = $true)]
+        [string]$RunnerContractPath
+    )
+
+    $gateScript = Join-Path $PSScriptRoot 'Invoke-CallableCarrierAuthorization.ps1'
+    $stdoutPath = Join-Path $ReplayRoot ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.stdout.log' -f $SliceIndex)
+    $resultPath = Join-Path $ReplayRoot ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
+
+    if (-not (Test-Path -LiteralPath $gateScript)) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization missing | callable_carrier_authorization | tdd_compliance | non_authorizing_evidence | script_missing={1}. |" -f $SliceIndex, $gateScript)
+        return [pscustomobject]@{ CanProceed = $false; ResultPath = $resultPath; Blocker = 'callable_carrier_gate_missing' }
+    }
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $gateScript -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceIndex $SliceIndex *> $stdoutPath
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization pass | callable_carrier_authorization | tdd_compliance | executable_evidence | result={1}. |" -f $SliceIndex, $resultPath)
+        return [pscustomobject]@{ CanProceed = $true; ResultPath = $resultPath; Blocker = '' }
+    }
+
+    $blocker = 'callable_carrier_authorization_failed'
+    if (Test-Path -LiteralPath $resultPath) {
+        try {
+            $result = Read-JsonObject -Path $resultPath
+            $blockers = @(Get-StringArray $result.blockers)
+            if ($blockers.Count -gt 0) { $blocker = ($blockers -join ',') }
+        } catch {
+            $blocker = 'callable_carrier_authorization_unreadable'
+        }
+    }
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization stop | callable_carrier_authorization | tdd_compliance | non_authorizing_evidence | exit_code={1}; blocker={2}; result={3}. |" -f $SliceIndex, $exitCode, $blocker, $resultPath)
+    return [pscustomobject]@{ CanProceed = $false; ResultPath = $resultPath; Blocker = $blocker }
 }
 
 function Invoke-IncrementalVerificationGate {
@@ -3156,7 +3223,8 @@ function Test-SourceChainOverrideAllowedForForcedDecision {
     param(
         $ForcedDecision,
         $SourceChain,
-        [int]$SliceIndex
+        [int]$SliceIndex,
+        [string]$ReplayRoot = ''
     )
 
     if ($null -eq $SourceChain -or $null -eq $SourceChain.next_required_slice) { return $false }
@@ -3166,6 +3234,27 @@ function Test-SourceChainOverrideAllowedForForcedDecision {
     $surface = if ($ForcedDecision.PSObject.Properties.Name -contains 'target_sibling_surface') { [string]$ForcedDecision.target_sibling_surface } else { '' }
     $reason = if ($ForcedDecision.PSObject.Properties.Name -contains 'reason') { [string]$ForcedDecision.reason } else { '' }
     if ([string]::IsNullOrWhiteSpace($family)) { return $true }
+
+    if ($SliceIndex -eq 1 -and $family -eq 'core_entry' -and -not [string]::IsNullOrWhiteSpace($ReplayRoot)) {
+        $firstSlicePlanText = Read-TextIfExists -Path (Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md')
+        $implementationContractText = Read-TextIfExists -Path (Join-Path $ReplayRoot 'IMPLEMENTATION_CONTRACT.md')
+        $planText = @($firstSlicePlanText, $implementationContractText) -join "`n"
+        $plannedCarrier = Get-PlanField -Text $planText -Name 'selected_carrier'
+        $plannedFirstRedTest = Get-PlanField -Text $planText -Name 'first_red_test'
+        $sourceCarrier = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'carrier') { [string]$SourceChain.next_required_slice.carrier } else { '' }
+        $sourceEntry = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'entry') { [string]$SourceChain.next_required_slice.entry } else { '' }
+        $sourceTest = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'test_name') { [string]$SourceChain.next_required_slice.test_name } else { '' }
+        $plannedText = @($plannedCarrier, $plannedFirstRedTest) -join "`n"
+        $sourceText = @($sourceCarrier, $sourceEntry, $sourceTest) -join "`n"
+        if (
+            -not [string]::IsNullOrWhiteSpace($plannedCarrier) -and
+            -not [string]::IsNullOrWhiteSpace($sourceText) -and
+            $sourceText -notmatch [regex]::Escape($plannedCarrier) -and
+            $plannedText -notmatch '(?i)\b(rebuildTaskData|source_chain|source[-_\s]?chain|source field|wire field|input_data)\b'
+        ) {
+            return $false
+        }
+    }
     if ($family -in @('core_entry', 'source_chain')) { return $true }
 
     $sourceCarrier = if ($SourceChain.next_required_slice.PSObject.Properties.Name -contains 'carrier') { [string]$SourceChain.next_required_slice.carrier } else { '' }
@@ -3197,7 +3286,7 @@ function Resolve-ForcedFamilyDecisionForSlice {
         $sourceChain = Read-JsonObject -Path $SourceChainContractPath
         $coreStillOpen = Test-RequiredFamilyOpenInLedger -Ledger $Ledger -FamilyId 'core_entry'
         if ([bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice -and $coreStillOpen) {
-            if (-not (Test-SourceChainOverrideAllowedForForcedDecision -ForcedDecision $forced -SourceChain $sourceChain -SliceIndex $SliceIndex)) {
+            if (-not (Test-SourceChainOverrideAllowedForForcedDecision -ForcedDecision $forced -SourceChain $sourceChain -SliceIndex $SliceIndex -ReplayRoot ([System.IO.Path]::GetDirectoryName($SourceChainContractPath)))) {
                 Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} source-chain override skipped | source_chain | exact_contract_slice | planned_slice_guard | preserving planned/router-selected family={1}; source-chain contract cannot override a concrete non-source-chain slice. |" -f $SliceIndex, $forced.family_id)
                 return $forced
             }
@@ -4701,6 +4790,16 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     }
 
     if (-not $blockedBeforeExecutor) {
+        $callableCarrierGate = Invoke-CallableCarrierAuthorizationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
+        if (-not [bool]$callableCarrierGate.CanProceed) {
+            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode 0 -Reason "callable carrier authorization stopped before implementation: $($callableCarrierGate.Blocker)"
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization pre-executor stop | {1} | {2} | callable_carrier_authorization_failed | blocker={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $callableCarrierGate.Blocker, $callableCarrierGate.ResultPath)
+            $blockedBeforeExecutor = $true
+            $hasExistingResult = $true
+        }
+    }
+
+    if (-not $blockedBeforeExecutor) {
         $preImplementationCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$preImplementationCharterGate.CanProceed) {
             Write-Host "Test charter prevalidation failed before executor for slice ${i}. Starting test charter repair pass."
@@ -5336,6 +5435,18 @@ if (-not (Test-Path -LiteralPath $roundResultPath)) {
     -ReplayRoot $replayRootFull
 if ($LASTEXITCODE -ne 0) {
     throw "Round coverage cap enforcement failed with exit code $LASTEXITCODE"
+}
+
+$coverageRecomputeScript = Join-Path $PSScriptRoot 'recompute_round_coverage.py'
+if (Test-Path -LiteralPath $coverageRecomputeScript) {
+    $coverageRecomputePath = Join-Path $replayRootFull 'ROUND_COVERAGE_RECOMPUTE.json'
+    $coverageRecomputeStderr = Join-Path $replayRootFull 'ROUND_COVERAGE_RECOMPUTE.stderr.log'
+    & python $coverageRecomputeScript `
+        --root $replayRootFull `
+        --fail-on-positive-without-synthesis > $coverageRecomputePath 2> $coverageRecomputeStderr
+    if ($LASTEXITCODE -ne 0) {
+        throw "Round coverage recomputation gate failed with exit code $LASTEXITCODE"
+    }
 }
 
 Write-Host "Phase1 slice loop completed: $roundResultPath"

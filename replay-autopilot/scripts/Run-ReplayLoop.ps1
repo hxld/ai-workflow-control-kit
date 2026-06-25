@@ -1725,6 +1725,46 @@ function Write-WorktreeHeadAudit {
     $audit | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $auditPath -Encoding UTF8
 }
 
+function Invoke-ReplayContextIndexValidationSafe {
+    param(
+        [string]$ReplayRoot,
+        [string[]]$CandidateNames = @('replay-context-index.json', 'claim-system-context.json')
+    )
+
+    $script = Join-Path $PSScriptRoot 'validate_replay_context_index.py'
+    if (-not (Test-Path -LiteralPath $script)) { return }
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot)) { return }
+
+    $contextName = ''
+    foreach ($candidate in $CandidateNames) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path -LiteralPath (Join-Path $ReplayRoot $candidate)) {
+            $contextName = $candidate
+            break
+        }
+    }
+
+    $outPath = Join-Path $ReplayRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.json'
+    $errPath = Join-Path $ReplayRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.stderr.log'
+    if ([string]::IsNullOrWhiteSpace($contextName)) {
+        [ordered]@{
+            status = 'SKIPPED'
+            reason = 'context_index_missing'
+            candidates = @($CandidateNames)
+            validator = $script
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $outPath -Encoding UTF8
+        return
+    }
+
+    & python $script `
+        --root $ReplayRoot `
+        --context $contextName `
+        --require-fresh-head > $outPath 2> $errPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Replay context index validation failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Write-AgentExecutorBlocker {
     param(
         [string]$BlockerPath,
@@ -2112,15 +2152,28 @@ function Invoke-V348PreS1CarrierVerification {
     )
 
     $script = Join-Path $PSScriptRoot 'verify-carrier.ps1'
+    $signatureScript = Join-Path $PSScriptRoot 'verify_carrier_signature.py'
     $gatePath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_VERIFY.json'
     $stdoutPath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_VERIFY.stdout.log'
     $stderrPath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_VERIFY.stderr.log'
+    $signaturePath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_SIGNATURE_AUTHORIZATION.json'
+    $signatureStdoutPath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_SIGNATURE_AUTHORIZATION.stdout.log'
+    $signatureStderrPath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_SIGNATURE_AUTHORIZATION.stderr.log'
     $proofText = Read-TextIfExists (Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md')
     $planText = Read-TextIfExists (Join-Path $ReplayRoot 'PLAN_RESULT.md')
     $requirementText = Read-TextIfExists $RequirementSource
+    $selectedRealEntry = Get-PlanProofField -Text $proofText -Name 'selected_real_entry'
     $selectedCarrier = Get-PlanProofField -Text $proofText -Name 'selected_carrier'
     if ([string]::IsNullOrWhiteSpace($selectedCarrier)) {
         $selectedCarrier = Get-PlanProofField -Text $proofText -Name 'target_subsurface_or_carrier'
+    }
+    $testInvocationPath = Get-PlanProofField -Text $proofText -Name 'test_invocation_path'
+    if ([string]::IsNullOrWhiteSpace($testInvocationPath)) {
+        $testInvocationPath = Get-PlanProofField -Text $proofText -Name 'test_surface'
+    }
+    $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'proof_observation_point'
+    if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
+        $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'observed_output_or_side_effect'
     }
     if ([string]::IsNullOrWhiteSpace($selectedCarrier)) {
         $selectedCarrier = Get-FirstText $planText @(
@@ -2139,6 +2192,7 @@ function Invoke-V348PreS1CarrierVerification {
         exit_code = $null
         stdout_log = $stdoutPath
         stderr_log = $stderrPath
+        signature_authorization = $signaturePath
     }
 
     if (-not (Test-Path -LiteralPath $script)) {
@@ -2161,6 +2215,37 @@ function Invoke-V348PreS1CarrierVerification {
         $result.decision = $matches[1]
     } else {
         $result.decision = if ($exitCode -eq 0) { 'PASS_OR_WARN' } else { 'FAILED' }
+    }
+
+    if (Test-Path -LiteralPath $signatureScript) {
+        $signatureInput = [ordered]@{
+            worktree_path = $Worktree
+            selected_real_entry = $selectedRealEntry
+            selected_carrier = $selectedCarrier
+            test_invocation_path = $testInvocationPath
+            proof_observation_point = $proofObservationPoint
+        } | ConvertTo-Json -Compress
+        $signatureInput | python $signatureScript > $signatureStdoutPath 2> $signatureStderrPath
+        $signatureExitCode = $LASTEXITCODE
+        $signatureText = Read-TextIfExists $signatureStdoutPath
+        $signatureJson = $null
+        if (-not [string]::IsNullOrWhiteSpace($signatureText)) {
+            try { $signatureJson = $signatureText | ConvertFrom-Json } catch { $signatureJson = $null }
+        }
+        if ($null -ne $signatureJson) {
+            $signatureJson | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $signaturePath -Encoding UTF8
+            $result.signature_exit_code = $signatureExitCode
+            $result.signature_authorized = [bool]$signatureJson.authorized
+            $result.signature_blockers = @(Get-StringArray $signatureJson.blockers)
+            if (-not [bool]$signatureJson.authorized) {
+                $result.decision = 'FAILED_SIGNATURE_AUTHORIZATION'
+            }
+        } else {
+            $result.signature_exit_code = $signatureExitCode
+            $result.signature_authorized = $false
+            $result.signature_blockers = @('signature_authorization_json_missing')
+            $result.decision = 'FAILED_SIGNATURE_AUTHORIZATION'
+        }
     }
     $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $gatePath -Encoding UTF8
 }
@@ -3191,9 +3276,11 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
                 '-ReplayRootBase', $replayRootBase,
                 '-Executor', $executorActual,
                 '-RequireExecutor', $requiredExecutorActual,
-                '-Model', $phase1Model,
                 '-Quiet'
             )
+            if (-not [string]::IsNullOrWhiteSpace($phase1Model)) {
+                $executorResourcePreflightArgs += @('-Model', $phase1Model)
+            }
             if ($executorResourceProbeActual) {
                 $executorResourcePreflightArgs += '-Probe'
             }
@@ -3217,6 +3304,7 @@ for ($round = $StartRound; $round -lt ($StartRound + $maxRounds); $round++) {
         throw "Start-ReplayRound failed for $roundId"
     }
     Write-WorktreeHeadAudit -ReplayRoot $replayRoot -Worktree $worktree -Stage 'initial_after_start_replay_round'
+    Invoke-ReplayContextIndexValidationSafe -ReplayRoot $replayRoot
     $executorAuditPath = Join-Path $replayRoot 'EXECUTOR_AUDIT.json'
     Write-ExecutorAudit -Path $executorAuditPath -Data ([ordered]@{
         schema = 'replay_executor_audit.v1'

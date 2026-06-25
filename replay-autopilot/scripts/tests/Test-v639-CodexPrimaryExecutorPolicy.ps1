@@ -28,7 +28,60 @@ $repoReplayRoot = Resolve-Path (Join-Path $scriptRoot '..\..')
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v639-codex-primary-' + [guid]::NewGuid().ToString('N'))
 
 try {
-    $configPath = Join-Path $repoReplayRoot 'config.yaml'
+    $projectRoot = Join-Path $tempRoot 'project'
+    $knowledgeRoot = Join-Path $tempRoot 'knowledge'
+    $replayRootBase = Join-Path $tempRoot 'evidence\feature\replay-v639'
+    New-Item -ItemType Directory -Force -Path $projectRoot, $knowledgeRoot | Out-Null
+    Write-Utf8 (Join-Path $projectRoot 'requirements.md') '# Test requirement'
+    Write-Utf8 (Join-Path $knowledgeRoot 'CURRENT_VERSION.md') "**Version**: v639`n"
+    Write-Utf8 (Join-Path $knowledgeRoot 'guide-sections\changelog.md') "## v639`n`nCodex primary executor test fixture.`n"
+
+    $configPath = Join-Path $tempRoot 'codex-primary-config.yaml'
+    @"
+project_root: $projectRoot
+feature_name: example-feature
+requirement_source: $(Join-Path $projectRoot 'requirements.md')
+base_commit: HEAD
+oracle_branch: main
+oracle_commit: HEAD
+replay_root_base: $replayRootBase
+run_label: v639
+target_coverage: 90
+max_rounds: 1
+control_cycle_rounds: 1
+control_max_cycles: 1
+control_run_evolution: true
+control_use_latest_knowledge_version: false
+executor: codex
+require_executor: codex
+allow_codex_executor: true
+executor_timeout_minutes: 240
+executor_resource_preflight_probe: false
+executor_resource_preflight_bypass: false
+codex_sandbox: danger-full-access
+codex_approval: never
+codex_model:
+codex_reasoning_effort: medium
+phase0_model:
+phase0_reasoning_effort:
+plan_model:
+plan_reasoning_effort:
+phase1_model:
+phase1_reasoning_effort:
+phase1_max_slices: 12
+phase2_model:
+phase2_reasoning_effort:
+deep_review_model:
+deep_review_reasoning_effort:
+evolution_model:
+evolution_reasoning_effort:
+auto_evolution: false
+skill_source_root: $(Join-Path $repoReplayRoot 'agents\skills')
+knowledge_repo: $knowledgeRoot
+knowledge_backup_auto_sync: false
+knowledge_backup_auto_push: false
+"@ | Set-Content -LiteralPath $configPath -Encoding UTF8
+
     $runLoop = Join-Path $repoReplayRoot 'scripts\Run-ReplayLoop.ps1'
     $controlLoop = Join-Path $repoReplayRoot 'scripts\Run-UnattendedReplayControl.ps1'
 

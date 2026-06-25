@@ -4,6 +4,9 @@ Contract Fingerprinting Gate (Experiment 1 from NEXT_EXPERIMENT_PLAN.md).
 
 Verify that implemented carrier matches planned signature exactly.
 This prevents carrier mismatch gaps where agents create methods with wrong signatures.
+The script also accepts the pre-RED authorization schema used by replay
+evolution experiments: selected_real_entry, selected_carrier,
+test_invocation_path, and proof_observation_point.
 """
 
 import json
@@ -47,11 +50,19 @@ def simple_java_name(name: str) -> str:
 class MethodSignature:
     """Represents a Java method signature."""
 
-    def __init__(self, class_name: str, method_name: str, parameters: List[str], return_type: str = "void"):
+    def __init__(
+        self,
+        class_name: str,
+        method_name: str,
+        parameters: List[str],
+        return_type: str = "void",
+        visibility: str = "package",
+    ):
         self.class_name = class_name
         self.method_name = method_name
         self.parameters = parameters
         self.return_type = return_type
+        self.visibility = visibility or "package"
 
     def __str__(self):
         params = ", ".join(self.parameters)
@@ -73,6 +84,7 @@ class MethodSignature:
             "method_name": self.method_name,
             "parameters": self.parameters,
             "return_type": self.return_type,
+            "visibility": self.visibility,
             "formatted": str(self)
         }
 
@@ -134,7 +146,7 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     # Pattern for method declaration
     # Matches: public/private/protected/package-private [static] [final] ReturnType methodName(params) [throws ...]
     pattern = re.compile(
-        r'^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
+        r'^\s*(?:(public|private|protected)\s+)?(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
         re.escape(method_name) +
         r'\s*\(([^)]*)\)\s*(?:throws\s+[^{]+)?',
         re.MULTILINE
@@ -143,8 +155,9 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     for i, line in enumerate(lines):
         match = pattern.search(line)
         if match:
-            return_type = match.group(1).strip()
-            params_str = match.group(2).strip()
+            visibility = (match.group(1) or "package").strip()
+            return_type = match.group(2).strip()
+            params_str = match.group(3).strip()
 
             # Parse parameters
             parameters = []
@@ -156,9 +169,12 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
                         # Extract type from "Type name" or just "Type"
                         type_match = re.match(r'^([A-Za-z][A-Za-z0-9_<>, ?\[\]\.]*)', param)
                         if type_match:
-                            parameters.append(type_match.group(1))
+                            raw_type = type_match.group(1).strip()
+                            if " " in raw_type:
+                                raw_type = raw_type.rsplit(" ", 1)[0].strip()
+                            parameters.append(raw_type)
 
-            return MethodSignature(class_name, method_name, parameters, return_type)
+            return MethodSignature(class_name, method_name, parameters, return_type, visibility)
 
     return None
 
@@ -289,7 +305,10 @@ def signature_diff(plan_sig: MethodSignature, impl_sig: MethodSignature) -> List
 def verify_carrier_signature(
     plan_carrier: str,
     worktree_path: str,
-    baseline_commit: Optional[str] = None
+    baseline_commit: Optional[str] = None,
+    selected_real_entry: str = "",
+    test_invocation_path: str = "",
+    proof_observation_point: str = "",
 ) -> Dict:
     """
     Verify that implemented carrier matches planned signature.
@@ -307,6 +326,8 @@ def verify_carrier_signature(
     if not plan_sig:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_parse_failed"],
             "error": "carrier_parse_failed",
             "message": f"Failed to parse carrier string: {plan_carrier}",
             "carrier_provided": plan_carrier
@@ -322,6 +343,8 @@ def verify_carrier_signature(
     if not impl_match:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_not_found"],
             "error": "carrier_not_found",
             "message": f"No implementation found for {plan_sig.class_name}.{plan_sig.method_name}",
             "planned_signature": plan_sig.to_dict(),
@@ -338,10 +361,40 @@ def verify_carrier_signature(
     if not impl_sig:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["method_signature_not_found"],
             "error": "method_signature_not_found",
             "message": f"Method {plan_sig.method_name} not found in class {plan_sig.class_name}",
             "planned_signature": plan_sig.to_dict(),
             "file_path": impl_match["file_path"]
+        }
+
+    visibility_blockers = []
+    if impl_sig.visibility == "private":
+        visibility_blockers.append("carrier_private")
+    if selected_real_entry:
+        entry_sig = parse_carrier_string(selected_real_entry)
+        if entry_sig:
+            entry_match = search_method_in_worktree(worktree_path, entry_sig.class_name, entry_sig.method_name)
+            if not entry_match:
+                visibility_blockers.append("selected_real_entry_not_found")
+        else:
+            visibility_blockers.append("selected_real_entry_parse_failed")
+    if visibility_blockers:
+        return {
+            "status": "FAIL",
+            "authorized": False,
+            "blockers": visibility_blockers,
+            "error": "carrier_not_callable",
+            "message": "Carrier is not callable through the planned pre-RED path",
+            "planned_signature": plan_sig.to_dict(),
+            "implemented_signature": impl_sig.to_dict(),
+            "resolved_signature": impl_sig.to_dict(),
+            "file_path": impl_match["file_path"],
+            "selected_real_entry": selected_real_entry,
+            "test_invocation_path": test_invocation_path,
+            "proof_observation_point": proof_observation_point,
+            "reachable_from_entry": bool(selected_real_entry and not any(b.startswith("selected_real_entry") for b in visibility_blockers)),
         }
 
     # Compare signatures
@@ -349,20 +402,116 @@ def verify_carrier_signature(
         diffs = signature_diff(plan_sig, impl_sig)
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_signature_mismatch"],
             "error": "carrier_signature_mismatch",
             "message": "Signature mismatch between planned and implemented carrier",
             "planned_signature": plan_sig.to_dict(),
             "implemented_signature": impl_sig.to_dict(),
+            "resolved_signature": impl_sig.to_dict(),
             "differences": diffs,
             "file_path": impl_match["file_path"]
         }
 
     return {
         "status": "PASS",
+        "authorized": True,
+        "blockers": [],
         "message": "Carrier signature matches exactly",
         "planned_signature": plan_sig.to_dict(),
         "implemented_signature": impl_sig.to_dict(),
-        "file_path": impl_match["file_path"]
+        "resolved_signature": impl_sig.to_dict(),
+        "file_path": impl_match["file_path"],
+        "selected_real_entry": selected_real_entry,
+        "test_invocation_path": test_invocation_path,
+        "proof_observation_point": proof_observation_point,
+        "reachable_from_entry": bool(selected_real_entry),
+    }
+
+
+def has_blocking_placeholder(value: str) -> bool:
+    """Return true for missing or non-authorizing placeholder values."""
+    if not value:
+        return True
+    lowered = value.strip().lower()
+    placeholders = {
+        "unknown", "private", "absent", "new_service_only", "helper_only",
+        "mock_only", "tbd", "n/a", "none", "placeholder"
+    }
+    return lowered in placeholders
+
+
+def verify_pre_red_authorization(input_data: Dict) -> Dict:
+    """Validate the callable-carrier authorization contract before RED."""
+    worktree_path = input_data.get("worktree_path", "")
+    selected_real_entry = input_data.get("selected_real_entry", "")
+    selected_carrier = input_data.get("selected_carrier", "") or input_data.get("plan_carrier", "")
+    invocation_path = input_data.get("test_invocation_path", "")
+    observation_point = input_data.get("proof_observation_point", "")
+    blockers: List[str] = []
+
+    if has_blocking_placeholder(worktree_path):
+        blockers.append("worktree_path_missing")
+    if has_blocking_placeholder(selected_real_entry):
+        blockers.append("selected_real_entry_missing_or_placeholder")
+    if has_blocking_placeholder(selected_carrier):
+        blockers.append("selected_carrier_missing_or_placeholder")
+    if has_blocking_placeholder(invocation_path):
+        blockers.append("test_invocation_path_blocked")
+    if has_blocking_placeholder(observation_point):
+        blockers.append("proof_observation_point_blocked")
+
+    entry_result = None
+    carrier_result = None
+    reachable_from_entry = False
+
+    if worktree_path and selected_real_entry and not has_blocking_placeholder(selected_real_entry):
+        entry_result = verify_carrier_signature(selected_real_entry, worktree_path)
+        if entry_result.get("status") == "FAIL":
+            blockers.append(f"selected_real_entry_{entry_result.get('error', 'invalid')}")
+
+    if worktree_path and selected_carrier and not has_blocking_placeholder(selected_carrier):
+        carrier_result = verify_carrier_signature(
+            selected_carrier,
+            worktree_path,
+            selected_real_entry=selected_real_entry,
+            test_invocation_path=invocation_path,
+            proof_observation_point=observation_point,
+        )
+        if carrier_result.get("status") == "FAIL":
+            for blocker in carrier_result.get("blockers", []) or []:
+                blockers.append(str(blocker))
+            if not carrier_result.get("blockers"):
+                blockers.append(f"selected_carrier_{carrier_result.get('error', 'invalid')}")
+
+    if entry_result and carrier_result:
+        entry_sig = entry_result.get("planned_signature", {}) or {}
+        carrier_sig = carrier_result.get("planned_signature", {}) or {}
+        entry_class = simple_java_name(entry_sig.get("class_name", ""))
+        carrier_class = simple_java_name(carrier_sig.get("class_name", ""))
+        reachable_from_entry = (
+            entry_result.get("status") == "PASS" and
+            carrier_result.get("status") == "PASS" and
+            (entry_class == carrier_class or entry_class.lower() in invocation_path.lower())
+        )
+        if not reachable_from_entry and "new_service" in selected_carrier.lower():
+            blockers.append("new_service_only_not_reachable_from_entry")
+
+    blockers = list(dict.fromkeys(blockers))
+    authorized = len(blockers) == 0
+    return {
+        "authorized": authorized,
+        "status": "PASS" if authorized else "FAIL",
+        "blockers": blockers,
+        "resolved_signature": {
+            "selected_real_entry": entry_result.get("implemented_signature") if entry_result else None,
+            "selected_carrier": carrier_result.get("implemented_signature") if carrier_result else None,
+        },
+        "reachable_from_entry": reachable_from_entry,
+        "selected_real_entry": selected_real_entry,
+        "selected_carrier": selected_carrier,
+        "test_invocation_path": invocation_path,
+        "proof_observation_point": observation_point,
     }
 
 
@@ -373,6 +522,7 @@ def main():
         print("  python verify_carrier_signature.py --input <input.json>")
         print("  echo '{...}' | python verify_carrier_signature.py")
         print("\nInput JSON keys: plan_carrier, worktree_path, baseline_commit (optional)")
+        print("Pre-RED keys: worktree_path, selected_real_entry, selected_carrier, test_invocation_path, proof_observation_point")
         sys.exit(0)
 
     if len(sys.argv) > 2 and sys.argv[1] == "--input":
@@ -382,11 +532,17 @@ def main():
         # Read from stdin
         input_data = json.loads(sys.stdin.read())
 
-    result = verify_carrier_signature(
-        plan_carrier=input_data.get("plan_carrier", ""),
-        worktree_path=input_data.get("worktree_path", ""),
-        baseline_commit=input_data.get("baseline_commit")
-    )
+    if input_data.get("selected_real_entry") or input_data.get("selected_carrier"):
+        result = verify_pre_red_authorization(input_data)
+    else:
+        result = verify_carrier_signature(
+            plan_carrier=input_data.get("plan_carrier", ""),
+            worktree_path=input_data.get("worktree_path", ""),
+            baseline_commit=input_data.get("baseline_commit"),
+            selected_real_entry=input_data.get("selected_real_entry", ""),
+            test_invocation_path=input_data.get("test_invocation_path", ""),
+            proof_observation_point=input_data.get("proof_observation_point", ""),
+        )
 
     print(json.dumps(result, indent=2, ensure_ascii=False))
     sys.exit(1 if result["status"] == "FAIL" else 0)

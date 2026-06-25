@@ -278,3 +278,5 @@ if (-not $Quiet) {
     Write-Host "Golden delivery slice written: $mdPath"
     Write-Host "Golden delivery prompt written: $promptPath"
 }
+
+exit 0

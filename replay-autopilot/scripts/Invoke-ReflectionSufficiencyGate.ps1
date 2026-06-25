@@ -158,9 +158,11 @@ $evolutionVerifyPath = Join-Path $root 'EVOLUTION_RESULT_VERIFY.json'
 $evolutionResultPath = Join-Path $root 'EVOLUTION_RESULT.md'
 $failureAuditPath = Join-Path $root 'FAILURE_AUDIT_PACK.json'
 $goldenSlicePath = Join-Path $root 'NEXT_GOLDEN_DELIVERY_SLICE.json'
+$ruleClosurePath = Join-Path $root 'VERIFIABLE_RULE_CLOSURE.json'
 
 $stagnation = Read-JsonIfExists $stagnationPath
 $failureAudit = Read-JsonIfExists $failureAuditPath
+$ruleClosure = Read-JsonIfExists $ruleClosurePath
 $triggered = $false
 if ($null -ne $stagnation -and $stagnation.PSObject.Properties.Name -contains 'triggered') {
     $triggered = [bool]$stagnation.triggered
@@ -168,13 +170,25 @@ if ($null -ne $stagnation -and $stagnation.PSObject.Properties.Name -contains 't
 
 $reasons = if ($null -ne $stagnation) { @(Get-StringArray $stagnation.reasons) } else { @() }
 $repeated = if ($null -ne $stagnation) { @(Get-StringArray $stagnation.repeated_blockers) } else { @() }
+$authoritativeRuleClosureApplied = $false
+$failureAuditMustFixSuppressed = $false
+$ruleClosureStatus = if ($null -ne $ruleClosure) { [string]$ruleClosure.status } else { '' }
 if ($null -ne $failureAudit) {
-    $repeated = @(Get-UniqueStringArray @($repeated, $failureAudit.must_fix_before_next_replay, $failureAudit.repeated_blockers))
+    $preservedExistingRules = ($failureAudit.PSObject.Properties.Name -contains 'preserved_existing_verifiable_rules') -and [bool]$failureAudit.preserved_existing_verifiable_rules
+    $authoritativeRuleClosureApplied = $preservedExistingRules -and $ruleClosureStatus -eq 'PASS'
+    if ($authoritativeRuleClosureApplied) {
+        $failureAuditMustFixSuppressed = $true
+    } else {
+        $repeated = @(Get-UniqueStringArray @($repeated, $failureAudit.must_fix_before_next_replay, $failureAudit.repeated_blockers))
+    }
 }
 $critical = $triggered -or ($reasons -match 'low_verification_cap|repeated_blockers').Count -gt 0 -or $repeated.Count -gt 0
 
 $issues = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
+if ($failureAuditMustFixSuppressed) {
+    $warnings.Add('failure_audit_must_fix_suppressed_by_passed_rule_closure') | Out-Null
+}
 
 if (-not $critical) {
     Write-GateResult -Root $root -Pass $true -Result ([ordered]@{
@@ -254,7 +268,7 @@ $goldenRequiredBlockers = @(
     'executable_surface_slice_gap'
 )
 $goldenRequired = $false
-if ($null -ne $failureAudit -and [bool]$failureAudit.golden_first_slice_required) {
+if ($null -ne $failureAudit -and [bool]$failureAudit.golden_first_slice_required -and -not $authoritativeRuleClosureApplied) {
     $goldenRequired = $true
 }
 foreach ($blocker in $repeated) {
@@ -296,6 +310,10 @@ Write-GateResult -Root $root -Pass $pass -Result ([ordered]@{
     addressed_blockers = @($addressed)
     missing_reflection_for = @($missing)
     failure_audit_pack = if ($null -ne $failureAudit) { $failureAuditPath } else { '' }
+    authoritative_rule_closure_applied = $authoritativeRuleClosureApplied
+    failure_audit_must_fix_suppressed = $failureAuditMustFixSuppressed
+    rule_closure_status = $ruleClosureStatus
+    rule_closure_path = if (Test-Path -LiteralPath $ruleClosurePath) { $ruleClosurePath } else { '' }
     golden_first_slice_required = $goldenRequired
     golden_delivery_slice = if (Test-Path -LiteralPath $goldenSlicePath) { $goldenSlicePath } else { '' }
     min_addressed_blockers = $requiredAddressed

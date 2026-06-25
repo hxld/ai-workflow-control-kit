@@ -204,6 +204,7 @@ function Invoke-ControlSummaryAuxiliary {
         }
     }
 
+    $process.Refresh()
     $exitCode = if ($null -eq $process.ExitCode) { 1 } else { [int]$process.ExitCode }
     return [pscustomobject]@{
         name = $Name
@@ -746,13 +747,17 @@ if (-not $SkipAuxiliaryArtifacts -and (Test-Path -LiteralPath $failureAuditScrip
         -OutputRootFull $outputRootFull `
         -TimeoutSeconds $AuxiliaryTimeoutSeconds
 
+    $failureAuditPath = Join-Path $latest.replay_root 'FAILURE_AUDIT_PACK.json'
+    $failureAudit = Read-JsonIfExists $failureAuditPath
+    $failureAuditArtifactValid = $null -ne $failureAudit
     if ($failureAuditResult.timed_out) {
         Write-Warning "Failure audit pack generation timed out after $AuxiliaryTimeoutSeconds seconds; continuing control loop. Marker: $($failureAuditResult.timeout_marker)"
-    } elseif ($failureAuditResult.exit_code -ne 0) {
+    } elseif ($failureAuditResult.exit_code -ne 0 -and -not $failureAuditArtifactValid) {
         Write-Warning "Failure audit pack generation failed with exit code $($failureAuditResult.exit_code); continuing control loop. stderr: $($failureAuditResult.stderr)"
     } else {
-        $failureAuditPath = Join-Path $latest.replay_root 'FAILURE_AUDIT_PACK.json'
-        $failureAudit = Read-JsonIfExists $failureAuditPath
+        if ($failureAuditResult.exit_code -ne 0) {
+            Write-Warning "Failure audit pack generation reported exit code $($failureAuditResult.exit_code), but produced a valid artifact; continuing auxiliary chain. stderr: $($failureAuditResult.stderr)"
+        }
         if ($null -ne $failureAudit -and [bool]$failureAudit.golden_first_slice_required) {
             $goldenScript = Join-Path $PSScriptRoot 'Write-GoldenDeliverySlice.ps1'
             if (Test-Path -LiteralPath $goldenScript) {
@@ -767,10 +772,14 @@ if (-not $SkipAuxiliaryArtifacts -and (Test-Path -LiteralPath $failureAuditScrip
                     -OutputRootFull $outputRootFull `
                     -TimeoutSeconds $AuxiliaryTimeoutSeconds
 
+                $goldenPath = Join-Path $latest.replay_root 'NEXT_GOLDEN_DELIVERY_SLICE.json'
+                $goldenArtifactValid = $null -ne (Read-JsonIfExists $goldenPath)
                 if ($goldenResult.timed_out) {
                     Write-Warning "Golden delivery slice generation timed out after $AuxiliaryTimeoutSeconds seconds; continuing control loop. Marker: $($goldenResult.timeout_marker)"
-                } elseif ($goldenResult.exit_code -ne 0) {
+                } elseif ($goldenResult.exit_code -ne 0 -and -not $goldenArtifactValid) {
                     Write-Warning "Golden delivery slice generation failed with exit code $($goldenResult.exit_code); continuing control loop. stderr: $($goldenResult.stderr)"
+                } elseif ($goldenResult.exit_code -ne 0) {
+                    Write-Warning "Golden delivery slice generation reported exit code $($goldenResult.exit_code), but produced a valid artifact; continuing control loop. stderr: $($goldenResult.stderr)"
                 }
             }
         }

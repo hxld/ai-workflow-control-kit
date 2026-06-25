@@ -589,3 +589,5 @@ if (Test-Path -LiteralPath $controlDir) {
 if (-not $Quiet) {
     Write-Host "Failure audit pack written: $mdPath"
 }
+
+exit 0

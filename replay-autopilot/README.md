@@ -40,7 +40,7 @@
 - `scripts/Verify-SliceClosure.ps1`：脚本级检查 slice result、测试证据、gap flags 与 coverage cap。
 - `scripts/Run-UntilKnowledgeVersion.ps1`：无人值守循环执行 replay + evolution，直到知识库版本达到目标版本或遇到阻塞。
   - 若 evolution 输出 `NO_SOURCE_CHANGE`，脚本会停止为 `STOP_NO_SOURCE_CHANGE`，避免用 no-op 进化刷知识版本。
-- `scripts/Start-AgentBridge.ps1`：Claude Code 执行代理与 Codex 审查代理之间的文件协议桥接层，使用 `STATE.json`、`CLAUDE_RESULT.md`、`CODEX_REVIEW.md`、`NEXT_CLAUDE_PROMPT.md` 和 `DECISION.json` 消除人工复制粘贴。
+- `scripts/Start-AgentBridge.ps1`：Primary 执行代理与 Review 审查代理之间的文件协议桥接层，默认可全程 Codex；`CLAUDE_RESULT.md` / `NEXT_CLAUDE_PROMPT.md` 等旧文件名保留为协议兼容层。
 - `scripts/Test-AgentBridgeProtocol.ps1`：Agent Bridge 协议回归测试。
 
 ## 先校验
@@ -131,7 +131,7 @@ knowledge_backup_evidence_mode: Milestone
 - 禁止把 `worktree/`、`logs/`、`.tmp/`、`.git/`、`*.log`、`*.pyc`、公司源码类文件带入 evidence lite
 - 没有变更时输出 `committed=false`，不会制造空提交
 
-## Agent Bridge：Claude 执行 + Codex 审查
+## Agent Bridge：Codex Primary + Codex Review
 
 Agent Bridge 用文件系统作为两个 Agent 的共享协议层，默认目录：
 
@@ -159,17 +159,19 @@ LAST_ARCHIVE_PATH.txt
 events.jsonl
 ```
 
+`CLAUDE_*` 和 `NEXT_CLAUDE_PROMPT.md` 是历史协议文件名；现在默认主执行器是 Codex，这些文件名只表示 primary executor 的输入、输出和完成标记。新脚本可以使用 `PrimaryDone` / `ReviewDone` 动作名；旧的 `ClaudeDone` / `CodexDone` 仍保留兼容。
+
 最小用法：
 
 ```powershell
 # 初始化当前 bridge
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action Init -InitialPromptPath D:\path\to\first-claude-prompt.md -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action Init -InitialPromptPath D:\path\to\first-primary-prompt.md -Force -CodexOnly
 
-# Claude Code 执行完后写 CLAUDE_RESULT.md 和 CLAUDE_DONE.flag，然后推进给 Codex
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action ClaudeDone
+# Primary executor 写 CLAUDE_RESULT.md 和 CLAUDE_DONE.flag 后，推进给 review executor
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action PrimaryDone
 
-# Codex 写 CODEX_REVIEW.md、NEXT_CLAUDE_PROMPT.md、DECISION.json 和 CODEX_DONE.flag 后，推进下一轮
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action CodexDone
+# Review executor 写 CODEX_REVIEW.md、NEXT_CLAUDE_PROMPT.md、DECISION.json 和 CODEX_DONE.flag 后，推进下一轮
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action ReviewDone
 
 # 查看状态
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action Status
@@ -178,7 +180,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.
 可选全自动循环会调用现有 `Invoke-AgentPrompt.ps1`：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action RunLoop -ClaudeExecutor claude -CodexExecutor codex -MaxCycles 1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.ps1 -Action RunLoop -CodexOnly -MaxCycles 1
 ```
 
 保护边界：
@@ -186,8 +188,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.
 - 默认只用 `ProtectedGitRoots` 的 git dirty watchdog 做 fail-closed 检查，不修改受保护仓库 ACL。
 - `-UseProtectedRootWriteDeny` 属于危险实验开关；脚本会拒绝直接启用，除非同时传 `-AllowUnsafeProtectedRootWriteDeny`。该组合只应在一次性临时目录/测试仓库中使用，不应用于 `<PROJECT_ROOT>` 主仓库。
 
-`RunLoop` 有界执行，不会无限循环。Codex 必须写 `DECISION.json`；若 decision 为 `STOP` 或 `BLOCKED`，bridge 停止；若为 `CONTINUE` / `EVOLVE` / `DEEP_REVIEW`，`NEXT_CLAUDE_PROMPT.md` 会成为下一轮 `CLAUDE_PROMPT.md`，上一轮证据归档到 `$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs\`。
-切换到下一轮前，bridge 还会把上一轮的 Claude 结果、Codex 审查、下一步 prompt、decision 和归档路径复制到 `LAST_*` 文件；下一轮 agent 应优先读这些稳定副本，避免 current-cycle 文件被重置为空造成上下文丢失。
+`RunLoop` 有界执行，不会无限循环。Review executor 必须写 `DECISION.json`；若 decision 为 `STOP` 或 `BLOCKED`，bridge 停止；若为 `CONTINUE` / `EVOLVE` / `DEEP_REVIEW`，`NEXT_CLAUDE_PROMPT.md` 会成为下一轮 `CLAUDE_PROMPT.md`，上一轮证据归档到 `$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs\`。
+切换到下一轮前，bridge 还会把上一轮的 primary 结果、review 审查、下一步 prompt、decision 和归档路径复制到 `LAST_*` 文件；下一轮 agent 应优先读这些稳定副本，避免 current-cycle 文件被重置为空造成上下文丢失。
 
 ## 收敛口径
 
@@ -206,7 +208,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\Start-AgentBridge.
 
 ## 分阶段模型
 
-`config.yaml` 支持按阶段配置模型。当前默认策略是 Claude Code 执行、Codex 只在显式授权时使用；避免误耗 Codex 额度：
+`config.yaml` 支持按阶段配置模型。当前默认策略是 Codex-primary；Codex 作为主执行器仍必须通过 `allow_codex_executor:true` 或 `-AllowCodexExecutor` 显式授权，方便审计：
 
 ```yaml
 executor: codex
@@ -445,8 +447,8 @@ $env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_external-practice\
   EXTERNAL_PRACTICE_DECISION.json
 ```
 
-When `external_practice_auto_search: true`, `Run-ReplayLoop.ps1` invokes this trigger on stop-loss / no-improvement. When `external_practice_run_agent: true`, the configured executor, normally Claude Code, searches public sources and writes a sourced SOP. When `external_practice_auto_apply: true`, `Start-ReplayRound.ps1` only appends the SOP to new replay prompts if `EXTERNAL_PRACTICE_DECISION.json` marks it safe for auto-apply.
+When `external_practice_auto_search: true`, `Run-ReplayLoop.ps1` invokes this trigger on stop-loss / no-improvement. When `external_practice_run_agent: true`, the configured executor, normally Codex in Codex-primary mode, searches public sources and writes a sourced SOP. When `external_practice_auto_apply: true`, `Start-ReplayRound.ps1` only appends the SOP to new replay prompts if `EXTERNAL_PRACTICE_DECISION.json` marks it safe for auto-apply.
 
 This is the escape hatch for local-loop stagnation: pause blind repetition, inspect external mature practices, extract generic SOP, then resume replay with positive process guidance.
 
-External practice search has a bounded fallback path. The primary executor remains Claude Code, but if it times out, fails, or does not write a valid decision file, the search stage may switch to the configured fallback executor, normally Codex, to produce the sourced conclusion. The decision file records every attempt and `next_replay_executor`; normal replay execution still returns to Claude Code unless the main executor config is explicitly changed.
+External practice search has a bounded fallback path. In Codex-primary mode the primary and fallback executors can both be Codex; if the first attempt times out, fails, or does not write a valid decision file, the search stage may switch to the configured fallback executor. The decision file records every attempt and `next_replay_executor`; normal replay execution follows the main `executor` / `require_executor` config.

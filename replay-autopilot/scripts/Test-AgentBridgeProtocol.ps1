@@ -54,6 +54,19 @@ try {
     $env:AI_WORKFLOW_PROJECT_ROOT = $defaultProtectedRoot
     Set-Content -LiteralPath $promptPath -Value 'Run one replay canary and write CLAUDE_RESULT.md.' -Encoding UTF8
 
+    # Test 0: ValidateOnly exposes the Codex-primary bridge contract while keeping legacy action aliases.
+    $validateText = & powershell -NoProfile -ExecutionPolicy Bypass -File $bridgeScript `
+        -Action ValidateOnly `
+        -BridgeRoot $bridgeRoot `
+        -ArchiveRoot $archiveRoot
+    Assert-True ($LASTEXITCODE -eq 0) "ValidateOnly exit code should be 0"
+    $validateJson = ($validateText | Out-String) | ConvertFrom-Json
+    Assert-True ($validateJson.primary_executor -eq 'codex') "default primary executor should be codex"
+    Assert-True ($validateJson.review_executor -eq 'codex') "default review executor should be codex"
+    Assert-True (@($validateJson.actions) -contains 'PrimaryDone') "ValidateOnly should expose PrimaryDone action"
+    Assert-True (@($validateJson.actions) -contains 'ReviewDone') "ValidateOnly should expose ReviewDone action"
+    Assert-True ($validateJson.compatibility_files.primary_result -eq 'CLAUDE_RESULT.md') "primary result compatibility file should be CLAUDE_RESULT.md"
+
     # Test 1: Init creates protocol files and WAITING_CLAUDE state.
     & powershell -NoProfile -ExecutionPolicy Bypass -File $bridgeScript `
         -Action Init `
@@ -65,11 +78,18 @@ try {
     $statePath = Join-Path $bridgeRoot 'STATE.json'
     $state1 = Read-JsonFile -Path $statePath
     Assert-True ($state1.status -eq 'WAITING_CLAUDE') "Init should set WAITING_CLAUDE"
+    Assert-True ($state1.active_actor -eq 'primary') "Init should set active_actor=primary"
+    Assert-True ($state1.expected_files.primary_result -eq (Join-Path $bridgeRoot 'CLAUDE_RESULT.md')) "state should expose primary_result alias"
+    $initialDecision = Read-JsonFile -Path (Join-Path $bridgeRoot 'DECISION.json')
+    Assert-True ($initialDecision.next_actor -eq 'primary') "initial decision next_actor should be primary"
     Assert-True ((Test-Path -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_PROMPT.md'))) "CLAUDE_PROMPT.md should exist"
     Assert-True ((Test-Path -LiteralPath (Join-Path $bridgeRoot 'events.jsonl'))) "events.jsonl should exist"
     $initialAgentPrompt = Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_AGENT_PROMPT.md') -Raw -Encoding UTF8
     Assert-True ($initialAgentPrompt -match 'Protected Write Boundary') "CLAUDE_AGENT_PROMPT.md should include protected write boundary"
     Assert-True ($initialAgentPrompt -match [regex]::Escape($defaultProtectedRoot)) "CLAUDE_AGENT_PROMPT.md should list the default protected git root"
+    Assert-True ($initialAgentPrompt -match 'Primary Executor') "agent prompt should use primary executor role"
+    Assert-True ($initialAgentPrompt -match 'primary executor for this run is codex') "agent prompt should disclose codex primary executor"
+    Assert-True ($initialAgentPrompt -match 'compatibility names only') "agent prompt should document CLAUDE_* compatibility naming"
 
     # Test 2: Force init clears stale logs so a reused bridge root cannot mislead monitors.
     $staleLogDir = Join-Path $bridgeRoot 'logs\cycle-0001\claude'
@@ -116,9 +136,11 @@ Phase1: DONE
     Assert-True ($LASTEXITCODE -eq 0) "ClaudeDone exit code should be 0"
     $state2 = Read-JsonFile -Path $statePath
     Assert-True ($state2.status -eq 'WAITING_CODEX_REVIEW') "ClaudeDone should set WAITING_CODEX_REVIEW"
+    Assert-True ($state2.active_actor -eq 'review') "ClaudeDone should set active_actor=review"
     $codexPrompt = Get-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_REVIEW_PROMPT.md') -Raw -Encoding UTF8
     Assert-True ($codexPrompt -match 'DECISION.json') "Codex review prompt should require DECISION.json"
     Assert-True ($codexPrompt -match 'Protected Write Boundary') "Codex review prompt should include protected write boundary"
+    Assert-True ($codexPrompt -match 'primary executor') "Codex review prompt should refer to the primary executor, not a Claude-only actor"
 
     # Test 5: CodexDone with CONTINUE archives cycle and prepares next Claude prompt.
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_REVIEW.md') -Value 'Continue with v262 implementation-quality review.' -Encoding UTF8
@@ -141,6 +163,7 @@ Phase1: DONE
     Assert-True ($LASTEXITCODE -eq 0) "CodexDone exit code should be 0"
     $state3 = Read-JsonFile -Path $statePath
     Assert-True ($state3.status -eq 'WAITING_CLAUDE') "CONTINUE should set WAITING_CLAUDE"
+    Assert-True ($state3.active_actor -eq 'primary') "CONTINUE should set active_actor=primary"
     Assert-True ([int]$state3.cycle -eq 2) "CONTINUE should increment cycle"
     $nextClaude = Get-Content -LiteralPath (Join-Path $bridgeRoot 'CLAUDE_PROMPT.md') -Raw -Encoding UTF8
     Assert-True ($nextClaude -match 'next focused replay') "CLAUDE_PROMPT.md should be replaced by NEXT_CLAUDE_PROMPT.md"
@@ -170,7 +193,7 @@ Phase1: DONE
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $bridgeRoot 'DECISION.json') -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $bridgeRoot 'CODEX_DONE.flag') -Value 'done' -Encoding UTF8
     & powershell -NoProfile -ExecutionPolicy Bypass -File $bridgeScript `
-        -Action CodexDone `
+        -Action ReviewDone `
         -BridgeRoot $bridgeRoot `
         -ArchiveRoot $archiveRoot | Out-Null
     $state4 = Read-JsonFile -Path $statePath
@@ -262,13 +285,16 @@ Phase1: DONE
 
     [ordered]@{
         status = 'PASS'
-        assertions = 32
+        assertions = 45
         cases = @(
+            'validateonly_exposes_codex_primary_contract',
             'init_creates_bridge_contract',
             'agent_prompts_include_protected_write_boundary',
+            'agent_prompts_disclose_codex_primary_compatibility',
             'force_init_clears_stale_logs',
             'claude_done_requires_result',
             'claude_done_prepares_codex_review',
+            'review_done_alias_stops_bridge',
             'codex_continue_archives_and_prepares_next_prompt',
             'codex_continue_preserves_last_cycle_context',
             'codex_stop_stops_bridge',

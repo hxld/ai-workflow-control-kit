@@ -1,16 +1,22 @@
 param(
-    [ValidateSet('Init', 'Status', 'ClaudeDone', 'CodexDone', 'RunLoop', 'RestoreProtectedAccess', 'ValidateOnly')]
+    [ValidateSet('Init', 'Status', 'ClaudeDone', 'CodexDone', 'PrimaryDone', 'ReviewDone', 'RunLoop', 'RestoreProtectedAccess', 'ValidateOnly')]
     [string]$Action = 'Status',
     [string]$BridgeRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\current",
     [string]$ArchiveRoot = "$env:AI_WORKFLOW_REPLAY_EVIDENCE_ROOT\_agent-bridge\runs",
     [string]$InitialPromptPath = '',
     [string]$InitialPromptText = '',
     [ValidateSet('claude', 'codex', 'manual')]
-    [string]$ClaudeExecutor = 'claude',
+    [string]$ClaudeExecutor = 'codex',
     [ValidateSet('codex', 'claude', 'manual')]
     [string]$CodexExecutor = 'codex',
+    [ValidateSet('codex', 'claude', 'manual', '')]
+    [string]$PrimaryExecutor = '',
+    [ValidateSet('codex', 'claude', 'manual', '')]
+    [string]$ReviewExecutor = '',
     [string]$ClaudeWorkDir = "$env:AI_WORKFLOW_PROJECT_ROOT",
     [string]$CodexWorkDir = "$env:AI_WORKFLOW_PROJECT_ROOT",
+    [string]$PrimaryWorkDir = '',
+    [string]$ReviewWorkDir = '',
     [string[]]$ProtectedGitRoots = @("$env:AI_WORKFLOW_PROJECT_ROOT"),
     [int]$MaxCycles = 1,
     [int]$TimeoutMinutes = 240,
@@ -19,7 +25,8 @@ param(
     [switch]$ForceUnlock,
     [switch]$SkipProtectedGitGuard,
     [switch]$UseProtectedRootWriteDeny,
-    [switch]$AllowUnsafeProtectedRootWriteDeny
+    [switch]$AllowUnsafeProtectedRootWriteDeny,
+    [switch]$CodexOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -319,6 +326,10 @@ function Set-BridgeState {
             claude_result = $Paths.ClaudeResult
             codex_review = $Paths.CodexReview
             next_claude_prompt = $Paths.NextClaudePrompt
+            primary_prompt = $Paths.ClaudePrompt
+            primary_result = $Paths.ClaudeResult
+            review_result = $Paths.CodexReview
+            next_primary_prompt = $Paths.NextClaudePrompt
             decision = $Paths.Decision
         }
     }
@@ -373,13 +384,13 @@ function Get-InitialClaudePrompt {
         return $InitialPromptText
     }
     return @'
-# Claude Task
+# Primary Agent Task
 
 Read the current replay evidence summary, continue the next safe replay/evolution step, and write the result to CLAUDE_RESULT.md.
 
 Required outputs:
-- CLAUDE_RESULT.md
-- CLAUDE_DONE.flag
+- CLAUDE_RESULT.md (compatibility name for the primary executor result)
+- CLAUDE_DONE.flag (compatibility flag for primary executor completion)
 '@
 }
 
@@ -387,10 +398,11 @@ function New-ClaudeAgentPrompt {
     param([hashtable]$Paths)
     $task = Get-Content -LiteralPath $Paths.ClaudePrompt -Raw -Encoding UTF8
     $protectedBoundary = Get-ProtectedGitBoundaryText
+    $executorLabel = if ([string]::IsNullOrWhiteSpace($script:BridgePrimaryExecutor)) { 'primary' } else { $script:BridgePrimaryExecutor }
     return @"
-# Agent Bridge Role: Claude Executor
+# Agent Bridge Role: Primary Executor
 
-You are the execution agent in a file-driven replay workflow.
+You are the primary execution agent in a file-driven replay workflow. The primary executor for this run is $executorLabel.
 
 Read and execute the task below. Do not ask the human to copy results between tools.
 
@@ -402,6 +414,8 @@ You must write:
 - $($Paths['ClaudeResult']) with a concise execution report, evidence paths, metrics, blockers, and next-suggestion if any.
 - $($Paths['ClaudeDone']) after the report is fully written.
 
+The `CLAUDE_*` filenames are protocol compatibility names only; they do not imply the Claude CLI is being used. In Codex-primary mode, Codex writes those compatibility files.
+
 Do not write CODEX_REVIEW.md or NEXT_CLAUDE_PROMPT.md.
 
 ## Task
@@ -411,7 +425,7 @@ $task
 ## Previous Cycle Context
 
 For resumed cycles, the current-cycle files may be empty because the bridge resets them before the next actor starts.
-If the task asks you to read the previous Codex review, Claude result, next prompt, or decision, read these stable copies first:
+If the task asks you to read the previous review, primary result, next prompt, or decision, read these stable copies first:
 
 - $($Paths['LastClaudeResult'])
 - $($Paths['LastCodexReview'])
@@ -424,30 +438,31 @@ If the task asks you to read the previous Codex review, Claude result, next prom
 function New-CodexReviewPrompt {
     param([hashtable]$Paths)
     $protectedBoundary = Get-ProtectedGitBoundaryText
+    $executorLabel = if ([string]::IsNullOrWhiteSpace($script:BridgeReviewExecutor)) { 'codex' } else { $script:BridgeReviewExecutor }
     return @"
-# Agent Bridge Role: Codex Reviewer
+# Agent Bridge Role: Codex Reviewer / Review Agent
 
-You are the review and control agent in a file-driven replay workflow.
+You are the review and control agent in a file-driven replay workflow. The review executor for this run is $executorLabel.
 
 ## Protected Write Boundary
 
 $protectedBoundary
 
 Read:
-- $($Paths['ClaudeResult'])
+- $($Paths['ClaudeResult']) (primary executor result; compatibility filename)
 - Any replay/evolution artifacts referenced by that report
 - $($Paths['State'])
 
 Write:
 - $($Paths['CodexReview']) with findings, decision rationale, and evidence.
-- $($Paths['NextClaudePrompt']) with the exact next prompt for Claude if another Claude step is required.
+- $($Paths['NextClaudePrompt']) with the exact next prompt for the primary executor if another execution step is required.
 - $($Paths['Decision']) as JSON using this schema:
 
 ```json
 {
   "decision": "CONTINUE",
   "reason": "short reason",
-  "next_actor": "claude",
+  "next_actor": "primary",
   "coverage_signal": "",
   "blocker": "",
   "created_at": ""
@@ -457,9 +472,11 @@ Write:
 Allowed decision values: CONTINUE, EVOLVE, DEEP_REVIEW, STOP, BLOCKED.
 
 Rules:
-- If no further Claude step is needed, set decision to STOP or BLOCKED and still write DECISION.json.
+- If no further primary-executor step is needed, set decision to STOP or BLOCKED and still write DECISION.json.
 - If decision is CONTINUE, EVOLVE, or DEEP_REVIEW, NEXT_CLAUDE_PROMPT.md must be non-empty.
 - After all files are written, write $($Paths['CodexDone']).
+
+The `NEXT_CLAUDE_PROMPT.md` filename is a compatibility name for the next primary-executor prompt.
 "@
 }
 
@@ -489,13 +506,13 @@ function Initialize-Bridge {
     [ordered]@{
         decision = 'CONTINUE'
         reason = 'initialized'
-        next_actor = 'claude'
+        next_actor = 'primary'
         coverage_signal = ''
         blocker = ''
         created_at = Get-UtcIso
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Paths.Decision -Encoding UTF8
     New-EmptyFile -Path $Paths.Events
-    Set-BridgeState -Paths $Paths -Status 'WAITING_CLAUDE' -Cycle 1 -ActiveActor 'claude' -ArchiveRootFull $ArchiveRootFull -Message 'Bridge initialized.' | Out-Null
+    Set-BridgeState -Paths $Paths -Status 'WAITING_CLAUDE' -Cycle 1 -ActiveActor 'primary' -ArchiveRootFull $ArchiveRootFull -Message 'Bridge initialized for primary executor.' | Out-Null
 }
 
 function Complete-ClaudeStep {
@@ -509,7 +526,7 @@ function Complete-ClaudeStep {
         throw "CLAUDE_DONE.flag is missing: $($Paths.ClaudeDone)"
     }
     Write-TextFile -Path $Paths.CodexReviewPrompt -Value (New-CodexReviewPrompt -Paths $Paths)
-    Set-BridgeState -Paths $Paths -Status 'WAITING_CODEX_REVIEW' -Cycle ([int]$state.cycle) -ActiveActor 'codex' -ArchiveRootFull $ArchiveRootFull -Message 'Claude result is ready for Codex review.' | Out-Null
+    Set-BridgeState -Paths $Paths -Status 'WAITING_CODEX_REVIEW' -Cycle ([int]$state.cycle) -ActiveActor 'review' -ArchiveRootFull $ArchiveRootFull -Message 'Primary executor result is ready for review.' | Out-Null
 }
 
 function Get-DecisionKind {
@@ -583,9 +600,9 @@ function Complete-CodexStep {
         New-EmptyFile -Path $Paths.CodexReviewPrompt
         if (Test-Path -LiteralPath $Paths.ClaudeDone) { Remove-Item -LiteralPath $Paths.ClaudeDone -Force }
         if (Test-Path -LiteralPath $Paths.CodexDone) { Remove-Item -LiteralPath $Paths.CodexDone -Force }
-        Set-BridgeState -Paths $Paths -Status 'WAITING_CLAUDE' -Cycle ($cycle + 1) -ActiveActor 'claude' -ArchiveRootFull $ArchiveRootFull -Message "Codex decision $kind; next Claude prompt is ready." | Out-Null
+        Set-BridgeState -Paths $Paths -Status 'WAITING_CLAUDE' -Cycle ($cycle + 1) -ActiveActor 'primary' -ArchiveRootFull $ArchiveRootFull -Message "Review decision $kind; next primary prompt is ready." | Out-Null
     } else {
-        Set-BridgeState -Paths $Paths -Status 'STOPPED' -Cycle $cycle -ActiveActor '' -ArchiveRootFull $ArchiveRootFull -Message "Codex decision $kind; bridge stopped." | Out-Null
+        Set-BridgeState -Paths $Paths -Status 'STOPPED' -Cycle $cycle -ActiveActor '' -ArchiveRootFull $ArchiveRootFull -Message "Review decision $kind; bridge stopped." | Out-Null
     }
 }
 
@@ -638,13 +655,13 @@ function Run-BridgeLoop {
             if ($state.status -eq 'STOPPED') { break }
 
             if (($state.status -eq 'CLAUDE_RUNNING' -or $state.status -eq 'CLAUDE_DONE') -and (Test-Path -LiteralPath $Paths.ClaudeDone)) {
-                Write-BridgeEvent -Paths $Paths -Type 'resuming_completed_actor_step' -Data @{ actor = 'claude'; cycle = [int]$state.cycle; status = $state.status }
+                Write-BridgeEvent -Paths $Paths -Type 'resuming_completed_actor_step' -Data @{ actor = 'primary'; cycle = [int]$state.cycle; status = $state.status }
                 Complete-ClaudeStep -Paths $Paths -ArchiveRootFull $ArchiveRootFull
                 $state = Get-BridgeState -Paths $Paths
             }
 
             if (($state.status -eq 'CODEX_REVIEWING' -or $state.status -eq 'CODEX_DONE') -and (Test-Path -LiteralPath $Paths.CodexDone)) {
-                Write-BridgeEvent -Paths $Paths -Type 'resuming_completed_actor_step' -Data @{ actor = 'codex'; cycle = [int]$state.cycle; status = $state.status }
+                Write-BridgeEvent -Paths $Paths -Type 'resuming_completed_actor_step' -Data @{ actor = 'review'; cycle = [int]$state.cycle; status = $state.status }
                 Complete-CodexStep -Paths $Paths -ArchiveRootFull $ArchiveRootFull
                 $state = Get-BridgeState -Paths $Paths
             }
@@ -653,26 +670,26 @@ function Run-BridgeLoop {
 
             if ($state.status -eq 'WAITING_CLAUDE') {
                 $cycle = [int]$state.cycle
-                Assert-ProtectedGitRootsClean -Paths $Paths -Actor 'bridge' -Cycle $cycle -Phase 'before-claude-state'
+                Assert-ProtectedGitRootsClean -Paths $Paths -Actor 'bridge' -Cycle $cycle -Phase 'before-primary-state'
                 Write-TextFile -Path $Paths.ClaudeAgentPrompt -Value (New-ClaudeAgentPrompt -Paths $Paths)
-                Set-BridgeState -Paths $Paths -Status 'CLAUDE_RUNNING' -Cycle $cycle -ActiveActor 'claude' -ArchiveRootFull $ArchiveRootFull -Message 'Claude executor started.' | Out-Null
-                if ($ClaudeExecutor -eq 'manual') {
-                    Write-BridgeEvent -Paths $Paths -Type 'manual_wait' -Data @{ actor = 'claude'; prompt = $Paths.ClaudeAgentPrompt }
+                Set-BridgeState -Paths $Paths -Status 'CLAUDE_RUNNING' -Cycle $cycle -ActiveActor 'primary' -ArchiveRootFull $ArchiveRootFull -Message 'Primary executor started.' | Out-Null
+                if ($script:BridgePrimaryExecutor -eq 'manual') {
+                    Write-BridgeEvent -Paths $Paths -Type 'manual_wait' -Data @{ actor = 'primary'; prompt = $Paths.ClaudeAgentPrompt }
                     return
                 }
-                Invoke-AgentBridgePrompt -Paths $Paths -Actor 'claude' -Executor $ClaudeExecutor -PromptPath $Paths.ClaudeAgentPrompt -WorkDir $ClaudeWorkDir -CompletionPath $Paths.ClaudeDone -Cycle $cycle
+                Invoke-AgentBridgePrompt -Paths $Paths -Actor 'primary' -Executor $script:BridgePrimaryExecutor -PromptPath $Paths.ClaudeAgentPrompt -WorkDir $script:BridgePrimaryWorkDir -CompletionPath $Paths.ClaudeDone -Cycle $cycle
                 Complete-ClaudeStep -Paths $Paths -ArchiveRootFull $ArchiveRootFull
             }
             $state = Get-BridgeState -Paths $Paths
             if ($state.status -eq 'WAITING_CODEX_REVIEW') {
                 $cycle = [int]$state.cycle
-                Assert-ProtectedGitRootsClean -Paths $Paths -Actor 'bridge' -Cycle $cycle -Phase 'before-codex-state'
-                Set-BridgeState -Paths $Paths -Status 'CODEX_REVIEWING' -Cycle $cycle -ActiveActor 'codex' -ArchiveRootFull $ArchiveRootFull -Message 'Codex reviewer started.' | Out-Null
-                if ($CodexExecutor -eq 'manual') {
-                    Write-BridgeEvent -Paths $Paths -Type 'manual_wait' -Data @{ actor = 'codex'; prompt = $Paths.CodexReviewPrompt }
+                Assert-ProtectedGitRootsClean -Paths $Paths -Actor 'bridge' -Cycle $cycle -Phase 'before-review-state'
+                Set-BridgeState -Paths $Paths -Status 'CODEX_REVIEWING' -Cycle $cycle -ActiveActor 'review' -ArchiveRootFull $ArchiveRootFull -Message 'Review executor started.' | Out-Null
+                if ($script:BridgeReviewExecutor -eq 'manual') {
+                    Write-BridgeEvent -Paths $Paths -Type 'manual_wait' -Data @{ actor = 'review'; prompt = $Paths.CodexReviewPrompt }
                     return
                 }
-                Invoke-AgentBridgePrompt -Paths $Paths -Actor 'codex' -Executor $CodexExecutor -PromptPath $Paths.CodexReviewPrompt -WorkDir $CodexWorkDir -CompletionPath $Paths.CodexDone -Cycle $cycle
+                Invoke-AgentBridgePrompt -Paths $Paths -Actor 'review' -Executor $script:BridgeReviewExecutor -PromptPath $Paths.CodexReviewPrompt -WorkDir $script:BridgeReviewWorkDir -CompletionPath $Paths.CodexDone -Cycle $cycle
                 Complete-CodexStep -Paths $Paths -ArchiveRootFull $ArchiveRootFull
             }
         }
@@ -689,12 +706,44 @@ $bridgeRootFull = Resolve-AbsolutePath $BridgeRoot
 $archiveRootFull = Resolve-AbsolutePath $ArchiveRoot
 $paths = Get-BridgePaths -Root $bridgeRootFull
 
+$script:BridgePrimaryExecutor = if ($CodexOnly) {
+    'codex'
+} elseif (-not [string]::IsNullOrWhiteSpace($PrimaryExecutor)) {
+    $PrimaryExecutor
+} else {
+    $ClaudeExecutor
+}
+$script:BridgeReviewExecutor = if ($CodexOnly) {
+    'codex'
+} elseif (-not [string]::IsNullOrWhiteSpace($ReviewExecutor)) {
+    $ReviewExecutor
+} else {
+    $CodexExecutor
+}
+$script:BridgePrimaryWorkDir = if (-not [string]::IsNullOrWhiteSpace($PrimaryWorkDir)) { $PrimaryWorkDir } else { $ClaudeWorkDir }
+$script:BridgeReviewWorkDir = if (-not [string]::IsNullOrWhiteSpace($ReviewWorkDir)) { $ReviewWorkDir } else { $CodexWorkDir }
+
 if ($Action -eq 'ValidateOnly') {
     [ordered]@{
         status = 'VALID'
         bridge_root = $bridgeRootFull
         archive_root = $archiveRootFull
-        actions = @('Init', 'Status', 'ClaudeDone', 'CodexDone', 'RunLoop', 'RestoreProtectedAccess')
+        actions = @('Init', 'Status', 'ClaudeDone', 'CodexDone', 'PrimaryDone', 'ReviewDone', 'RunLoop', 'RestoreProtectedAccess')
+        primary_executor = $script:BridgePrimaryExecutor
+        review_executor = $script:BridgeReviewExecutor
+        primary_work_dir = $script:BridgePrimaryWorkDir
+        review_work_dir = $script:BridgeReviewWorkDir
+        codex_only = [bool]$CodexOnly
+        compatibility_actions = [ordered]@{
+            primary_done = 'ClaudeDone'
+            review_done = 'CodexDone'
+        }
+        compatibility_files = [ordered]@{
+            primary_prompt = 'CLAUDE_PROMPT.md'
+            primary_result = 'CLAUDE_RESULT.md'
+            primary_done = 'CLAUDE_DONE.flag'
+            next_primary_prompt = 'NEXT_CLAUDE_PROMPT.md'
+        }
         protected_git_roots = Get-EffectiveProtectedGitRoots
         protected_git_guard = if ($SkipProtectedGitGuard) { 'disabled' } else { 'enabled' }
         protected_root_write_deny = if ($UseProtectedRootWriteDeny -and $AllowUnsafeProtectedRootWriteDeny) { 'enabled' } elseif ($UseProtectedRootWriteDeny) { 'blocked_requires_allow' } else { 'disabled' }
@@ -717,6 +766,12 @@ Invoke-WithBridgeLock -Paths $paths -Body {
         'CodexDone' {
             Complete-CodexStep -Paths $paths -ArchiveRootFull $archiveRootFull
         }
+        'PrimaryDone' {
+            Complete-ClaudeStep -Paths $paths -ArchiveRootFull $archiveRootFull
+        }
+        'ReviewDone' {
+            Complete-CodexStep -Paths $paths -ArchiveRootFull $archiveRootFull
+        }
         'RunLoop' {
             Run-BridgeLoop -Paths $paths -ArchiveRootFull $archiveRootFull
         }
@@ -735,9 +790,14 @@ $state = Get-BridgeState -Paths $paths
         state = $paths.State
         claude_prompt = $paths.ClaudePrompt
         claude_result = $paths.ClaudeResult
+        primary_prompt = $paths.ClaudePrompt
+        primary_result = $paths.ClaudeResult
         codex_review_prompt = $paths.CodexReviewPrompt
         codex_review = $paths.CodexReview
+        review_prompt = $paths.CodexReviewPrompt
+        review_result = $paths.CodexReview
         next_claude_prompt = $paths.NextClaudePrompt
+        next_primary_prompt = $paths.NextClaudePrompt
         decision = $paths.Decision
         events = $paths.Events
     }

@@ -24,6 +24,9 @@
 - next slice exact contract subset: {{NEXT_SLICE_EXACT_CONTRACT}}
 - side-effect evidence harness: {{SIDE_EFFECT_EVIDENCE}}
 - pre-slice cap display: {{PRE_SLICE_CAP_DISPLAY}}
+- runnable first-slice authorization: {{RUNNABLE_SLICE_AUTHORIZATION}}
+- callable carrier authorization: {{CALLABLE_CARRIER_AUTHORIZATION}}
+- test charter machine contract: {{TEST_CHARTER_CONTRACT}}
 - carrier authorization dry-run: {{CARRIER_AUTHORIZATION_DRY_RUN}}
 - slice plan contract: {{SLICE_PLAN_CONTRACT}}
 - replay context index: {{REPLAY_CONTEXT_INDEX}}
@@ -72,7 +75,9 @@
 
 【P0: Pre-Implementation Carrier Validation (CRITICAL BLOCKER)】
 
-Do not implement until `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true` and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. If the selected carrier mismatches, choose a same-family replacement from `{{REPLAY_CONTEXT_INDEX}}` before consuming S{{SLICE_INDEX}}; otherwise write a pre-slice blocker instead of starting RED/GREEN work.
+Before implementation, produce exactly one state in your slice reasoning and final `SLICE_RESULT`: `RUNNABLE_FIRST_SLICE` or `BLOCKED_NO_RUNNABLE_SLICE`. Do not implement until `{{RUNNABLE_SLICE_AUTHORIZATION}}` has `status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `red_command`/`green_command`; `{{CALLABLE_CARRIER_AUTHORIZATION}}` has `authorization_status=AUTHORIZED`; `{{TEST_CHARTER_CONTRACT}}` has `status=AUTHORIZED` when the slice is stateful or deploy-facing; `{{CARRIER_AUTHORIZATION_DRY_RUN}}` has `pre_authorized=true`; and `{{SLICE_PLAN_CONTRACT}}` has `authorization=ALLOW`. A named test file or method without an executable Maven command using `-f {{WORKTREE}}\pom.xml` is not a slice plan. If any authorization file is absent, blocked, or non-authorizing, write `BLOCKED_NO_RUNNABLE_SLICE` / pre-slice blocker evidence instead of starting RED/GREEN work.
+
+If the selected carrier mismatches, choose a same-family replacement from `{{REPLAY_CONTEXT_INDEX}}` before consuming S{{SLICE_INDEX}}; otherwise write a pre-slice blocker instead of starting RED/GREEN work.
 
 `{{SLICE_PLAN_CONTRACT}}` is binding for this slice. A passing compile is not proof. The slice is not GREEN unless the validation command executes a behavior test through the declared real entry and asserts the declared output or side effect.
 

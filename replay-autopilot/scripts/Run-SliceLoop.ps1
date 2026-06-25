@@ -4806,7 +4806,8 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             '-File', (Join-Path $PSScriptRoot 'Invoke-PreSliceExperimentContracts.ps1'),
             '-ReplayRoot', $replayRootFull,
             '-Worktree', $worktreeFull,
-            '-SliceIndex', $i
+            '-SliceIndex', $i,
+            '-MavenSettings', $MavenSettings
         )
         if (-not [string]::IsNullOrWhiteSpace([string]$forced.family_id)) {
             $preSliceExperimentArgs += @('-ForcedRequirementFamily', ([string]$forced.family_id))
@@ -4825,7 +4826,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             } else {
                 Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "pre-slice experiment contract stopped before executor"
             }
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice experiment contract stop | {1} | {2} | tooling_enforcement_stop | Invoke-PreSliceExperimentContracts exit_code={3}; dry_run={4}; contract={5}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $i)), (Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'))
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice experiment contract stop | {1} | {2} | tooling_enforcement_stop | Invoke-PreSliceExperimentContracts exit_code={3}; dry_run={4}; runnable={5}; callable={6}; charter={7}; contract={8}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('RUNNABLE_SLICE_AUTHORIZATION_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $i)), (Join-Path $replayRootFull ('TEST_CHARTER_{0:D2}.json' -f $i)), (Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'))
             $blockedBeforeExecutor = $true
             $hasExistingResult = $true
         }
@@ -4884,6 +4885,9 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         NEXT_SLICE_EXACT_CONTRACT = $nextSliceExactContract
         SIDE_EFFECT_EVIDENCE = $sideEffectEvidence
         PRE_SLICE_CAP_DISPLAY = $preSliceCapDisplay
+        RUNNABLE_SLICE_AUTHORIZATION = Join-Path $replayRootFull ('RUNNABLE_SLICE_AUTHORIZATION_{0:D2}.json' -f $i)
+        CALLABLE_CARRIER_AUTHORIZATION = Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $i)
+        TEST_CHARTER_CONTRACT = Join-Path $replayRootFull ('TEST_CHARTER_{0:D2}.json' -f $i)
         SLICE_PROGRESS = $progressPath
         SLICE_PROGRESS_MD = $progressMdPath
         REQUIREMENT_FAMILY_LEDGER = $familyLedgerPath

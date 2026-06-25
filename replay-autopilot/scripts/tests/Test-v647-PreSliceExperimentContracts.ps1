@@ -86,12 +86,19 @@ public class RealEntry {
 - selected_carrier: demo.RealEntry.handle(String): String
 - selected_real_entry: demo.RealEntry.handle(String): String
 - first_red_test: RealEntryContractTest#returnsMappedPayload
+- red_command: mvn --% -f WORKTREE\pom.xml -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test
+- green_command: mvn --% -f WORKTREE\pom.xml -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test
+- expected_red_failure: assertEquals("mapped", result) fails before mapping is fixed
+- expected_green_assertion: assertEquals("mapped", result) passes through RealEntry
 - red_assertion: assertEquals("mapped", result)
 - downstream_output_or_side_effect: returned payload value
 - production_boundary: demo.RealEntry.handle(String): String
+- must_not_behavior: must not use helper-only or mock-only closure
 - green_change_boundary: RealEntry.handle return mapping
 - validation_command: mvn --% -f WORKTREE\pom.xml -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test
 '@
+    $planPath = Join-Path $passRoot 'FIRST_SLICE_PROOF_PLAN.md'
+    (Get-Content -LiteralPath $planPath -Raw -Encoding UTF8).Replace('WORKTREE', ($worktree -replace '\\', '\')) | Set-Content -LiteralPath $planPath -Encoding UTF8
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'Invoke-PreSliceExperimentContracts.ps1') `
         -ReplayRoot $passRoot `
         -Worktree $worktree `
@@ -102,10 +109,19 @@ public class RealEntry {
     $dryRun = Get-Content -LiteralPath (Join-Path $passRoot 'CARRIER_AUTHORIZATION_DRY_RUN_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $plan = Get-Content -LiteralPath (Join-Path $passRoot 'SLICE_PLAN_CONTRACT_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $firstExecutable = Get-Content -LiteralPath (Join-Path $passRoot 'FIRST_SLICE_EXECUTABLE_CONTRACT.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $runnable = Get-Content -LiteralPath (Join-Path $passRoot 'RUNNABLE_SLICE_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $callable = Get-Content -LiteralPath (Join-Path $passRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $charter = Get-Content -LiteralPath (Join-Path $passRoot 'TEST_CHARTER_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([bool]$dryRun.pre_authorized) 'dry-run must expose pre_authorized=true'
     Assert-True ([string]$plan.authorization -eq 'ALLOW') 'slice plan contract must authorize valid proof plan'
     Assert-True ([string]$firstExecutable.authorization -eq 'ALLOW') 'first slice executable contract must authorize valid proof plan'
     Assert-True ([string]$firstExecutable.existing_entry_qn -match 'demo\.RealEntry') 'first slice executable contract must bind an existing entry qn'
+    Assert-True ([string]$runnable.status -eq 'AUTHORIZED') 'runnable slice authorization must authorize copy-ready commands'
+    Assert-True ([bool]$runnable.uses_isolated_replay_pom) 'runnable slice authorization must require isolated replay POM'
+    Assert-True ([string]$callable.authorization_status -eq 'AUTHORIZED') 'callable carrier authorization must expose authorization_status=AUTHORIZED'
+    Assert-True ([string]$callable.carrier_origin -eq 'existing_production_entry') 'callable carrier authorization must bind existing production entry origin'
+    Assert-True ([string]$charter.status -eq 'AUTHORIZED') 'test charter contract must authorize state/output and must-not proof'
+    Assert-True (@($charter.positive_assertions).Count -gt 0) 'test charter contract must include positive assertions'
 
     $blockedRoot = Join-Path $tempRoot 'blocked'
     New-Item -ItemType Directory -Force -Path $blockedRoot | Out-Null
@@ -131,10 +147,14 @@ public class RealEntry {
     $runnerText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8
     $promptText = Get-Content -LiteralPath (Join-Path $autopilotRoot 'prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
     Assert-True ($runnerText -match 'Invoke-PreSliceExperimentContracts\.ps1') 'Run-SliceLoop must invoke the pre-slice experiment contract gate'
-    Assert-True ($runnerText -match 'CARRIER_AUTHORIZATION_DRY_RUN') 'Run-SliceLoop must surface carrier dry-run artifact'
+    Assert-True ($runnerText -match 'carrier_authorization_dry_run') 'Run-SliceLoop must surface carrier dry-run artifact'
     Assert-True ($runnerText -match 'FIRST_SLICE_EXECUTABLE_CONTRACT') 'Run-SliceLoop must surface first slice executable contract artifact'
+    Assert-True ($runnerText -match 'RUNNABLE_SLICE_AUTHORIZATION') 'Run-SliceLoop must surface runnable authorization artifact'
+    Assert-True ($runnerText -match 'TEST_CHARTER_\{0:D2\}') 'Run-SliceLoop must surface test charter contract artifact'
     Assert-True ($promptText -match 'pre_authorized=true') 'Phase1 prompt must block implementation until carrier dry-run is pre-authorized'
     Assert-True ($promptText -match 'authorization=ALLOW') 'Phase1 prompt must bind SLICE_PLAN_CONTRACT authorization'
+    Assert-True ($promptText -match 'RUNNABLE_FIRST_SLICE') 'Phase1 prompt must require runnable-first-slice state'
+    Assert-True ($promptText -match 'BLOCKED_NO_RUNNABLE_SLICE') 'Phase1 prompt must require blocked-no-runnable-slice state'
 
     Write-Host 'v647 Pre-Slice Experiment Contracts: PASS'
     exit 0

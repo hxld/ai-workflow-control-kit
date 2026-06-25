@@ -77,6 +77,61 @@ try {
     Assert-True ($rules.rules[0].verification_status -eq 'PENDING') 'Rule verification status mismatch.'
     Assert-True ($rules.rules[0].acceptance.Count -ge 3) 'Rule acceptance criteria missing.'
 
+    $replayRoot2 = Join-Path $tempRoot 'replay-existing-rules'
+    New-Item -ItemType Directory -Force -Path $replayRoot2 | Out-Null
+    Set-Content -LiteralPath (Join-Path $replayRoot2 'BLOCKER_FINGERPRINTS.json') -Encoding UTF8 -Value (@{
+        fingerprints = @('wrong_test_surface')
+    } | ConvertTo-Json -Depth 6)
+    [ordered]@{
+        schema = 'replay_verifiable_rule_pack.v1'
+        generated_at = '2026-01-01T00:00:00'
+        replay_root = $replayRoot2
+        source_audit_pack = (Join-Path $replayRoot2 'PLAN_CONTRACT_VERIFY.json')
+        rules = @(
+            [ordered]@{
+                id = 'rule_plan_oracle_overlap_enforced'
+                fingerprint = 'oracle_overlap_below_threshold'
+                severity = 'P0'
+                machine_gate = 'plan_oracle_overlap_enforced'
+                regression_test = 'scripts\Test-v600-OracleOverlapEvolutionProposalDetection.ps1'
+                next_validation = 'scripts\Validate-VerifiableRuleClosure.ps1'
+                verification_status = 'PENDING'
+                acceptance = @('machine gate referenced')
+            }
+        )
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot2 'VERIFIABLE_RULES.json') -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $replayRoot2 'VERIFIABLE_RULES.md') -Encoding UTF8 -Value '# Existing rules'
+
+    Set-Content -LiteralPath $controlSummaryPath -Encoding UTF8 -Value ([ordered]@{
+        latest = [ordered]@{
+            replay_root = $replayRoot2
+            feature = 'fixture'
+            verification_capped_coverage = 0
+            oracle_adjusted_coverage = 0
+            fingerprints = @('wrong_test_surface')
+        }
+        control_decision = [ordered]@{
+            repeated_blockers = @('wrong_test_surface')
+        }
+    } | ConvertTo-Json -Depth 8)
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sut `
+        -EvidenceRoot $evidenceRoot `
+        -ReplayRoot $replayRoot2 `
+        -ControlSummaryPath $controlSummaryPath `
+        -BlockerRegistryPath $registryPath | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Write-FailureAuditPack existing-rule scenario exited with $LASTEXITCODE"
+    }
+
+    $audit2 = Get-Content -LiteralPath (Join-Path $replayRoot2 'FAILURE_AUDIT_PACK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $rules2 = Get-Content -LiteralPath (Join-Path $replayRoot2 'VERIFIABLE_RULES.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $latestRules2 = Get-Content -LiteralPath $latestRulesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([bool]$audit2.preserved_existing_verifiable_rules) 'Failure audit should mark existing rules as preserved.'
+    Assert-True ($audit2.verifiable_rule_count -eq 1) 'Preserved rule count mismatch.'
+    Assert-True ($rules2.rules[0].machine_gate -eq 'plan_oracle_overlap_enforced') 'Existing rule pack was overwritten.'
+    Assert-True ($latestRules2.rules[0].machine_gate -eq 'plan_oracle_overlap_enforced') 'Latest copied rules should preserve existing rule pack.'
+
     Write-Host 'Test-v596-FailureAuditVerifiableRules PASS'
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue

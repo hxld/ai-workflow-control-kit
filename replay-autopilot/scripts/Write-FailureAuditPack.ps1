@@ -466,6 +466,22 @@ $verifiableRulePack = [ordered]@{
     rules = @($verifiableRuleItems.ToArray())
 }
 
+$preserveExistingVerifiableRules = $false
+$effectiveVerifiableRuleItems = @($verifiableRuleItems.ToArray())
+if (Test-Path -LiteralPath $verifiableRulesPath -PathType Leaf) {
+    try {
+        $existingRulePack = Get-Content -LiteralPath $verifiableRulesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$existingRulePack.schema -eq 'replay_verifiable_rule_pack.v1' -and @($existingRulePack.rules).Count -gt 0) {
+            $verifiableRulePack = $existingRulePack
+            $effectiveVerifiableRuleItems = @($existingRulePack.rules)
+            $preserveExistingVerifiableRules = $true
+        }
+    } catch {
+        $preserveExistingVerifiableRules = $false
+        $effectiveVerifiableRuleItems = @($verifiableRuleItems.ToArray())
+    }
+}
+
 $audit = [ordered]@{
     schema = 'failure_audit_pack.v1'
     generated_at = $generatedAt
@@ -481,12 +497,15 @@ $audit = [ordered]@{
     diagnoses = @($diagnoses.ToArray())
     verifiable_rules_path = $verifiableRulesPath
     verifiable_rules_md_path = $verifiableRulesMdPath
-    verifiable_rule_count = $verifiableRuleItems.Count
+    verifiable_rule_count = @($effectiveVerifiableRuleItems).Count
+    preserved_existing_verifiable_rules = $preserveExistingVerifiableRules
     operating_rule = 'If must_fix_before_next_replay is non-empty, the next unattended cycle must not continue until evolution addresses these blockers with invoked tooling/prompt/verifier changes and regression evidence.'
 }
 
 $audit | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
-$verifiableRulePack | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $verifiableRulesPath -Encoding UTF8
+if (-not $preserveExistingVerifiableRules) {
+    $verifiableRulePack | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $verifiableRulesPath -Encoding UTF8
+}
 
 $md = New-Object System.Collections.Generic.List[string]
 $md.Add('# Failure Audit Pack') | Out-Null
@@ -517,10 +536,11 @@ $md.Add('## Verifiable Rule Pack') | Out-Null
 $md.Add('') | Out-Null
 $md.Add("- json: $verifiableRulesPath") | Out-Null
 $md.Add("- md: $verifiableRulesMdPath") | Out-Null
+$md.Add("- preserved_existing: $preserveExistingVerifiableRules") | Out-Null
 $md.Add('') | Out-Null
 $md.Add('| Rule | Machine Gate | Status | Regression Test | Next Validation |') | Out-Null
 $md.Add('| --- | --- | --- | --- | --- |') | Out-Null
-foreach ($ruleItem in @($verifiableRuleItems.ToArray())) {
+foreach ($ruleItem in @($effectiveVerifiableRuleItems)) {
     $md.Add(('| {0} | {1} | {2} | {3} | {4} |' -f `
         (Convert-ToMarkdownCell $ruleItem.id),
         (Convert-ToMarkdownCell $ruleItem.machine_gate),
@@ -538,11 +558,15 @@ $rulesMd = New-Object System.Collections.Generic.List[string]
 $rulesMd.Add('# Verifiable Replay Rules') | Out-Null
 $rulesMd.Add('') | Out-Null
 $rulesMd.Add("- generated_at: $generatedAt") | Out-Null
-$rulesMd.Add("- source_audit_pack: $jsonPath") | Out-Null
+$sourceAuditPack = [string]$verifiableRulePack.source_audit_pack
+if ([string]::IsNullOrWhiteSpace($sourceAuditPack)) {
+    $sourceAuditPack = $jsonPath
+}
+$rulesMd.Add("- source_audit_pack: $sourceAuditPack") | Out-Null
 $rulesMd.Add('') | Out-Null
 $rulesMd.Add('| Rule | Fingerprint | Severity | Machine Gate | Verification Status |') | Out-Null
 $rulesMd.Add('| --- | --- | --- | --- | --- |') | Out-Null
-foreach ($ruleItem in @($verifiableRuleItems.ToArray())) {
+foreach ($ruleItem in @($effectiveVerifiableRuleItems)) {
     $rulesMd.Add(('| {0} | {1} | {2} | {3} | {4} |' -f `
         (Convert-ToMarkdownCell $ruleItem.id),
         (Convert-ToMarkdownCell $ruleItem.fingerprint),
@@ -550,7 +574,9 @@ foreach ($ruleItem in @($verifiableRuleItems.ToArray())) {
         (Convert-ToMarkdownCell $ruleItem.machine_gate),
         (Convert-ToMarkdownCell $ruleItem.verification_status))) | Out-Null
 }
-Set-Content -LiteralPath $verifiableRulesMdPath -Encoding UTF8 -Value ($rulesMd -join "`n")
+if (-not $preserveExistingVerifiableRules -or -not (Test-Path -LiteralPath $verifiableRulesMdPath -PathType Leaf)) {
+    Set-Content -LiteralPath $verifiableRulesMdPath -Encoding UTF8 -Value ($rulesMd -join "`n")
+}
 
 $controlDir = Join-Path $evidenceRootFull '_control'
 if (Test-Path -LiteralPath $controlDir) {

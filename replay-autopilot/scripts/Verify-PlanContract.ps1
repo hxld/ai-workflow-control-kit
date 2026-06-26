@@ -342,6 +342,36 @@ function Add-LineRegexIssueWithEvidence {
     }
 }
 
+function Add-PlanGateEvidence {
+    param(
+        [System.Collections.Generic.List[object]]$Evidence,
+        [string]$Issue,
+        [string]$MachineGate,
+        [string]$Artifact,
+        [string]$Snippet,
+        [string]$ExpectedAction
+    )
+
+    if ($null -eq $Evidence -or [string]::IsNullOrWhiteSpace($Issue)) {
+        return
+    }
+
+    $exists = @($Evidence | Where-Object {
+        [string]$_.issue -eq $Issue -and [string]$_.machine_gate -eq $MachineGate
+    }).Count -gt 0
+    if ($exists) {
+        return
+    }
+
+    $Evidence.Add([ordered]@{
+        issue = $Issue
+        artifact = $Artifact
+        machine_gate = $MachineGate
+        snippet = $Snippet
+        expected_action = $ExpectedAction
+    }) | Out-Null
+}
+
 function Add-FixedCaseIdIssueWithEvidence {
     param(
         [System.Collections.Generic.List[string]]$Issues,
@@ -2338,7 +2368,15 @@ if ($Stage -eq 'Phase0') {
             if ($isCrossFeatureHighWeightExempt) {
                 $warnings.Add("oracle_high_weight_overlap_below_threshold_exempted:${highWeightOverlapPercent}%_cross_feature_oracle_diff") | Out-Null
             } else {
-                $issues.Add("oracle_high_weight_overlap_below_threshold:${highWeightOverlapPercent}%<${highWeightThreshold}%") | Out-Null
+                $highWeightIssue = "oracle_high_weight_overlap_below_threshold:${highWeightOverlapPercent}%<${highWeightThreshold}%"
+                $issues.Add($highWeightIssue) | Out-Null
+                Add-PlanGateEvidence `
+                    -Evidence $issueEvidence `
+                    -Issue $highWeightIssue `
+                    -MachineGate 'plan_high_weight_oracle_overlap_enforced' `
+                    -Artifact 'ORACLE_DIFF_ANALYSIS.json + PLAN_RESULT.md' `
+                    -Snippet "high_weight_overlap=$highWeightOverlapPercent%; threshold=$highWeightThreshold%; missing_high_weight=$($missingHighWeightFiles -join '; ')" `
+                    -ExpectedAction 'Expand the plan to cover high-weight oracle production files, document a verifier-recognized exemption, or keep plan_status BLOCKED.'
             }
 
             # v442: Add explicit diagnostic for missing high-weight files
@@ -2464,7 +2502,15 @@ if ($Stage -eq 'Phase0') {
             if ($isCrossFeatureExempt) {
                 $warnings.Add("oracle_overlap_below_threshold_exempted:${overlapPercent}%_cross_feature_oracle_diff") | Out-Null
             } else {
-                $issues.Add("oracle_overlap_below_threshold:$overlapPercent%<50%") | Out-Null
+                $overlapIssue = "oracle_overlap_below_threshold:$overlapPercent%<50%"
+                $issues.Add($overlapIssue) | Out-Null
+                Add-PlanGateEvidence `
+                    -Evidence $issueEvidence `
+                    -Issue $overlapIssue `
+                    -MachineGate 'plan_oracle_overlap_enforced' `
+                    -Artifact 'ORACLE_DIFF_ANALYSIS.json + PLAN_RESULT.md' `
+                    -Snippet "oracle_overlap=$overlapPercent%; threshold=50%; matched=$matchedCount/$($filteredOracleProdFiles.Count); missing=$($missingProdFiles -join '; ')" `
+                    -ExpectedAction 'Expand the plan to cover oracle production files, document a verifier-recognized exemption, or keep plan_status BLOCKED.'
             }
 
             # v451: Add guidance reference when domain expansion prompt exists
@@ -2786,7 +2832,15 @@ if ($planStatusCheckDeferred -and $Stage -eq 'Plan') {
         '(?m)^\s*-?\s*`?status`?\s*[:=|]\s*[`*]*([A-Z_]+)[`*]*'
     )
     if ($finalPlanStatus -ne 'PROCEED') {
-        $issues.Add("plan_status_not_proceed:$finalPlanStatus") | Out-Null
+        $planStatusIssue = "plan_status_not_proceed:$finalPlanStatus"
+        $issues.Add($planStatusIssue) | Out-Null
+        Add-PlanGateEvidence `
+            -Evidence $issueEvidence `
+            -Issue $planStatusIssue `
+            -MachineGate 'blocked_plan_status_stops_replay' `
+            -Artifact 'PLAN_RESULT.md' `
+            -Snippet "plan_status=$finalPlanStatus; blocker=$(Get-FirstText $planText @('(?m)^\s*-?\s*`?blocker`?\s*[:=|]\s*(.+?)\s*$','(?m)\*?\*?Blocker\*?\*?\s*:\s*(.+?)\s*$'))" `
+            -ExpectedAction 'Stop before implementation and route to evolution with closeable machine-gate evidence.'
     }
 }
 

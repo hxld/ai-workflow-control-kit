@@ -330,6 +330,9 @@ $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $dryRunPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $SliceIndex)
 $slicePlanPath = Join-Path $replayRootFull ('SLICE_PLAN_CONTRACT_{0:D2}.json' -f $SliceIndex)
+$carrierResolvePath = Join-Path $replayRootFull 'carrier_resolve.json'
+$planContractPath = Join-Path $replayRootFull 'PLAN_CONTRACT.json'
+$testCharterPath = Join-Path $replayRootFull 'TEST_CHARTER.json'
 $carrierLockPath = Join-Path $replayRootFull 'CARRIER_LOCK.json'
 $firstSliceRunCardPath = Join-Path $replayRootFull 'FIRST_SLICE_RUN_CARD.json'
 $firstExecutableContractPath = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'
@@ -352,6 +355,9 @@ if ($ValidateOnly) {
         worktree = $worktreeFull
         slice_index = $SliceIndex
         carrier_authorization_dry_run = $dryRunPath
+        carrier_resolve = $carrierResolvePath
+        plan_contract = $planContractPath
+        test_charter = $testCharterPath
         carrier_lock = $carrierLockPath
         first_slice_run_card = $firstSliceRunCardPath
         slice_plan_contract = $slicePlanPath
@@ -546,6 +552,30 @@ if ([string]::IsNullOrWhiteSpace($selectedCarrier)) { $carrierBlockers.Add('sele
 if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $carrierBlockers.Add('selected_real_entry_missing') | Out-Null }
 
 $preAuthorized = ($carrierBlockers.Count -eq 0)
+$carrierResolve = [ordered]@{
+    schema = 'carrier_resolve.v1'
+    experiment = 'callable_carrier_preflight'
+    slice_index = $SliceIndex
+    family_id = $selectedFamilyForSlice
+    carrier_fqcn = $selectedEntry
+    method = if ($selectedEntry -match '\.([A-Za-z_][A-Za-z0-9_]*)\s*\(') { $matches[1] } elseif ($selectedEntry -match '\.([A-Za-z_][A-Za-z0-9_]*)\b') { $matches[1] } else { '' }
+    signature = $selectedSignature
+    source_module = $selectedModule
+    test_harness_module = $testHarnessModule
+    source_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
+    callable = ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry))
+    target = $selectedCarrier
+    reason = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'resolved_existing_callable_carrier' } else { (@($carrierBlockers | Select-Object -Unique) -join ';') }
+    forbidden_targets = @('executor:blocker', 'planned_new_or_discovered', 'family_only_carrier', 'helper_only', 'synthetic_carrier')
+}
+Write-JsonFile -Value $carrierResolve -Path $carrierResolvePath
+if (-not [bool]$carrierResolve.callable) {
+    $carrierBlockers.Add('carrier_resolve_not_callable') | Out-Null
+}
+if ([string]$carrierResolve.target -match '(?i)executor:blocker|planned_new_or_discovered|family[-_ ]only|helper_only|synthetic_carrier') {
+    $carrierBlockers.Add('carrier_resolve_forbidden_target') | Out-Null
+}
+
 if ($SliceIndex -eq 1) {
     $carrierSourceFile = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
     $expectedProductionFiles = @(Get-ExpectedProductionFiles `
@@ -741,9 +771,43 @@ $testCharterContract = [ordered]@{
     issues = @($testCharterIssues | Select-Object -Unique)
 }
 Write-JsonFile -Value $testCharterContract -Path $testCharterContractPath
+$canonicalTestCharterIssues = New-Object System.Collections.Generic.List[string]
+if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $canonicalTestCharterIssues.Add('real_entry_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($testClass)) { $canonicalTestCharterIssues.Add('test_class_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $canonicalTestCharterIssues.Add('red_assertion_missing_or_forbidden') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $canonicalTestCharterIssues.Add('green_assertion_missing_or_forbidden') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($greenCommand) -or (Test-ForbiddenMavenGoal -Command $greenCommand) -or -not (Test-CommandUsesIsolatedPom -Command $greenCommand -Worktree $worktreeFull)) { $canonicalTestCharterIssues.Add('maven_command_missing_or_not_isolated') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $canonicalTestCharterIssues.Add('test_harness_module_missing') | Out-Null }
+if ($negativeAssertions.Count -eq 0) { $canonicalTestCharterIssues.Add('must_not_asserted_missing') | Out-Null }
+if ($requiresSideEffect -and ([string]::IsNullOrWhiteSpace($downstream) -or (Test-ForbiddenProofText $downstream))) { $canonicalTestCharterIssues.Add('side_effect_observable_missing') | Out-Null }
+$canonicalTestCharter = [ordered]@{
+    schema = 'test_charter.v1'
+    experiment = 'plan_contract_and_test_charter_gate'
+    slice_index = $SliceIndex
+    real_entry = $selectedEntry
+    real_entry_invoked = $preAuthorized
+    test_class = $testClass
+    test_method = $testMethod
+    red_assertion = $expectedRedFailure
+    green_assertion = $expectedGreenAssertion
+    side_effect_observable = $downstream
+    output_contract_asserted = $expectedGreenAssertion
+    must_not_asserted = @($negativeAssertions)
+    not_static_only = -not (Test-ForbiddenProofText $expectedGreenAssertion)
+    not_helper_only = ($selectedEntry -notmatch '(?i)helper_only|mock_only|dto_only|static_only')
+    maven_command = $greenCommand
+    test_harness_module = $testHarnessModule
+    status = if ($canonicalTestCharterIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    issues = @($canonicalTestCharterIssues | Select-Object -Unique)
+}
+Write-JsonFile -Value $canonicalTestCharter -Path $testCharterPath
 if ($requiresSideEffect -and $testCharterStatus -ne 'AUTHORIZED') {
     foreach ($issue in @($testCharterIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
     $planBlockers.Add('test_charter_contract_not_authorized') | Out-Null
+}
+if ([string]$canonicalTestCharter.status -ne 'AUTHORIZED') {
+    foreach ($issue in @($canonicalTestCharterIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
+    $planBlockers.Add('canonical_test_charter_not_authorized') | Out-Null
 }
 
 $slicePlan = [ordered]@{
@@ -785,6 +849,38 @@ $slicePlan = [ordered]@{
     router_status = if ($planBlockers.Count -eq 0 -and ([string]::IsNullOrWhiteSpace($highestOpenFamilyId) -or $selectedFamilyForSlice -eq $highestOpenFamilyId)) { 'PASS' } else { 'STOP' }
 }
 Write-JsonFile -Value $slicePlan -Path $slicePlanPath
+$planContractIssues = New-Object System.Collections.Generic.List[string]
+$planContractCallStrategy = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_invocation_method'), (Get-PlanField -Text $planText -Name 'test_invocation_expression'), 'invoke the selected real production entry from the behavior test')
+if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $planContractIssues.Add('real_entry_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($planContractCallStrategy)) { $planContractIssues.Add('call_expression_strategy_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($downstream) -or (Test-ForbiddenProofText $downstream)) { $planContractIssues.Add('side_effect_observable_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $planContractIssues.Add('output_contract_asserted_missing') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($mustNotBehavior) -or (Test-ForbiddenProofText $mustNotBehavior)) { $planContractIssues.Add('must_not_asserted_missing') | Out-Null }
+if (Test-ForbiddenProofText $selectedProofType) { $planContractIssues.Add('static_or_helper_proof_type') | Out-Null }
+if ([string]::IsNullOrWhiteSpace($greenCommand) -or (Test-ForbiddenMavenGoal -Command $greenCommand) -or -not (Test-CommandUsesIsolatedPom -Command $greenCommand -Worktree $worktreeFull)) { $planContractIssues.Add('maven_command_missing_or_not_isolated') | Out-Null }
+$planContract = [ordered]@{
+    schema = 'plan_contract.v1'
+    experiment = 'plan_contract_and_test_charter_gate'
+    slice_index = $SliceIndex
+    real_entry = $selectedEntry
+    call_expression_strategy = $planContractCallStrategy
+    side_effect_observable = $downstream
+    output_contract_asserted = $expectedGreenAssertion
+    must_not_asserted = $mustNotBehavior
+    not_static_only = -not (Test-ForbiddenProofText $expectedGreenAssertion)
+    not_helper_only = ($selectedEntry -notmatch '(?i)helper_only|mock_only|dto_only|static_only')
+    maven_command = $greenCommand
+    selected_family = $selectedFamilyForSlice
+    highest_weight_open_family = $highestOpenFamilyId
+    required_proof_type = $selectedProofType
+    status = if ($planContractIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    issues = @($planContractIssues | Select-Object -Unique)
+}
+Write-JsonFile -Value $planContract -Path $planContractPath
+if ([string]$planContract.status -ne 'AUTHORIZED') {
+    foreach ($issue in @($planContractIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
+    $planBlockers.Add('plan_contract_not_authorized') | Out-Null
+}
 
 $sliceExecutionContract = [ordered]@{
     schema = 'slice_execution_contract.v1'

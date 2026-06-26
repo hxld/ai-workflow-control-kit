@@ -29,6 +29,9 @@
 - test charter machine contract: {{TEST_CHARTER_CONTRACT}}
 - carrier authorization dry-run: {{CARRIER_AUTHORIZATION_DRY_RUN}}
 - slice plan contract: {{SLICE_PLAN_CONTRACT}}
+- callable carrier preflight: {{REPLAY_ROOT}}\carrier_resolve.json
+- canonical plan contract: {{REPLAY_ROOT}}\PLAN_CONTRACT.json
+- canonical test charter: {{REPLAY_ROOT}}\TEST_CHARTER.json
 - first-slice execution contract: {{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json
 - canonical slice execution contract: {{REPLAY_ROOT}}\SLICE_EXECUTION_CONTRACT_01.json
 - carrier invocation contract: {{REPLAY_ROOT}}\CARRIER_INVOCATION_CONTRACT_01.json
@@ -87,6 +90,9 @@ Before implementation, produce exactly one state in your slice reasoning and fin
 For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory machine input before editing files. It must have `contract_status=AUTHORIZED`, `uses_isolated_replay_pom=true`, and non-empty `real_entry_fqn`, `test_harness_module`, `test_class`, `test_method`, `maven_test_command_template`, `red_command`, `green_command`, `expected_red_failure`, `green_business_assertion`, `production_entry_qn`, `entry_invocation_method`, `required_side_effects`, `business_red_assertion`, `negative_guard_assertion`, `forbidden_test_surfaces`, and `allowed_mock_boundaries`; otherwise write `BLOCKED_NO_RUNNABLE_SLICE` and do not start RED/GREEN work.
 
 The canonical experiment artifacts are binding, not optional documentation:
+- `carrier_resolve.json` must report `schema=carrier_resolve.v1`, `callable=true`, and non-empty `carrier_fqcn`, `method`, `signature`, `source_module`, and `test_harness_module`. If `callable=false`, `target=executor:blocker`, a planned/family-only carrier label, or a synthetic/helper carrier is selected, write a pre-slice BLOCKED result and do not start RED/GREEN.
+- `PLAN_CONTRACT.json` must report `schema=plan_contract.v1`, `status=AUTHORIZED`, non-empty `real_entry`, `call_expression_strategy`, `side_effect_observable`, `output_contract_asserted`, `must_not_asserted`, `maven_command`, and `not_static_only=true` / `not_helper_only=true`.
+- `TEST_CHARTER.json` must report `schema=test_charter.v1`, `status=AUTHORIZED`, the resolved real entry and test harness, RED/GREEN assertions, side-effect or output assertion, must-not assertion, and isolated Maven command. Helper-only, static-only, DTO-only, or assertion-free charter rows are blockers.
 - `PRE_SLICE_TOOL_AVAILABILITY.json` must report `status=PASS` before implementation, test authoring, or slice synthesis. If it is `BLOCKED`, write `SLICE_RESULT_01.json` with `slice_status=BLOCKED`, `coverage_delta=0`, blocker category `tooling_preflight_blocker`, and stop.
 - `CARRIER_LOCK.json` must report `experiment=pre_budget_carrier_lock`, `carrier_lock_status=PASS`, and non-empty `expected_production_files` before S1 executor work. If it reports `STOP`, the slice result must keep `executor_invoked=false`, `implemented_files=[]`, and `coverage_delta=0`. If it reports PASS, GREEN production diff must touch at least one file in `expected_production_files` (or the same locked source file by basename). If that file cannot be edited or invoked, write `BLOCKED_PLAN_MISMATCH` with `carrier_lock_implementation_gap`; do not substitute a constant, DTO, helper, adjacent service, or log literal as the production carrier.
 - `TEST_CHARTER_01.json` must report `experiment=behavior_test_charter_gate`, non-empty `family_id`, `real_entry_method`, `test_class`, `red_assertion`, `green_assertion`, `maven_command`, `test_harness_module`, and `must_not_assertions`. Stateful or deploy-facing families also require non-empty `side_effect_assertions`.

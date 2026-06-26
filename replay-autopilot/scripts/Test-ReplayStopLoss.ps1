@@ -216,6 +216,61 @@ function Read-ReplaySnapshot {
     }
 }
 
+function Write-RouterPatchRequired {
+    param(
+        [string]$ReplayRoot,
+        [string[]]$GapCodes,
+        [object]$Current,
+        [string]$Decision
+    )
+
+    $blockerRows = @()
+    foreach ($gapCode in @($GapCodes)) {
+        $code = [string]$gapCode
+        if ([string]::IsNullOrWhiteSpace($code)) { continue }
+        $producer = switch -Regex ($code) {
+            'synthetic_carrier|core_entry|carrier' { 'carrier_resolve.json' ; break }
+            'wrong_test_surface|behavior_test_charter|side_effect' { 'TEST_CHARTER.json' ; break }
+            'exact_contract|executable_surface|shallow_module' { 'PLAN_CONTRACT.json' ; break }
+            default { 'SLICE_VERIFY_01.json' }
+        }
+        $required = switch -Regex ($code) {
+            'synthetic_carrier|core_entry|carrier' { 'carrier_resolve.json' ; break }
+            'wrong_test_surface|behavior_test_charter|side_effect' { 'TEST_CHARTER.json' ; break }
+            'exact_contract|executable_surface|shallow_module' { 'PLAN_CONTRACT.json' ; break }
+            default { 'ROUTER_PATCH_REQUIRED.json' }
+        }
+        $acceptance = switch -Regex ($code) {
+            'synthetic_carrier|core_entry|carrier' { 'carrier_resolve.callable=true and target is not executor:blocker/planned/family-only' ; break }
+            'wrong_test_surface|behavior_test_charter|side_effect' { 'TEST_CHARTER.status=AUTHORIZED with real_entry, side_effect_observable/output_contract_asserted, and must_not_asserted' ; break }
+            'exact_contract|executable_surface|shallow_module' { 'PLAN_CONTRACT.status=AUTHORIZED with real_entry, production boundary, proof kind, and isolated Maven command' ; break }
+            default { 'runner/verifier emits authorized_for_next_slice=false until blocker-specific artifact passes' }
+        }
+        $blockerRows += [ordered]@{
+            blocker_code = $code
+            producer_artifact = $producer
+            required_artifact = $required
+            acceptance_check = $acceptance
+        }
+    }
+
+    $patch = [ordered]@{
+        schema = 'router_patch_required.v1'
+        status = if ($Decision -eq 'STOP_DEEP_REVIEW_REQUIRED' -and $blockerRows.Count -gt 0) { 'REQUIRED' } else { 'NOT_REQUIRED' }
+        decision = $Decision
+        replay_root = $ReplayRoot
+        oracle_adjusted_coverage = $Current.oracle_adjusted_coverage
+        verification_capped_coverage = $Current.verification_capped_coverage
+        final_status = $Current.final_status
+        blockers = @($blockerRows)
+        acceptance_summary = if ($blockerRows.Count -gt 0) { 'Runner refuses new business replay until each required artifact passes its acceptance_check.' } else { 'No repeated blocker set required a router patch.' }
+        generated_at = (Get-Date).ToString('s')
+    }
+    $path = Join-Path $ReplayRoot 'ROUTER_PATCH_REQUIRED.json'
+    $patch | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $path -Encoding UTF8
+    return $path
+}
+
 if ($ValidateOnly) {
     [pscustomobject]@{
         Status = 'VALID'
@@ -322,6 +377,10 @@ if ($current.oracle_adjusted_coverage -ne $null -and [int]$current.oracle_adjust
 }
 
 $shouldStop = $decision -eq 'STOP_DEEP_REVIEW_REQUIRED'
+$routerPatchRequiredPath = ''
+if ($shouldStop -and $repeatedGaps.Count -gt 0) {
+    $routerPatchRequiredPath = Write-RouterPatchRequired -ReplayRoot $replayRootFull -GapCodes @($repeatedGaps | ForEach-Object { [string]$_.gap }) -Current $current -Decision $decision
+}
 $recentRootList = New-Object System.Collections.Generic.List[string]
 foreach ($item in @($recent)) {
     if (-not [string]::IsNullOrWhiteSpace($item.root)) {
@@ -342,6 +401,7 @@ $decisionObject = [ordered]@{
     best_recent_oracle = $bestRecentOracle
     oracle_improvement_over_recent_best = $oracleImprovement
     repeated_gaps = $repeatedGapList
+    router_patch_required = $routerPatchRequiredPath
     evolution_result_validated = $hasValidatedEvolution
     stopped_for_evolution = $wasStoppedForEvolution
     recommended_action = if ($shouldStop -and $reasons -match 'runner_non_authorizing_replay') {
@@ -375,6 +435,7 @@ $md = @(
     "- best_recent_oracle: $bestRecentOracle",
     "- oracle_improvement_over_recent_best: $oracleImprovement",
     "- recent_roots: $(@($recentRootList) -join '; ')",
+    "- router_patch_required: $routerPatchRequiredPath",
     '',
     '## Reasons'
 )

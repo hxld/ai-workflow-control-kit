@@ -5,7 +5,8 @@ param(
     [string]$Worktree,
     [Parameter(Mandatory = $true)]
     [string]$SliceResultPath,
-    [int]$SliceIndex = 1
+    [int]$SliceIndex = 1,
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,6 +58,20 @@ function Read-TextIfExists {
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $sliceResultPath = Resolve-AbsolutePath $SliceResultPath
+
+$outputPath = Join-Path $replayRootFull ('EXECUTABLE_EVIDENCE_GATE_{0:D2}.json' -f $SliceIndex)
+if ($ValidateOnly) {
+    [ordered]@{
+        stage = 'executable_evidence_gate'
+        validation_status = 'PASS'
+        mode = 'ValidateOnly'
+        replay_root = $replayRootFull
+        worktree = $worktreeFull
+        slice_result = $sliceResultPath
+        output_path = $outputPath
+    } | ConvertTo-Json -Depth 8
+    exit 0
+}
 
 $issues = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
@@ -527,7 +542,6 @@ $result = [ordered]@{
     generated_at = (Get-Date).ToString('s')
 }
 
-$outputPath = Join-Path $replayRootFull ('EXECUTABLE_EVIDENCE_GATE_{0:D2}.json' -f $SliceIndex)
 $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $outputPath -Encoding UTF8
 
 if ($issues.Count -gt 0) {

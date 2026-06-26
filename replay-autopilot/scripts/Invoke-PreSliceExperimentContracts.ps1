@@ -494,10 +494,24 @@ if (Test-ForbiddenMavenGoal -Command $greenCommand) { $runnableIssues.Add('green
 if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $runnableIssues.Add('missing_expected_red_failure') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $runnableIssues.Add('missing_green_business_assertion') | Out-Null }
 $runnableStatus = if ($runnableIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED_NO_RUNNABLE_SLICE' }
+$preAuthorizeSlice = [ordered]@{
+    selected_existing_carrier = $selectedCarrier
+    callable_signature = $selectedEntry
+    nearest_existing_test_harness = $testHarnessModule
+    red_command = $redCommand
+    expected_failing_assertion = $expectedRedFailure
+    forbidden_substitute_carriers = @('helper_only', 'private_method', 'dto_only', 'terminal_payload', 'generated_service', 'synthetic_carrier', 'mock_only', 'static_contract')
+    authorization_status = if ($runnableStatus -eq 'AUTHORIZED') { 'PASS' } else { 'BLOCKED_NO_RUNNABLE_SLICE' }
+    issues = @($runnableIssues | Select-Object -Unique)
+}
 $runnableAuthorization = [ordered]@{
     schema_version = 1
     slice_index = $SliceIndex
     status = $runnableStatus
+    pre_authorize_slice = $preAuthorizeSlice
+    selected_existing_carrier = $preAuthorizeSlice.selected_existing_carrier
+    callable_signature = $preAuthorizeSlice.callable_signature
+    nearest_existing_test_harness = $preAuthorizeSlice.nearest_existing_test_harness
     real_entry_fqn = $selectedEntry
     isolated_pom = ([System.IO.Path]::Combine($worktreeFull, 'pom.xml'))
     maven_settings = Get-CommandMavenSettings -ConfiguredValue $MavenSettings
@@ -645,6 +659,7 @@ Write-JsonFile -Value $dryRun -Path $dryRunPath
 $planBlockers = New-Object System.Collections.Generic.List[string]
 if ($runnableStatus -ne 'AUTHORIZED') {
     foreach ($issue in @($runnableIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
+    $planBlockers.Add('BLOCKED_NO_RUNNABLE_SLICE') | Out-Null
     $planBlockers.Add('runnable_slice_authorization_not_authorized') | Out-Null
 }
 if ([string]::IsNullOrWhiteSpace($selectedEntry) -or (Test-ForbiddenProofText $selectedEntry)) { $planBlockers.Add('real_entry_method_missing_or_forbidden') | Out-Null }
@@ -973,6 +988,7 @@ if ($planBlockers.Count -gt 0) {
         executor_invoked = $false
         slice_type = 'blocker'
         blocker = 'pre_slice_experiment_contract_stop'
+        pre_authorize_slice = $preAuthorizeSlice
         blocker_reasons = @($planBlockers | Select-Object -Unique)
         gap_flags = @('tooling_enforcement_stop', 'feedback_loop_blocker')
         implemented_files = @()

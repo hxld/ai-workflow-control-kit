@@ -13,6 +13,12 @@ function Resolve-AbsolutePath {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function New-CompatTempFile {
+    $path = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), ('replay-tool-probe-' + [guid]::NewGuid().ToString('N') + '.tmp'))
+    [System.IO.File]::WriteAllText($path, '', [System.Text.Encoding]::UTF8)
+    return [pscustomobject]@{ FullName = $path }
+}
+
 function Test-ScriptRunnable {
     param(
         [string]$Path,
@@ -20,17 +26,21 @@ function Test-ScriptRunnable {
         [string[]]$Arguments
     )
 
-    $stdout = New-TemporaryFile
-    $stderr = New-TemporaryFile
+    $stdout = New-CompatTempFile
+    $stderr = New-CompatTempFile
     try {
-        if ($Kind -eq 'powershell') {
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments > $stdout.FullName 2> $stderr.FullName
-        } elseif ($Kind -eq 'python') {
-            & python $Path @Arguments > $stdout.FullName 2> $stderr.FullName
-        } else {
-            return [pscustomobject]@{ ok = $false; exit_code = -1; diagnostic = "unknown kind: $Kind" }
+        try {
+            if ($Kind -eq 'powershell') {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $Path @Arguments > $stdout.FullName 2> $stderr.FullName
+            } elseif ($Kind -eq 'python') {
+                & python $Path @Arguments > $stdout.FullName 2> $stderr.FullName
+            } else {
+                return [pscustomobject]@{ ok = $false; exit_code = -1; diagnostic = "unknown kind: $Kind" }
+            }
+            $exitCode = $LASTEXITCODE
+        } catch {
+            return [pscustomobject]@{ ok = $false; exit_code = -1; diagnostic = ('probe_exception: ' + $_.Exception.Message) }
         }
-        $exitCode = $LASTEXITCODE
         $stderrText = if (Test-Path -LiteralPath $stderr.FullName) { Get-Content -LiteralPath $stderr.FullName -Raw -Encoding UTF8 } else { '' }
         if ($null -eq $stderrText) { $stderrText = '' }
         return [pscustomobject]@{

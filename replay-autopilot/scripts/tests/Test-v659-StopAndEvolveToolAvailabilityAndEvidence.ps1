@@ -136,7 +136,11 @@ try {
     Assert-True ($LASTEXITCODE -ne 0) 'RED/GREEN side-effect verifier must fail closed on non-RED helper-only evidence'
 
     $runSliceText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8
+    $availabilityGateText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Invoke-PreSliceToolAvailabilityGate.ps1') -Raw -Encoding UTF8
     $promptText = Get-Content -LiteralPath (Join-Path $autopilotRoot 'prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
+    Assert-True ($availabilityGateText -match 'function New-CompatTempFile') 'pre-slice availability gate must use Windows PowerShell-compatible temp files'
+    Assert-True ($availabilityGateText -notmatch '\bNew-TemporaryFile\b') 'pre-slice availability gate must not require New-TemporaryFile on Windows PowerShell'
+    Assert-True ($availabilityGateText -match 'probe_exception') 'pre-slice availability probe exceptions must be converted to JSON diagnostics'
     Assert-True ($runSliceText -match 'Invoke-PreSliceToolAvailabilityGate\.ps1') 'Run-SliceLoop.ps1 must invoke pre-slice tool availability gate'
     $toolGateCallIndex = $runSliceText.IndexOf("Join-Path `$PSScriptRoot 'Invoke-PreSliceToolAvailabilityGate.ps1'")
     $callableGateCallIndex = $runSliceText.IndexOf('$callableCarrierGate = Invoke-CallableCarrierAuthorizationGate')

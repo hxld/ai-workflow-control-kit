@@ -4943,6 +4943,19 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 $hasExistingResult = $true
             }
             if (-not $blockedBeforeExecutor) {
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'validate-first-slice-contract.ps1') `
+                    -ReplayRoot $replayRootFull `
+                    -Worktree $worktreeFull `
+                    -Slice $i `
+                    -MavenSettings $MavenSettings | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "first-slice contract validation stopped before executor"
+                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} first-slice contract validation stop | {1} | {2} | first_slice_contract_validation | exit_code={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('FIRST_SLICE_CONTRACT_VALIDATE_{0:D2}.json' -f $i)))
+                    $blockedBeforeExecutor = $true
+                    $hasExistingResult = $true
+                }
+            }
+            if (-not $blockedBeforeExecutor) {
                 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify_carrier_invocation_contract.ps1') `
                     -Contract $sliceExecutionContractPath `
                     -CarrierIndex $baselineCarrierIndexPath `
@@ -5331,7 +5344,21 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         break
     }
 
-    Write-Host "Executable evidence gate passed for slice $i."
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'validate-behavior-proof.ps1') `
+        -ReplayRoot $replayRootFull `
+        -Worktree $worktreeFull `
+        -SliceResultPath $sliceResult `
+        -Slice $i | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $behaviorProofPath = Join-Path $replayRootFull ('BEHAVIOR_PROOF_VALIDATE_{0:D2}.json' -f $i)
+        $behaviorProofResult = Read-JsonObject -Path $behaviorProofPath
+        $blockerReason = if ($behaviorProofResult.issues.Count -gt 0) { $behaviorProofResult.issues[0] } else { 'behavior_proof_schema_failed' }
+        Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} behavior proof schema stop | {1} | {2} | behavior_proof_schema | blocker={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $blockerReason, $behaviorProofPath)
+        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "behavior_proof_schema: $blockerReason"
+        break
+    }
+
+    Write-Host "Executable evidence gate and behavior proof schema passed for slice $i."
 
     $result = Read-JsonObject -Path $sliceResult
     $touchedFamilies = @(Get-StringArray $result.touched_requirement_families)

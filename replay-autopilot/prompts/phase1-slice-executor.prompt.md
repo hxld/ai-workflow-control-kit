@@ -88,12 +88,24 @@ For S1, `{{REPLAY_ROOT}}\FIRST_SLICE_EXECUTABLE_CONTRACT.json` is mandatory mach
 
 The canonical experiment artifacts are binding, not optional documentation:
 - `PRE_SLICE_TOOL_AVAILABILITY.json` must report `status=PASS` before implementation, test authoring, or slice synthesis. If it is `BLOCKED`, write `SLICE_RESULT_01.json` with `slice_status=BLOCKED`, `coverage_delta=0`, blocker category `tooling_preflight_blocker`, and stop.
+- `CARRIER_LOCK.json` must report `experiment=pre_budget_carrier_lock` and `carrier_lock_status=PASS` before S1 executor work. If it reports `STOP`, the slice result must keep `executor_invoked=false`, `implemented_files=[]`, and `coverage_delta=0`.
+- `TEST_CHARTER_01.json` must report `experiment=behavior_test_charter_gate`, non-empty `family_id`, `real_entry_method`, `test_class`, `red_assertion`, `green_assertion`, `maven_command`, `test_harness_module`, and `must_not_assertions`. Stateful or deploy-facing families also require non-empty `side_effect_assertions`.
+- `SLICE_PLAN_CONTRACT_01.json` must report `experiment=high_weight_family_proof_router`, `selected_family`, `highest_weight_open_family`, `selected_carrier`, `required_proof_type`, `expected_actual_proof_type`, `coverage_cap_if_open`, `forbidden_proof`, and `router_status=PASS`. If `selected_family` does not equal the highest-weight OPEN required family and no verifier-approved blocker exists, write `BLOCKED_PLAN_MISMATCH`.
 - `SLICE_EXECUTION_CONTRACT_01.json` must exist before implementation and must contain `family_id`, `production_entry_qn`, `test_class`, `test_method`, exact `red_command`, exact `green_command`, `isolated_pom_path`, `maven_settings_arg`, `red_assertion`, `side_effect_or_output_probe`, and `must_not_assertion`.
 - `CARRIER_INVOCATION_CONTRACT_01.json` must report `resolved=true`, `signature_match=true`, `test_invokes_entry=true`, and `carrier_origin=existing_production`. `NEW_PLANNED_CARRIER`, planned-only services, helper-only carriers, DTO-only carriers, and unresolved signatures are blockers.
 - `FAMILY_PROOF_LEDGER_01.json` is produced after GREEN. A passing test is non-authorizing unless this ledger accepts the family-required proof kind and the slice proves the declared real entry caused the declared side effect or output plus the must-not assertion.
 - `PRE_SLICE_AUTHORIZATION_GATE.json` must report `status=PASS` before RED/GREEN. It rejects missing callable entry signatures, empty RED/GREEN commands, Maven commands without `-f {{WORKTREE}}\pom.xml`, `-pl` without `-am`, forbidden Maven goals, and missing side-effect/output probes.
 - `PROOF_TYPE_POLICY_GATE.json` must report `status=PASS` before test writing. `mock_only`, `static_only`, `helper_only`, `file_presence`, DTO field presence, and assertion-free collaborator wiring are non-authorizing proof types even if Mockito is used around a real entry.
 - `REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json` must report `status=PASS` when a replay context index exists. It must show reuse of callable carriers, harness modules, valid Maven command templates, forbidden proof type policy, and side-effect probe examples, or name a specific invalidation reason.
+
+The named STOP_AND_EVOLVE validation commands are:
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\run-carrier-lock-precheck.ps1" -ReplayRoot {{REPLAY_ROOT}} -Slice {{SLICE_INDEX}}`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\validate-first-slice-contract.ps1" -ReplayRoot {{REPLAY_ROOT}} -Worktree {{WORKTREE}} -Slice {{SLICE_INDEX}}`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\validate-behavior-test-charter.ps1" -ReplayRoot {{REPLAY_ROOT}} -Slice {{SLICE_INDEX}}`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\validate-family-proof-router.ps1" -ReplayRoot {{REPLAY_ROOT}} -Slice {{SLICE_INDEX}}`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\validate-behavior-proof.ps1" -ReplayRoot {{REPLAY_ROOT}} -Worktree {{WORKTREE}} -SliceResultPath {{SLICE_RESULT}} -Slice {{SLICE_INDEX}}`
+
+These commands validate runner-owned artifacts. They are not behavior tests and do not create coverage credit.
 
 Before slice execution, the runnable contract row is binding:
 

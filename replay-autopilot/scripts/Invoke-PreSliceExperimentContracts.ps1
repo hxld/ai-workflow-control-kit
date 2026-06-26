@@ -165,6 +165,33 @@ function Get-ProofTypeForFamily {
     return $proof
 }
 
+function Get-NumericOrDefault {
+    param($Value, [int]$Default)
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [decimal] -or $Value -is [double]) { return [int]$Value }
+    if ([string]$Value -match '^-?\d+$') { return [int]$Value }
+    return $Default
+}
+
+function Get-HighestOpenRequiredFamily {
+    param($Ledger)
+    if ($null -eq $Ledger -or -not $Ledger.PSObject.Properties['families']) { return $null }
+    $openRows = @($Ledger.families | Where-Object {
+        $required = $false
+        if ($_.PSObject.Properties['required']) { $required = [bool]$_.required }
+        $status = if ($_.PSObject.Properties['status']) { [string]$_.status } else { 'OPEN' }
+        $required -and $status -notmatch '^(?i)(closed|executable_closed|not_applicable|not_applicable_by_feature_classifier)$'
+    })
+    if ($openRows.Count -eq 0) { return $null }
+    return @($openRows | Sort-Object @{ Expression = { Get-NumericOrDefault $_.weight 0 }; Descending = $true }, @{ Expression = { [string]$_.id }; Ascending = $true } | Select-Object -First 1)[0]
+}
+
+function Write-JsonFile {
+    param($Value, [string]$Path)
+    $json = $Value | ConvertTo-Json -Depth 12
+    [System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
+}
+
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $dryRunPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $SliceIndex)
@@ -208,6 +235,11 @@ $sideEffect = Read-JsonIfExists (Join-Path $replayRootFull ('SIDE_EFFECT_EVIDENC
 $contextValidation = Read-JsonIfExists $contextValidationPath
 $planJson = Read-JsonIfExists (Join-Path $replayRootFull 'PLAN_RESULT.json')
 $planInfra = if ($null -ne $planJson -and $planJson.PSObject.Properties['test_infrastructure_check']) { $planJson.test_infrastructure_check } else { $null }
+$familyLedger = Read-JsonIfExists (Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json')
+$highestOpenFamily = Get-HighestOpenRequiredFamily -Ledger $familyLedger
+$highestOpenFamilyId = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['id']) { [string]$highestOpenFamily.id } else { '' }
+$selectedFamilyForSlice = if (-not [string]::IsNullOrWhiteSpace($ForcedRequirementFamily)) { $ForcedRequirementFamily } elseif (-not [string]::IsNullOrWhiteSpace($highestOpenFamilyId)) { $highestOpenFamilyId } else { 'core_entry' }
+$highestOpenFamilyWeight = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['weight']) { Get-NumericOrDefault $highestOpenFamily.weight 0 } else { 0 }
 
 $planText = @(
     (Read-TextIfExists (Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md')),
@@ -365,7 +397,22 @@ $preAuthorized = ($carrierBlockers.Count -eq 0)
 if ($SliceIndex -eq 1) {
     $carrierLock = [ordered]@{
         schema = 'carrier_lock.v1'
+        experiment = 'pre_budget_carrier_lock'
+        family_id = $selectedFamilyForSlice
+        selected_family = $selectedFamilyForSlice
+        selected_carrier_fqn = $selectedCarrier
+        selected_entry_kind = 'production_existing'
+        existing_source_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
+        method_signature_found = ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry))
+        callable_from_test_harness = $preAuthorized
+        authorization_status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'PASS' } else { 'STOP' }
+        fallback_candidates = @($replacementCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 5)
         qualified_entry = $selectedEntry
+        selected_carrier = $selectedCarrier
+        production_boundary = $productionBoundary
+        downstream_side_effect_or_output = $downstream
+        forbidden_substitute_check = if ($preAuthorized) { 'PASS' } else { 'FAIL' }
+        test_harness_strategy = $testHarnessModule
         signature = $selectedSignature
         visibility = $selectedVisibility
         module = $selectedModule
@@ -379,6 +426,8 @@ if ($SliceIndex -eq 1) {
             selected_carrier = $selectedCarrier
         }
         status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'LOCKED' } else { 'BLOCKED_CARRIER_UNCALLABLE' }
+        carrier_lock_status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'PASS' } else { 'STOP' }
+        executor_invoked = $false
         blockers = @($carrierBlockers | Select-Object -Unique)
     }
     $carrierLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierLockPath -Encoding UTF8
@@ -408,6 +457,13 @@ if ($null -ne $callable) {
     $callableNormalized = [ordered]@{
         gate = 'callable_carrier_authorization'
         slice_index = $SliceIndex
+        family_id = $selectedFamilyForSlice
+        selected_carrier_fqn = $selectedCarrier
+        existing_source_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
+        method_signature_found = ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry))
+        callable_from_test_harness = $preAuthorized
+        selected_entry_kind = 'production_existing'
+        fallback_candidates = @($replacementCandidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 5)
         existing_entry_fqn = $selectedEntry
         existing_entry_signature = if ($null -ne $callable.resolved_signature -and $null -ne $callable.resolved_signature.selected_carrier) { [string]$callable.resolved_signature.selected_carrier.formatted } else { $selectedEntry }
         carrier_origin = 'existing_production_entry'
@@ -493,9 +549,21 @@ if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenPro
 $testCharterStatus = if ($testCharterIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
 $testCharterContract = [ordered]@{
     schema_version = 1
+    experiment = 'behavior_test_charter_gate'
     slice_index = $SliceIndex
+    family_id = $selectedFamilyForSlice
     status = $testCharterStatus
+    behavior_test_charter_status = if ($testCharterStatus -eq 'AUTHORIZED') { 'PASS' } else { 'STOP' }
     side_effect_proof_required = $requiresSideEffect
+    real_entry_method = $selectedEntry
+    test_class = $testClass
+    red_assertion = $expectedRedFailure
+    green_assertion = $expectedGreenAssertion
+    side_effect_assertions = @($downstream) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) }
+    must_not_assertions = @($negativeAssertions)
+    maven_command = $greenCommand
+    test_harness_module = $testHarnessModule
+    no_spring_context = $true
     side_effect_target = $downstream
     capture_mechanism = $captureMechanism
     must_fail_before_change = $expectedRedFailure
@@ -518,10 +586,20 @@ if ($requiresSideEffect -and $testCharterStatus -ne 'AUTHORIZED') {
 
 $slicePlan = [ordered]@{
     schema_version = 1
+    experiment = 'high_weight_family_proof_router'
     slice_index = $SliceIndex
     forced_requirement_family = $ForcedRequirementFamily
     forced_slice_type = $ForcedSliceType
     forced_sibling_surface = $ForcedSiblingSurface
+    selected_family = $selectedFamilyForSlice
+    highest_weight_open_family = $highestOpenFamilyId
+    highest_weight_open_family_weight = $highestOpenFamilyWeight
+    family_id = $selectedFamilyForSlice
+    selected_carrier = $selectedCarrier
+    required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
+    expected_actual_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
+    coverage_cap_if_open = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['coverage_cap_if_open']) { Get-NumericOrDefault $highestOpenFamily.coverage_cap_if_open 0 } else { 0 }
+    forbidden_proof = @('helper_only', 'static_only', 'mock_only', 'dto_only', 'compile_only', 'file_presence_only')
     real_entry_method = $selectedEntry
     callable_from_test = $preAuthorized
     production_boundary = $productionBoundary
@@ -542,12 +620,13 @@ $slicePlan = [ordered]@{
     replay_context_index_validation = if (Test-Path -LiteralPath $contextValidationPath) { $contextValidationPath } else { '' }
     blockers = @($planBlockers | Select-Object -Unique)
     authorization = if ($planBlockers.Count -eq 0) { 'ALLOW' } else { 'STOP' }
+    router_status = if ($planBlockers.Count -eq 0 -and ([string]::IsNullOrWhiteSpace($highestOpenFamilyId) -or $selectedFamilyForSlice -eq $highestOpenFamilyId)) { 'PASS' } else { 'STOP' }
 }
 $slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
 
 $sliceExecutionContract = [ordered]@{
     schema = 'slice_execution_contract.v1'
-    family_id = $ForcedRequirementFamily
+    family_id = $selectedFamilyForSlice
     production_entry_qn = $selectedEntry
     test_class = $testClass
     test_method = $testMethod
@@ -586,7 +665,7 @@ $carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath
 if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{
         schema_version = 1
-        family_id = $ForcedRequirementFamily
+        family_id = $selectedFamilyForSlice
         real_entry_fqn = $selectedEntry
         test_harness_module = $testHarnessModule
         test_class = $testClass
@@ -602,12 +681,14 @@ if ($SliceIndex -eq 1) {
         existing_entry_qn = $selectedEntry
         entry_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }))
         method_signature = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'method_signature'), $selectedCarrier)
-        required_proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
+        required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
         side_effect_or_output = $downstream
         must_not_behavior = $slicePlan.must_not_behavior
         forbidden_substitute_surfaces = @('new_helper_only', 'new_service_without_existing_entry_call', 'dto_only', 'static_contract', 'mock_only', 'test_only')
         red_command = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'red_command'), $validationCommand)
         green_command = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'green_command'), $validationCommand)
+        isolated_pom_path = ([System.IO.Path]::Combine($worktreeFull, 'pom.xml'))
+        maven_settings_arg = Get-CommandMavenSettings -ConfiguredValue $MavenSettings
         uses_isolated_replay_pom = ($redUsesIsolatedPom -and $greenUsesIsolatedPom)
         expected_red_failure = $expectedRedFailure
         green_business_assertion = $expectedGreenAssertion
@@ -691,7 +772,7 @@ if (-not (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) -and -not [st
         test_harness_modules = @($testHarnessModule)
         valid_maven_command_templates = @([ordered]@{ module = $testHarnessModule; command = $greenCommand })
         forbidden_proof_types_by_family = [ordered]@{ core_entry = @('helper_only', 'static_only', 'mock_only', 'dto_only') }
-        side_effect_probe_examples = @([ordered]@{ family = $ForcedRequirementFamily; probe = $downstream })
+        side_effect_probe_examples = @([ordered]@{ family = $selectedFamilyForSlice; probe = $downstream })
         real_entry_candidates = @([ordered]@{ signature = $selectedEntry })
         generated_by = 'Invoke-PreSliceExperimentContracts.ps1'
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $contextIndexPath -Encoding UTF8
@@ -735,12 +816,13 @@ if (Test-Path -LiteralPath $firstExecutableContractPath -PathType Leaf) {
 if ($planBlockers.Count -gt 0) {
     $slicePlan.blockers = @($planBlockers | Select-Object -Unique)
     $slicePlan.authorization = 'STOP'
-    $slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
+    Write-JsonFile -Value $slicePlan -Path $slicePlanPath
     [ordered]@{
         schema_version = 1
         slice_index = 0
         original_slice_index = $SliceIndex
         slice_status = 'BLOCKED'
+        executor_invoked = $false
         slice_type = 'blocker'
         blocker = 'pre_slice_experiment_contract_stop'
         blocker_reasons = @($planBlockers | Select-Object -Unique)

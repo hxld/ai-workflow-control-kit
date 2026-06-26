@@ -60,6 +60,37 @@ first_red_test: ExampleTest#red
     Assert-True ((@($validVerify.warnings) -join "`n") -match "GenericTaskProcessor'.*found") "Warning should show resolved class leaf, warnings=$(@($validVerify.warnings) -join ';')"
     $assertions++
 
+    $fqcnRoot = Join-Path $tmp 'fqcn-method-carrier'
+    $fqcnWorktree = Join-Path $fqcnRoot 'worktree'
+    $fqcnCarrierFile = Join-Path $fqcnWorktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java'
+    Write-Utf8 $fqcnCarrierFile @'
+package com.huize.claim.core.ai.task;
+
+public class AiApplyClaimApiTaskProcessor {
+    public void handleTaskResponse() {
+    }
+}
+'@
+    Write-Utf8 (Join-Path $fqcnRoot 'PLAN_RESULT.md') @'
+# Plan Result
+
+plan_status: PROCEED
+carrier_search: performed
+carrier_search_queries: rg -n "class AiApplyClaimApiTaskProcessor" claim-core/src/main/java --glob "*.java"; rg -n "handleTaskResponse\(" claim-core/src/main/java --glob "*.java"; rg -n "AiApplyClaimApiTaskProcessor" claim-core/src/main/java --glob "*.java"
+existing_production_carriers: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier_from_search: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
+new_service_proposed: false
+first_slice: S1_core_entry
+first_red_test: ExampleTest#red
+'@
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $fqcnRoot -Stage Plan -Worktree $fqcnWorktree -ErrorAction SilentlyContinue | Out-Null
+    $fqcnVerify = Get-Content -LiteralPath (Join-Path $fqcnRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True (@($fqcnVerify.issues) -notcontains 'carrier_search_selected_carrier_not_found_in_codebase') "FQCN method carrier should resolve to class leaf, issues=$(@($fqcnVerify.issues) -join ';')"
+    $assertions++
+    Assert-True ((@($fqcnVerify.warnings) -join "`n") -match "AiApplyClaimApiTaskProcessor'.*found") "Warning should show FQCN class leaf, warnings=$(@($fqcnVerify.warnings) -join ';')"
+    $assertions++
+
     $missingRoot = Join-Path $tmp 'missing-path-carrier'
     $missingWorktree = Join-Path $missingRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $missingWorktree | Out-Null
@@ -90,6 +121,7 @@ Write-Host "PASS: v646 carrier path existence normalization - $assertions assert
     assertions = $assertions
     cases = @(
         'path_shaped_selected_carrier_resolves_java_class_leaf',
+        'fqcn_method_selected_carrier_resolves_java_class_leaf',
         'missing_path_shaped_selected_carrier_still_fails_closed'
     )
 } | ConvertTo-Json -Depth 5

@@ -179,6 +179,17 @@ function Get-CarrierNameForExistenceCheck {
         return $javaLeafMatch.Groups[1].Value
     }
 
+    # Fully-qualified Java carriers can be emitted as
+    # "com.example.Foo.handle". Validate Foo instead of the package root.
+    if ($trimmed -match '^[a-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*){2,}$') {
+        $segments = @($trimmed -split '\.')
+        for ($i = $segments.Count - 2; $i -ge 0; $i--) {
+            if ($segments[$i] -cmatch '^[A-Z_$][A-Za-z0-9_$]*$') {
+                return $segments[$i]
+            }
+        }
+    }
+
     $methodCarrierMatch = [regex]::Match($trimmed, '\b([A-Za-z_$][A-Za-z0-9_$]*)[#.]([A-Za-z_$][A-Za-z0-9_$]*)\b')
     if ($methodCarrierMatch.Success) {
         return $methodCarrierMatch.Groups[1].Value

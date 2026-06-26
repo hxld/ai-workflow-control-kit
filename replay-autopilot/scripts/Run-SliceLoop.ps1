@@ -4847,14 +4847,43 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
 
     if (-not $blockedBeforeExecutor) {
         $preSliceToolGatePath = Join-Path $replayRootFull 'PRE_SLICE_TOOL_AVAILABILITY.json'
+        $preSliceToolGateStdoutPath = Join-Path $replayRootFull ('PRE_SLICE_TOOL_AVAILABILITY_{0:D2}.stdout.log' -f $i)
+        $preSliceToolGateStderrPath = Join-Path $replayRootFull ('PRE_SLICE_TOOL_AVAILABILITY_{0:D2}.stderr.log' -f $i)
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PreSliceToolAvailabilityGate.ps1') `
             -ReplayRoot $replayRootFull `
-            -Worktree $worktreeFull | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "pre-slice tool availability gate blocked before executor"
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice tool availability stop | {1} | {2} | tooling_preflight_blocker | PRE_SLICE_TOOL_AVAILABILITY status=BLOCKED; result={3}. |" -f $i, $forced.family_id, $forced.slice_type, $preSliceToolGatePath)
+            -Worktree $worktreeFull > $preSliceToolGateStdoutPath 2> $preSliceToolGateStderrPath
+        $preSliceToolGateExitCode = $LASTEXITCODE
+        $preSliceToolGateStatus = ''
+        $preSliceToolGateBlocker = ''
+        if (Test-Path -LiteralPath $preSliceToolGatePath) {
+            try {
+                $preSliceToolGate = Read-JsonObject -Path $preSliceToolGatePath
+                $preSliceToolGateStatus = [string]$preSliceToolGate.status
+                $missingToolScripts = @(Get-StringArray $preSliceToolGate.missing_scripts)
+                $unrunnableToolScripts = @(Get-StringArray $preSliceToolGate.unrunnable_scripts)
+                $preSliceToolGateBlocker = (@(
+                    $(if ($missingToolScripts.Count -gt 0) { 'missing_scripts=' + ($missingToolScripts -join ',') } else { $null }),
+                    $(if ($unrunnableToolScripts.Count -gt 0) { 'unrunnable_scripts=' + ($unrunnableToolScripts -join ',') } else { $null })
+                ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join '; '
+            } catch {
+                $preSliceToolGateStatus = 'UNREADABLE'
+                $preSliceToolGateBlocker = 'pre_slice_tool_availability_unreadable'
+            }
+        } else {
+            $preSliceToolGateStatus = 'MISSING'
+            $preSliceToolGateBlocker = 'pre_slice_tool_availability_missing'
+        }
+        if ($preSliceToolGateStatus -ne 'PASS') {
+            if ([string]::IsNullOrWhiteSpace($preSliceToolGateBlocker)) {
+                $preSliceToolGateBlocker = "status=$preSliceToolGateStatus"
+            }
+            $preSliceToolReason = "pre-slice tool availability gate blocked before executor: $preSliceToolGateBlocker"
+            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $preSliceToolGateExitCode -Reason $preSliceToolReason -ExecutorDiagnostic "availability=$preSliceToolGatePath; stdout=$preSliceToolGateStdoutPath; stderr=$preSliceToolGateStderrPath"
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice tool availability stop | {1} | {2} | tooling_preflight_blocker | PRE_SLICE_TOOL_AVAILABILITY status={3}; exit_code={4}; blocker={5}; result={6}; stdout={7}; stderr={8}. |" -f $i, $forced.family_id, $forced.slice_type, $preSliceToolGateStatus, $preSliceToolGateExitCode, $preSliceToolGateBlocker, $preSliceToolGatePath, $preSliceToolGateStdoutPath, $preSliceToolGateStderrPath)
             $blockedBeforeExecutor = $true
             $hasExistingResult = $true
+        } else {
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice tool availability pass | {1} | {2} | executable_evidence | PRE_SLICE_TOOL_AVAILABILITY status=PASS; exit_code={3}; result={4}; stdout={5}; stderr={6}. |" -f $i, $forced.family_id, $forced.slice_type, $preSliceToolGateExitCode, $preSliceToolGatePath, $preSliceToolGateStdoutPath, $preSliceToolGateStderrPath)
         }
     }
 

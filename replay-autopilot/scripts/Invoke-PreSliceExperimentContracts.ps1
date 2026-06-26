@@ -50,11 +50,30 @@ function Get-PlanField {
     return ''
 }
 
+function Normalize-ContractScalar {
+    param($Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [System.Array]) {
+        $items = @($Value | ForEach-Object { Normalize-ContractScalar $_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($items.Count -eq 0) { return '' }
+        return ($items -join '; ')
+    }
+    if ($Value -is [hashtable] -or $Value -is [pscustomobject]) { return '' }
+
+    $text = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { return '' }
+    if ($text -eq '{' -or $text -eq '[') { return '' }
+    if ($text -match '(?is)"schema"\s*:\s*"carrier_lock\.v1"') { return '' }
+    if ($text -match '(?is)"carrier_lock_status"\s*:' -and $text -match '(?is)"expected_production_files"\s*:') { return '' }
+    if ($text.Length -gt 16000) { return '' }
+    return (($text -replace '\r?\n', ' ').Trim())
+}
+
 function Get-FirstNonEmpty {
     param([object[]]$Values)
     foreach ($value in $Values) {
-        $text = [string]$value
-        if (-not [string]::IsNullOrWhiteSpace($text)) { return $text.Trim() }
+        $text = Normalize-ContractScalar $value
+        if (-not [string]::IsNullOrWhiteSpace($text)) { return $text }
     }
     return ''
 }
@@ -271,9 +290,40 @@ function Get-HighestOpenRequiredFamily {
 }
 
 function Write-JsonFile {
-    param($Value, [string]$Path)
-    $json = $Value | ConvertTo-Json -Depth 12
-    [System.IO.File]::WriteAllText($Path, $json, [System.Text.UTF8Encoding]::new($false))
+    param($Value, [string]$Path, [int]$Depth = 12)
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'Write-JsonFile requires a non-empty path.' }
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $null = $json | ConvertFrom-Json
+
+    $dir = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    $leaf = [System.IO.Path]::GetFileName($Path)
+    $tmp = Join-Path $dir ('.{0}.{1}.{2}.tmp' -f $leaf, $PID, [guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        $backup = Join-Path $dir ('.{0}.{1}.{2}.bak' -f $leaf, $PID, [guid]::NewGuid().ToString('N'))
+        try {
+            if (Test-Path -LiteralPath $Path -PathType Leaf) {
+                [System.IO.File]::Replace($tmp, $Path, $backup, $true)
+                Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            } else {
+                [System.IO.File]::Move($tmp, $Path)
+            }
+            return
+        } catch {
+            $lastError = $_
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds ([Math]::Min(1000, 25 * $attempt))
+        }
+    }
+
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    throw "Failed to atomically write JSON to $Path after retries: $lastError"
 }
 
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
@@ -464,7 +514,7 @@ $runnableAuthorization = [ordered]@{
     uses_isolated_replay_pom = ($redUsesIsolatedPom -and $greenUsesIsolatedPom)
     issues = @($runnableIssues | Select-Object -Unique)
 }
-$runnableAuthorization | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $runnableAuthorizationPath -Encoding UTF8
+Write-JsonFile -Value $runnableAuthorization -Path $runnableAuthorizationPath
 
 $carrierBlockers = New-Object System.Collections.Generic.List[string]
 if ($null -eq $carrier) { $carrierBlockers.Add('carrier_authorization_missing') | Out-Null }
@@ -527,7 +577,7 @@ if ($SliceIndex -eq 1) {
         executor_invoked = $false
         blockers = @($carrierBlockers | Select-Object -Unique)
     }
-    $carrierLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierLockPath -Encoding UTF8
+    Write-JsonFile -Value $carrierLock -Path $carrierLockPath
     if ([string]$carrierLock.status -ne 'LOCKED') {
         $carrierBlockers.Add('carrier_lock_not_locked') | Out-Null
     }
@@ -575,7 +625,7 @@ if ($null -ne $callable) {
         resolved_signature = $callable.resolved_signature
         blockers = @($carrierBlockers | Select-Object -Unique)
     }
-    $callableNormalized | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)) -Encoding UTF8
+    Write-JsonFile -Value $callableNormalized -Path (Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex))
 }
 $dryRun = [ordered]@{
     schema_version = 1
@@ -590,7 +640,7 @@ $dryRun = [ordered]@{
     chosen_replacement_or_blocked = if ($preAuthorized) { 'authorized_original' } elseif ($replacementCandidates.Count -gt 0) { 'blocked_after_replacement_candidates_recorded' } else { 'blocked_no_valid_replacement' }
     blockers = @($carrierBlockers | Select-Object -Unique)
 }
-$dryRun | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $dryRunPath -Encoding UTF8
+Write-JsonFile -Value $dryRun -Path $dryRunPath
 
 $planBlockers = New-Object System.Collections.Generic.List[string]
 if ($runnableStatus -ne 'AUTHORIZED') {
@@ -675,7 +725,7 @@ $testCharterContract = [ordered]@{
     non_authorizing_evidence = @('helper_only', 'mock_only', 'dto_only', 'static_only', 'wiring_only', 'file_presence_only')
     issues = @($testCharterIssues | Select-Object -Unique)
 }
-$testCharterContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $testCharterContractPath -Encoding UTF8
+Write-JsonFile -Value $testCharterContract -Path $testCharterContractPath
 if ($requiresSideEffect -and $testCharterStatus -ne 'AUTHORIZED') {
     foreach ($issue in @($testCharterIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
     $planBlockers.Add('test_charter_contract_not_authorized') | Out-Null
@@ -719,7 +769,7 @@ $slicePlan = [ordered]@{
     authorization = if ($planBlockers.Count -eq 0) { 'ALLOW' } else { 'STOP' }
     router_status = if ($planBlockers.Count -eq 0 -and ([string]::IsNullOrWhiteSpace($highestOpenFamilyId) -or $selectedFamilyForSlice -eq $highestOpenFamilyId)) { 'PASS' } else { 'STOP' }
 }
-$slicePlan | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $slicePlanPath -Encoding UTF8
+Write-JsonFile -Value $slicePlan -Path $slicePlanPath
 
 $sliceExecutionContract = [ordered]@{
     schema = 'slice_execution_contract.v1'
@@ -738,7 +788,7 @@ $sliceExecutionContract = [ordered]@{
     contract_status = if ($planBlockers.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
     issues = @($planBlockers | Select-Object -Unique)
 }
-$sliceExecutionContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sliceExecutionContractPath -Encoding UTF8
+Write-JsonFile -Value $sliceExecutionContract -Path $sliceExecutionContractPath
 
 $baselineCarrierIndexPath = Join-Path $replayRootFull 'replay-context-index\baseline-carriers.json'
 if (-not (Test-Path -LiteralPath $baselineCarrierIndexPath -PathType Leaf)) {
@@ -757,7 +807,7 @@ $carrierInvocationContract = [ordered]@{
     carrier_index = $baselineCarrierIndexPath
     issues = @($carrierBlockers | Select-Object -Unique)
 }
-$carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierInvocationContractPath -Encoding UTF8
+Write-JsonFile -Value $carrierInvocationContract -Path $carrierInvocationContractPath
 
 if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{
@@ -817,7 +867,7 @@ if ($SliceIndex -eq 1) {
     }
     $firstExecutableContract['contract_status'] = if ($firstContractMissing.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
     $firstExecutableContract['contract_missing_fields'] = @($firstContractMissing | Select-Object -Unique)
-    $firstExecutableContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $firstExecutableContractPath -Encoding UTF8
+    Write-JsonFile -Value $firstExecutableContract -Path $firstExecutableContractPath
     if ($firstContractMissing.Count -gt 0) {
         foreach ($missingField in @($firstContractMissing | Select-Object -Unique)) { $planBlockers.Add("first_slice_execution_contract_missing_$missingField") | Out-Null }
     }
@@ -852,7 +902,7 @@ if ($SliceIndex -eq 1) {
         authorization_source = $firstExecutableContractPath
         issues = @($runCardIssues | Select-Object -Unique)
     }
-    $firstSliceRunCard | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $firstSliceRunCardPath -Encoding UTF8
+    Write-JsonFile -Value $firstSliceRunCard -Path $firstSliceRunCardPath
     if ($runCardStatus -ne 'ALLOW') {
         $planBlockers.Add($runCardStatus) | Out-Null
         foreach ($issue in @($runCardIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
@@ -863,7 +913,7 @@ $preSliceAuthorizationGatePath = Join-Path $replayRootFull 'PRE_SLICE_AUTHORIZAT
 $proofTypePolicyGatePath = Join-Path $replayRootFull 'PROOF_TYPE_POLICY_GATE.json'
 $contextIndexContractCheckPath = Join-Path $replayRootFull 'REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json'
 if (-not (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) -and -not [string]::IsNullOrWhiteSpace($selectedEntry) -and -not [string]::IsNullOrWhiteSpace($testHarnessModule) -and -not [string]::IsNullOrWhiteSpace($greenCommand)) {
-    [ordered]@{
+    $generatedContextIndex = [ordered]@{
         callable_carriers = @([ordered]@{ signature = $selectedEntry; carrier = $selectedCarrier; entry = $selectedEntry })
         failed_carrier_authorizations = @([ordered]@{ signature = 'forbidden_substitute'; reason = 'not_selected_for_first_slice' })
         test_harness_modules = @($testHarnessModule)
@@ -872,7 +922,8 @@ if (-not (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) -and -not [st
         side_effect_probe_examples = @([ordered]@{ family = $selectedFamilyForSlice; probe = $downstream })
         real_entry_candidates = @([ordered]@{ signature = $selectedEntry })
         generated_by = 'Invoke-PreSliceExperimentContracts.ps1'
-    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $contextIndexPath -Encoding UTF8
+    }
+    Write-JsonFile -Value $generatedContextIndex -Path $contextIndexPath
 }
 if (Test-Path -LiteralPath $firstExecutableContractPath -PathType Leaf) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'pre_slice_authorization_gate.ps1') `
@@ -914,7 +965,7 @@ if ($planBlockers.Count -gt 0) {
     $slicePlan.blockers = @($planBlockers | Select-Object -Unique)
     $slicePlan.authorization = 'STOP'
     Write-JsonFile -Value $slicePlan -Path $slicePlanPath
-    [ordered]@{
+    $preSliceBlocker = [ordered]@{
         schema_version = 1
         slice_index = 0
         original_slice_index = $SliceIndex
@@ -933,7 +984,8 @@ if ($planBlockers.Count -gt 0) {
         authorized_for_synthesis = $false
         carrier_authorization_dry_run = $dryRunPath
         slice_plan_contract = $slicePlanPath
-    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $preSliceBlockerPath -Encoding UTF8
+    }
+    Write-JsonFile -Value $preSliceBlocker -Path $preSliceBlockerPath
     exit 1
 }
 

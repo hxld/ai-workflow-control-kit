@@ -109,6 +109,32 @@ try {
     Assert-True ([string]$slicePlan.selected_family -eq 'core_entry') 'proof router must select the highest-weight open family'
     Assert-True ([string]$slicePlan.router_status -eq 'PASS') 'valid proof router must report PASS'
 
+    $existingCarrierLockText = Get-Content -LiteralPath (Join-Path $replayRoot 'CARRIER_LOCK.json') -Raw -Encoding UTF8
+    $corruptionJobs = @()
+    foreach ($scriptName in @('run-carrier-lock-precheck.ps1', 'validate-behavior-test-charter.ps1', 'validate-family-proof-router.ps1')) {
+        foreach ($iteration in 1..4) {
+            $corruptionJobs += Start-Job -ArgumentList $scriptsRoot, $scriptName, $replayRoot -ScriptBlock {
+                param($ScriptsRoot, $ScriptName, $ReplayRoot)
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ScriptsRoot $ScriptName) -ReplayRoot $ReplayRoot -Slice 1 | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "$ScriptName failed with exit code $LASTEXITCODE" }
+            }
+        }
+    }
+    Wait-Job -Job $corruptionJobs | Out-Null
+    $failedJobs = @($corruptionJobs | Where-Object { $_.State -ne 'Completed' })
+    foreach ($job in $corruptionJobs) { Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-Null }
+    Remove-Job -Job $corruptionJobs -Force
+    Assert-True ($failedJobs.Count -eq 0) 'parallel validation commands must not fail on shared runner artifacts'
+    $carrierLockAfterParallelText = Get-Content -LiteralPath (Join-Path $replayRoot 'CARRIER_LOCK.json') -Raw -Encoding UTF8
+    $carrierLockAfterParallel = $carrierLockAfterParallelText | ConvertFrom-Json
+    Assert-True ([string]$carrierLockAfterParallel.carrier_lock_status -eq 'PASS') 'parallel validation must keep CARRIER_LOCK.json parseable and PASS'
+    Assert-True ($carrierLockAfterParallelText -eq $existingCarrierLockText) 'read-only validation commands must not rewrite CARRIER_LOCK.json when artifacts already exist'
+    Assert-True ([string]$carrierLockAfterParallel.production_boundary -notmatch 'carrier_lock\.v1') 'carrier lock production_boundary must not embed another carrier lock JSON object'
+    $charterValidation = Get-Content -LiteralPath (Join-Path $replayRoot 'BEHAVIOR_TEST_CHARTER_VALIDATE_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $routerValidation = Get-Content -LiteralPath (Join-Path $replayRoot 'FAMILY_PROOF_ROUTER_VALIDATE_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([int]$charterValidation.aggregate_exit_code -eq 0) 'behavior-charter validation must validate existing artifacts without regeneration'
+    Assert-True ([int]$routerValidation.aggregate_exit_code -eq 0) 'family-router validation must validate existing artifacts without regeneration'
+
     $badReplayRoot = Join-Path $tempRoot 'bad-replay'
     $badWorktree = Join-Path $badReplayRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $badWorktree | Out-Null

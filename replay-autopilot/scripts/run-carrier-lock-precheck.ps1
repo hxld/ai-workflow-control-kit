@@ -20,6 +20,37 @@ function Read-Json {
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Write-JsonFile {
+    param($Value, [string]$Path, [int]$Depth = 8)
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $null = $json | ConvertFrom-Json
+    $dir = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    $tmp = Join-Path $dir ('.{0}.{1}.{2}.tmp' -f [System.IO.Path]::GetFileName($Path), $PID, [guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        $backup = Join-Path $dir ('.{0}.{1}.{2}.bak' -f [System.IO.Path]::GetFileName($Path), $PID, [guid]::NewGuid().ToString('N'))
+        try {
+            if (Test-Path -LiteralPath $Path -PathType Leaf) {
+                [System.IO.File]::Replace($tmp, $Path, $backup, $true)
+                Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            } else {
+                [System.IO.File]::Move($tmp, $Path)
+            }
+            return
+        } catch {
+            $lastError = $_
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds ([Math]::Min(1000, 25 * $attempt))
+        }
+    }
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    throw "Failed to atomically write JSON to $Path after retries: $lastError"
+}
+
 $replayRootFull = [System.IO.Path]::GetFullPath($ReplayRoot)
 $worktreeFull = Resolve-Worktree -ReplayRoot $replayRootFull -Worktree $Worktree
 
@@ -92,7 +123,7 @@ $result = [ordered]@{
     pre_slice_blocker = $preBlockerPath
     issues = @($issues)
 }
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRootFull ('CARRIER_LOCK_PRECHECK_VALIDATE_{0:D2}.json' -f $Slice)) -Encoding UTF8
+Write-JsonFile -Value $result -Path (Join-Path $replayRootFull ('CARRIER_LOCK_PRECHECK_VALIDATE_{0:D2}.json' -f $Slice))
 
 if ($status -eq 'FAIL') { exit 1 }
 exit 0

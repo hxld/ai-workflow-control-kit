@@ -20,8 +20,40 @@ function Read-Json {
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Write-JsonFile {
+    param($Value, [string]$Path, [int]$Depth = 8)
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $null = $json | ConvertFrom-Json
+    $dir = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    $tmp = Join-Path $dir ('.{0}.{1}.{2}.tmp' -f [System.IO.Path]::GetFileName($Path), $PID, [guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 20; $attempt++) {
+        $backup = Join-Path $dir ('.{0}.{1}.{2}.bak' -f [System.IO.Path]::GetFileName($Path), $PID, [guid]::NewGuid().ToString('N'))
+        try {
+            if (Test-Path -LiteralPath $Path -PathType Leaf) {
+                [System.IO.File]::Replace($tmp, $Path, $backup, $true)
+                Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            } else {
+                [System.IO.File]::Move($tmp, $Path)
+            }
+            return
+        } catch {
+            $lastError = $_
+            Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds ([Math]::Min(1000, 25 * $attempt))
+        }
+    }
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    throw "Failed to atomically write JSON to $Path after retries: $lastError"
+}
+
 $replayRootFull = [System.IO.Path]::GetFullPath($ReplayRoot)
 $worktreeFull = Resolve-Worktree -ReplayRoot $replayRootFull -Worktree $Worktree
+$slicePlanPath = Join-Path $replayRootFull ('SLICE_PLAN_CONTRACT_{0:D2}.json' -f $Slice)
 
 $aggregateArgs = @(
     '-NoProfile',
@@ -31,11 +63,14 @@ $aggregateArgs = @(
     '-Worktree', $worktreeFull,
     '-SliceIndex', $Slice
 )
-if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) { $aggregateArgs += @('-MavenSettings', $MavenSettings) }
-& powershell @aggregateArgs | Out-Null
-$aggregateExit = $LASTEXITCODE
+if (-not (Test-Path -LiteralPath $slicePlanPath -PathType Leaf)) {
+    if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) { $aggregateArgs += @('-MavenSettings', $MavenSettings) }
+    & powershell @aggregateArgs | Out-Null
+    $aggregateExit = $LASTEXITCODE
+} else {
+    $aggregateExit = 0
+}
 
-$slicePlanPath = Join-Path $replayRootFull ('SLICE_PLAN_CONTRACT_{0:D2}.json' -f $Slice)
 $preBlockerPath = Join-Path $replayRootFull ('SLICE_RESULT_PRE_{0:D2}.json' -f $Slice)
 $slicePlan = Read-Json $slicePlanPath
 $preBlocker = Read-Json $preBlockerPath
@@ -78,7 +113,7 @@ $result = [ordered]@{
     pre_slice_blocker = $preBlockerPath
     issues = @($issues)
 }
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRootFull ('FAMILY_PROOF_ROUTER_VALIDATE_{0:D2}.json' -f $Slice)) -Encoding UTF8
+Write-JsonFile -Value $result -Path (Join-Path $replayRootFull ('FAMILY_PROOF_ROUTER_VALIDATE_{0:D2}.json' -f $Slice))
 
 if ($status -eq 'FAIL') { exit 1 }
 exit 0

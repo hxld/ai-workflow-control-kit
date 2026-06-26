@@ -59,6 +59,23 @@ function Get-FirstNonEmpty {
     return ''
 }
 
+function Get-ObjectString {
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return '' }
+    foreach ($name in $Names) {
+        if ($Object.PSObject.Properties[$name]) {
+            $value = $Object.$name
+            if ($value -is [System.Array]) {
+                $items = @($value | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                if ($items.Count -gt 0) { return ($items -join '; ') }
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+                return ([string]$value).Trim()
+            }
+        }
+    }
+    return ''
+}
+
 function Test-ForbiddenProofText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $true }
@@ -90,6 +107,9 @@ function Get-TestClassFromTestName {
     param([string]$TestName)
     if ([string]::IsNullOrWhiteSpace($TestName)) { return '' }
     $trimmed = $TestName.Trim()
+    if ($trimmed -match '(?i)src[\\/]+test[\\/]+java[\\/]+(?<classPath>.+?)\.java(?:[#.].*)?$') {
+        return (($matches['classPath'] -replace '[\\/]', '.').Trim('.'))
+    }
     if ($trimmed -match '^(?<class>[A-Za-z_][A-Za-z0-9_$.]*)(?:[#.].*)?$') {
         return $matches['class']
     }
@@ -100,6 +120,9 @@ function Get-TestMethodFromTestName {
     param([string]$TestName)
     if ([string]::IsNullOrWhiteSpace($TestName)) { return '' }
     $trimmed = $TestName.Trim()
+    if ($trimmed -match '[#](?<method>[A-Za-z_][A-Za-z0-9_]*)$') {
+        return $matches['method']
+    }
     if ($trimmed -match '^[A-Za-z_][A-Za-z0-9_$.]*[#.](?<method>[A-Za-z_][A-Za-z0-9_]*)$') {
         return $matches['method']
     }
@@ -112,10 +135,42 @@ function Get-CommandMavenSettings {
     return ('-s ' + $ConfiguredValue + ' -Dproject.build.sourceEncoding=UTF-8 -Dfile.encoding=UTF-8')
 }
 
+function New-MavenTestCommand {
+    param(
+        [string]$Worktree,
+        [string]$Module,
+        [string]$TestClass,
+        [string]$TestMethod,
+        [string]$Settings
+    )
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or [string]::IsNullOrWhiteSpace($Module) -or [string]::IsNullOrWhiteSpace($TestClass)) { return '' }
+    $pom = [System.IO.Path]::Combine($Worktree, 'pom.xml')
+    $selector = $TestClass
+    if (-not [string]::IsNullOrWhiteSpace($TestMethod)) { $selector = "$selector#$TestMethod" }
+    return ('mvn ' + (Get-CommandMavenSettings -ConfiguredValue $Settings) + ' -f "' + $pom + '" -pl ' + $Module + ' -am -Dtest=' + $selector + ' -Dsurefire.failIfNoSpecifiedTests=false test')
+}
+
+function Get-ProofTypeForFamily {
+    param([string]$FamilyId, [string]$PlanText, [string]$ForcedSliceType)
+    $proof = Get-FirstNonEmpty @(
+        (Get-PlanField -Text $PlanText -Name 'required_proof_type'),
+        (Get-PlanField -Text $PlanText -Name 'proof_kind'),
+        (Get-PlanField -Text $PlanText -Name 'proof_type'),
+        $ForcedSliceType,
+        'real_entry_behavior'
+    )
+    if ($FamilyId -eq 'core_entry' -and $proof -notmatch '(?i)real_entry_behavior') {
+        return 'real_entry_behavior'
+    }
+    return $proof
+}
+
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $dryRunPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $SliceIndex)
 $slicePlanPath = Join-Path $replayRootFull ('SLICE_PLAN_CONTRACT_{0:D2}.json' -f $SliceIndex)
+$carrierLockPath = Join-Path $replayRootFull 'CARRIER_LOCK.json'
+$firstSliceRunCardPath = Join-Path $replayRootFull 'FIRST_SLICE_RUN_CARD.json'
 $firstExecutableContractPath = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'
 $sliceExecutionContractPath = Join-Path $replayRootFull ('SLICE_EXECUTION_CONTRACT_{0:D2}.json' -f $SliceIndex)
 $carrierInvocationContractPath = Join-Path $replayRootFull ('CARRIER_INVOCATION_CONTRACT_{0:D2}.json' -f $SliceIndex)
@@ -136,6 +191,8 @@ if ($ValidateOnly) {
         worktree = $worktreeFull
         slice_index = $SliceIndex
         carrier_authorization_dry_run = $dryRunPath
+        carrier_lock = $carrierLockPath
+        first_slice_run_card = $firstSliceRunCardPath
         slice_plan_contract = $slicePlanPath
         runnable_slice_authorization = $runnableAuthorizationPath
         test_charter_contract = $testCharterContractPath
@@ -149,6 +206,8 @@ $callable = Read-JsonIfExists (Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTH
 $preAuth = Read-JsonIfExists (Join-Path $replayRootFull ('PRE_SLICE_AUTHORIZATION_{0:D2}.json' -f $SliceIndex))
 $sideEffect = Read-JsonIfExists (Join-Path $replayRootFull ('SIDE_EFFECT_EVIDENCE_{0:D2}.json' -f $SliceIndex))
 $contextValidation = Read-JsonIfExists $contextValidationPath
+$planJson = Read-JsonIfExists (Join-Path $replayRootFull 'PLAN_RESULT.json')
+$planInfra = if ($null -ne $planJson -and $planJson.PSObject.Properties['test_infrastructure_check']) { $planJson.test_infrastructure_check } else { $null }
 
 $planText = @(
     (Read-TextIfExists (Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md')),
@@ -170,6 +229,7 @@ $selectedEntry = Get-FirstNonEmpty @(
 $redTestName = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'first_red_test'),
     (Get-PlanField -Text $planText -Name 'expected_test_class'),
+    (Get-ObjectString -Object $planJson -Names @('first_red_test', 'expected_test_class')),
     $(if ($null -ne $sideEffect) { [string]$sideEffect.test_name } else { '' })
 )
 $downstream = Get-FirstNonEmpty @(
@@ -202,6 +262,23 @@ $greenCommand = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'green_command'),
     $validationCommand
 )
+$selectedSignature = Get-FirstNonEmpty @(
+    $(if ($null -ne $callable -and $null -ne $callable.resolved_signature -and $null -ne $callable.resolved_signature.selected_carrier) { [string]$callable.resolved_signature.selected_carrier.formatted } else { '' }),
+    $selectedCarrier,
+    $selectedEntry
+)
+$selectedVisibility = Get-FirstNonEmpty @(
+    $(if ($null -ne $callable -and $null -ne $callable.resolved_signature -and $null -ne $callable.resolved_signature.selected_carrier) { [string]$callable.resolved_signature.selected_carrier.visibility } else { '' }),
+    'unknown'
+)
+$selectedModule = Get-FirstNonEmpty @(
+    (Get-TestHarnessModuleFromCommand -Command $greenCommand),
+    (Get-TestHarnessModuleFromCommand -Command $redCommand),
+    (Get-ObjectString -Object $planInfra -Names @('test_module_for_target')),
+    (Get-PlanField -Text $planText -Name 'module'),
+    (Get-PlanField -Text $planText -Name 'test_harness_module'),
+    (Get-PlanField -Text $planText -Name 'test_module')
+)
 $expectedRedFailure = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'expected_red_failure'),
     $redAssertion
@@ -212,14 +289,24 @@ $expectedGreenAssertion = Get-FirstNonEmpty @(
     $downstream
 )
 $testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand
+if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = $selectedModule }
 $testClass = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'test_class'),
+    (Get-ObjectString -Object $planJson -Names @('expected_test_class', 'test_class')),
     (Get-TestClassFromTestName -TestName $redTestName)
 )
 $testMethod = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'test_method'),
+    (Get-ObjectString -Object $planJson -Names @('expected_test_method', 'test_method')),
     (Get-TestMethodFromTestName -TestName $redTestName)
 )
+if ([string]::IsNullOrWhiteSpace($selectedModule)) { $selectedModule = $testHarnessModule }
+if ([string]::IsNullOrWhiteSpace($validationCommand)) {
+    $validationCommand = New-MavenTestCommand -Worktree $worktreeFull -Module $testHarnessModule -TestClass $testClass -TestMethod $testMethod -Settings $MavenSettings
+}
+if ([string]::IsNullOrWhiteSpace($redCommand)) { $redCommand = $validationCommand }
+if ([string]::IsNullOrWhiteSpace($greenCommand)) { $greenCommand = $validationCommand }
+if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand }
 
 $runnableIssues = New-Object System.Collections.Generic.List[string]
 $redUsesIsolatedPom = Test-CommandUsesIsolatedPom -Command $redCommand -Worktree $worktreeFull
@@ -273,6 +360,32 @@ if ($null -ne $callable -and -not [bool]$callable.can_proceed) {
 }
 if ([string]::IsNullOrWhiteSpace($selectedCarrier)) { $carrierBlockers.Add('selected_carrier_missing') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $carrierBlockers.Add('selected_real_entry_missing') | Out-Null }
+
+$preAuthorized = ($carrierBlockers.Count -eq 0)
+if ($SliceIndex -eq 1) {
+    $carrierLock = [ordered]@{
+        schema = 'carrier_lock.v1'
+        qualified_entry = $selectedEntry
+        signature = $selectedSignature
+        visibility = $selectedVisibility
+        module = $selectedModule
+        callability = if ($preAuthorized) { 'callable_from_allowed_harness' } else { 'blocked_or_unresolved' }
+        allowed_test_harness = $testHarnessModule
+        forbidden_substitutes = @('helper_only', 'private_method', 'dto_only', 'terminal_payload', 'generated_service', 'synthetic_carrier', 'mock_only', 'static_contract')
+        source_evidence = [ordered]@{
+            carrier_authorization = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
+            callable_carrier_authorization = Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
+            first_slice_proof_plan = Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md'
+            selected_carrier = $selectedCarrier
+        }
+        status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'LOCKED' } else { 'BLOCKED_CARRIER_UNCALLABLE' }
+        blockers = @($carrierBlockers | Select-Object -Unique)
+    }
+    $carrierLock | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierLockPath -Encoding UTF8
+    if ([string]$carrierLock.status -ne 'LOCKED') {
+        $carrierBlockers.Add('carrier_lock_not_locked') | Out-Null
+    }
+}
 
 $replacementCandidates = @()
 if (Test-Path -LiteralPath $contextIndexPath) {
@@ -393,7 +506,7 @@ $testCharterContract = [ordered]@{
     state_or_output_surface = $downstream
     red_phase_business_failure = $expectedRedFailure
     green_phase_business_success = $expectedGreenAssertion
-    proof_type = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'required_proof_type'), $ForcedSliceType, 'real_entry_behavior')
+    proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
     non_authorizing_evidence = @('helper_only', 'mock_only', 'dto_only', 'static_only', 'wiring_only', 'file_presence_only')
     issues = @($testCharterIssues | Select-Object -Unique)
 }
@@ -420,6 +533,8 @@ $slicePlan = [ordered]@{
     validation_command = $validationCommand
     forbidden_proof_checks = @('none', 'static_only', 'helper_only', 'mock_only', 'dto_only')
     carrier_authorization_dry_run = $dryRunPath
+    carrier_lock = if (Test-Path -LiteralPath $carrierLockPath) { $carrierLockPath } else { '' }
+    first_slice_run_card = if (Test-Path -LiteralPath $firstSliceRunCardPath) { $firstSliceRunCardPath } else { '' }
     runnable_slice_authorization = $runnableAuthorizationPath
     callable_carrier_authorization = Join-Path $replayRootFull ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
     test_charter_contract = $testCharterContractPath
@@ -468,7 +583,7 @@ $carrierInvocationContract = [ordered]@{
 }
 $carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $carrierInvocationContractPath -Encoding UTF8
 
-    if ($SliceIndex -eq 1) {
+if ($SliceIndex -eq 1) {
     $firstExecutableContract = [ordered]@{
         schema_version = 1
         family_id = $ForcedRequirementFamily
@@ -487,7 +602,7 @@ $carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath
         existing_entry_qn = $selectedEntry
         entry_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }))
         method_signature = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'method_signature'), $selectedCarrier)
-        required_proof_type = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'required_proof_type'), $ForcedSliceType, 'real_entry_behavior')
+        required_proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
         side_effect_or_output = $downstream
         must_not_behavior = $slicePlan.must_not_behavior
         forbidden_substitute_surfaces = @('new_helper_only', 'new_service_without_existing_entry_call', 'dto_only', 'static_contract', 'mock_only', 'test_only')
@@ -528,11 +643,59 @@ $carrierInvocationContract | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath
     if ($firstContractMissing.Count -gt 0) {
         foreach ($missingField in @($firstContractMissing | Select-Object -Unique)) { $planBlockers.Add("first_slice_execution_contract_missing_$missingField") | Out-Null }
     }
+
+    $runCardIssues = New-Object System.Collections.Generic.List[string]
+    $runCardStatus = if ($firstContractMissing.Count -eq 0 -and $preAuthorized) { 'ALLOW' } elseif (-not $preAuthorized) { 'BLOCKED_CARRIER_CALLABILITY' } else { 'BLOCKED_ASSERTION_CONTRACT' }
+    $lockedCarrierValue = ''
+    $carrierLockObject = Read-JsonIfExists $carrierLockPath
+    if ($null -ne $carrierLockObject) { $lockedCarrierValue = [string]$carrierLockObject.qualified_entry }
+    foreach ($fieldName in @('lockedCarrierValue', 'testHarnessModule', 'redCommand', 'greenCommand', 'selectedEntry', 'downstream', 'mustNotBehavior', 'expectedRedFailure', 'expectedGreenAssertion')) {
+        $value = Get-Variable -Name $fieldName -ValueOnly -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace([string]$value) -or (Test-ForbiddenProofText ([string]$value))) {
+            $runCardIssues.Add("run_card_missing_$fieldName") | Out-Null
+        }
+    }
+    if (-not ($redUsesIsolatedPom -and $greenUsesIsolatedPom)) { $runCardIssues.Add('run_card_commands_not_isolated') | Out-Null }
+    if ($runCardIssues.Count -gt 0 -and $runCardStatus -eq 'ALLOW') { $runCardStatus = 'BLOCKED_ASSERTION_CONTRACT' }
+    $firstSliceRunCard = [ordered]@{
+        schema = 'first_slice_run_card.v1'
+        status = $runCardStatus
+        locked_carrier = $lockedCarrierValue
+        existing_test_harness_module = $testHarnessModule
+        isolated_pom_path = ([System.IO.Path]::Combine($worktreeFull, 'pom.xml'))
+        red_command = $redCommand
+        green_command = $greenCommand
+        real_entry_assertion = $expectedGreenAssertion
+        side_effect_assertion = $downstream
+        must_not_assertion = $mustNotBehavior
+        expected_red_failure = $expectedRedFailure
+        expected_green_pass = $expectedGreenAssertion
+        required_proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
+        authorization_source = $firstExecutableContractPath
+        issues = @($runCardIssues | Select-Object -Unique)
+    }
+    $firstSliceRunCard | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $firstSliceRunCardPath -Encoding UTF8
+    if ($runCardStatus -ne 'ALLOW') {
+        $planBlockers.Add($runCardStatus) | Out-Null
+        foreach ($issue in @($runCardIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
+    }
 }
 
 $preSliceAuthorizationGatePath = Join-Path $replayRootFull 'PRE_SLICE_AUTHORIZATION_GATE.json'
 $proofTypePolicyGatePath = Join-Path $replayRootFull 'PROOF_TYPE_POLICY_GATE.json'
 $contextIndexContractCheckPath = Join-Path $replayRootFull 'REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json'
+if (-not (Test-Path -LiteralPath $contextIndexPath -PathType Leaf) -and -not [string]::IsNullOrWhiteSpace($selectedEntry) -and -not [string]::IsNullOrWhiteSpace($testHarnessModule) -and -not [string]::IsNullOrWhiteSpace($greenCommand)) {
+    [ordered]@{
+        callable_carriers = @([ordered]@{ signature = $selectedEntry; carrier = $selectedCarrier; entry = $selectedEntry })
+        failed_carrier_authorizations = @([ordered]@{ signature = 'forbidden_substitute'; reason = 'not_selected_for_first_slice' })
+        test_harness_modules = @($testHarnessModule)
+        valid_maven_command_templates = @([ordered]@{ module = $testHarnessModule; command = $greenCommand })
+        forbidden_proof_types_by_family = [ordered]@{ core_entry = @('helper_only', 'static_only', 'mock_only', 'dto_only') }
+        side_effect_probe_examples = @([ordered]@{ family = $ForcedRequirementFamily; probe = $downstream })
+        real_entry_candidates = @([ordered]@{ signature = $selectedEntry })
+        generated_by = 'Invoke-PreSliceExperimentContracts.ps1'
+    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $contextIndexPath -Encoding UTF8
+}
 if (Test-Path -LiteralPath $firstExecutableContractPath -PathType Leaf) {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'pre_slice_authorization_gate.ps1') `
         -ReplayRoot $replayRootFull `

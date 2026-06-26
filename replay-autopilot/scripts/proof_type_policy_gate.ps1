@@ -55,7 +55,7 @@ function Get-FamilyRequiredProofType {
     foreach ($family in @($Ledger.families)) {
         $id = [string](Get-PropertyValue -Object $family -Names @('id', 'family_id', 'family'))
         if ($id -ne $FamilyId) { continue }
-        $proof = [string](Get-PropertyValue -Object $family -Names @('required_proof_type', 'proof_required', 'proof_type'))
+        $proof = [string](Get-PropertyValue -Object $family -Names @('required_proof_type', 'proof_type'))
         if (-not [string]::IsNullOrWhiteSpace($proof)) { return $proof }
     }
     return ''

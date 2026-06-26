@@ -95,6 +95,18 @@ try {
         $json = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
         Assert-True ([string]$json.status -eq 'PASS') "$artifact must pass for valid contract"
     }
+    $carrierLock = Get-Content -LiteralPath (Join-Path $replayRoot 'CARRIER_LOCK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $runCard = Get-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_RUN_CARD.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([string]$carrierLock.status -eq 'LOCKED') 'CARRIER_LOCK.json must lock the first real carrier'
+    Assert-True ([string]$carrierLock.qualified_entry -eq 'demo.RealEntry.handle(String): String') 'carrier lock qualified_entry must match selected real entry'
+    Assert-True ([string]$runCard.status -eq 'ALLOW') 'FIRST_SLICE_RUN_CARD.json must authorize complete first slice inputs'
+    Assert-True ([string]$runCard.locked_carrier -eq [string]$carrierLock.qualified_entry) 'run card must consume CARRIER_LOCK qualified_entry'
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'pre_slice_authorization_gate.ps1') `
+        -ReplayRoot $replayRoot `
+        -Worktree $worktree `
+        -FamilyLedger (Join-Path $replayRoot 'REQUIREMENT_FAMILY_LEDGER.json') `
+        -AllowedPomPath (Join-Path $worktree 'pom.xml') | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'pre-slice authorization gate must default to FIRST_SLICE_RUN_CARD.json'
 
     $badReplayRoot = Join-Path $tempRoot 'bad-replay'
     $badWorktree = Join-Path $badReplayRoot 'worktree'
@@ -162,6 +174,11 @@ try {
     Assert-True ($promptText -match 'PRE_SLICE_AUTHORIZATION_GATE\.json') 'executor prompt must name pre-slice authorization gate artifact'
     Assert-True ($promptText -match 'PROOF_TYPE_POLICY_GATE\.json') 'executor prompt must name proof-type policy artifact'
     Assert-True ($promptText -match 'REPLAY_CONTEXT_INDEX_CONTRACT_CHECK\.json') 'executor prompt must name replay context index contract artifact'
+    Assert-True ($aggregateText -match 'CARRIER_LOCK\.json') 'aggregate gate must generate CARRIER_LOCK.json'
+    Assert-True ($aggregateText -match 'FIRST_SLICE_RUN_CARD\.json') 'aggregate gate must generate FIRST_SLICE_RUN_CARD.json'
+    $verifierText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Verify-SliceClosure.ps1') -Raw -Encoding UTF8
+    Assert-True ($verifierText -match 'carrier_lock_mismatch') 'slice verifier must fail closed on carrier lock mismatch'
+    Assert-True ($verifierText -match 'CARRIER_LOCK\.qualified_entry') 'slice verifier must cite CARRIER_LOCK qualified_entry as carrier source'
 
     Write-Host 'v656 Stop-And-Evolve Named Experiment Gates: PASS'
     exit 0

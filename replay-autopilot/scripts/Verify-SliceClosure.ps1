@@ -555,6 +555,7 @@ $carrierAuthorizationPath = Join-Path $replayRootFull ('CARRIER_AUTHORIZATION_{0
 $exactContractMatrixPath = Join-Path $replayRootFull ('EXACT_CONTRACT_ASSERTION_MATRIX_{0:D2}.json' -f $SliceIndex)
 $sideEffectEvidencePath = Join-Path $replayRootFull ('SIDE_EFFECT_EVIDENCE_{0:D2}.json' -f $SliceIndex)
 $sourceChainContractPath = Join-Path $replayRootFull 'SOURCE_CHAIN_CONTRACT.json'
+$carrierLockPath = Join-Path $replayRootFull 'CARRIER_LOCK.json'
 $featureClassificationPath = Join-Path $replayRootFull 'FEATURE_CLASSIFICATION.json'
 $featureClassification = Read-JsonIfExists -Path $featureClassificationPath
 $narrowReadOnlyFeature = Test-NarrowBackendReadOnlyFeature -FeatureClassification $featureClassification
@@ -579,6 +580,7 @@ $carrierAuthorization = $null
 $exactContractMatrix = $null
 $sideEffectEvidenceFile = $null
 $sourceChainContract = $null
+$carrierLock = $null
 
 if (Test-Path -LiteralPath $carrierAuthorizationPath) {
     try { $carrierAuthorization = Read-JsonObject -Path $carrierAuthorizationPath } catch { $warnings.Add("carrier_authorization_json_invalid") }
@@ -597,6 +599,9 @@ if (Test-Path -LiteralPath $sideEffectEvidencePath) {
 }
 if (Test-Path -LiteralPath $sourceChainContractPath) {
     try { $sourceChainContract = Read-JsonObject -Path $sourceChainContractPath } catch { $warnings.Add("source_chain_contract_json_invalid") }
+}
+if (Test-Path -LiteralPath $carrierLockPath) {
+    try { $carrierLock = Read-JsonObject -Path $carrierLockPath } catch { $warnings.Add("carrier_lock_json_invalid") }
 }
 $planLockText = @(
     (Read-TextIfExists -Path (Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md')),
@@ -1929,6 +1934,35 @@ $currentCarrierText = @(
     $testImplementedText,
     ($testCommands -join "`n")
 ) -join "`n"
+$carrierLockQualifiedEntry = if ($null -ne $carrierLock) { [string]$carrierLock.qualified_entry } else { '' }
+$carrierLockStatus = if ($null -ne $carrierLock) { [string]$carrierLock.status } else { '' }
+if ($SliceIndex -eq 1 -and $null -eq $carrierLock) {
+    $warnings.Add('carrier_lock_missing') | Out-Null
+    if ($gapFlags -notcontains 'carrier_lock_missing') { $gapFlags += 'carrier_lock_missing' }
+}
+if ($null -ne $carrierLock -and $carrierLockStatus -ne 'LOCKED') {
+    $carrierFamilyMatch = $false
+    $expectedCarrierSource = 'CARRIER_LOCK.status'
+    $warnings.Add('carrier_lock_not_locked') | Out-Null
+    if ($gapFlags -notcontains 'carrier_lock_mismatch') { $gapFlags += 'carrier_lock_mismatch' }
+}
+if (-not [string]::IsNullOrWhiteSpace($carrierLockQualifiedEntry)) {
+    $carrierLockMatched = $currentCarrierText -match [regex]::Escape($carrierLockQualifiedEntry)
+    if (-not $carrierLockMatched -and -not [string]::IsNullOrWhiteSpace($plannedSelectedCarrier)) {
+        $carrierLockMatched = $plannedSelectedCarrier -match [regex]::Escape($carrierLockQualifiedEntry)
+    }
+    if (-not $carrierLockMatched) {
+        $carrierFamilyMatch = $false
+        $expectedCarrierSource = 'CARRIER_LOCK.qualified_entry'
+        foreach ($familyId in @($touchedFamilies | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })) {
+            if (-not $planMismatchedFamilies.Contains([string]$familyId)) { $planMismatchedFamilies.Add([string]$familyId) | Out-Null }
+        }
+        foreach ($flag in @('wrong_test_surface', 'carrier_lock_mismatch')) {
+            if ($gapFlags -notcontains $flag) { $gapFlags += $flag }
+        }
+        $warnings.Add('carrier_lock_mismatch') | Out-Null
+    }
+}
 $sourceChainRequiredForPlanLock = $null -ne $sourceChainContract -and [bool]$sourceChainContract.required_source_chain
 $unrequiredSourceChainCarrier = (
     -not $sourceChainRequiredForPlanLock -and
@@ -2161,6 +2195,8 @@ $nonAuthorizingEvidenceFlags = @(
     'no_progress_slice',
     'carrier_authorization_missing',
     'carrier_authorization_stop',
+    'carrier_lock_missing',
+    'carrier_lock_mismatch',
     'public_response_contract_missing',
     'deploy_surface_unproven',
     'exact_contract_assertion_missing',
@@ -2342,6 +2378,9 @@ if ($proofTypeMismatchFamilies.Count -gt 0) { $nonAuthorizingReasons.Add('proof_
 foreach ($flag in @('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
+foreach ($flag in @('carrier_lock_missing', 'carrier_lock_mismatch')) {
+    if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
+}
 if ($gapFlags -contains 'behavior_test_charter_gap') { $nonAuthorizingReasons.Add('behavior_test_charter_gap') | Out-Null }
 foreach ($flag in @('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
@@ -2366,6 +2405,8 @@ $hardAuthorizationGapFlags = @(
     'feedback_loop_blocker',
     'carrier_authorization_missing',
     'carrier_authorization_stop',
+    'carrier_lock_missing',
+    'carrier_lock_mismatch',
     'exact_contract_assertion_missing',
     'exact_contract_boundary_proof_stop',
     'side_effect_evidence_missing',
@@ -2451,6 +2492,9 @@ $verify = [ordered]@{
     closed_requirement_families = @($verifiedClosedFamilies)
     carrier_family_match = $carrierFamilyMatch
     expected_carrier_source = $expectedCarrierSource
+    carrier_lock_path = $carrierLockPath
+    carrier_lock_status = $carrierLockStatus
+    carrier_lock_qualified_entry = $carrierLockQualifiedEntry
     planned_first_red_test = $plannedFirstRedTest
     planned_selected_carrier = $plannedSelectedCarrier
     planned_selected_entry = $plannedSelectedEntry

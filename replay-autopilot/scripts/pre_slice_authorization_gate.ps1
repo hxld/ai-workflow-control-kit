@@ -74,10 +74,9 @@ function Test-ForbiddenMavenGoal {
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 if ([string]::IsNullOrWhiteSpace($Contract)) {
-    $Contract = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTION_CONTRACT.json'
-    if (-not (Test-Path -LiteralPath $Contract -PathType Leaf)) {
-        $Contract = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json'
-    }
+    $Contract = Join-Path $replayRootFull 'FIRST_SLICE_RUN_CARD.json'
+    if (-not (Test-Path -LiteralPath $Contract -PathType Leaf)) { $Contract = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTION_CONTRACT.json' }
+    if (-not (Test-Path -LiteralPath $Contract -PathType Leaf)) { $Contract = Join-Path $replayRootFull 'FIRST_SLICE_EXECUTABLE_CONTRACT.json' }
 }
 if ([string]::IsNullOrWhiteSpace($FamilyLedger)) {
     $FamilyLedger = Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json'
@@ -114,12 +113,21 @@ if (-not (Test-Path -LiteralPath $ledgerPath -PathType Leaf)) {
 }
 
 $realEntry = [string](Get-PropertyValue -Object $contractObject -Names @('real_entry_signature', 'real_entry_fqn', 'production_entry_qn', 'existing_entry_qn'))
+$lockedCarrier = [string](Get-PropertyValue -Object $contractObject -Names @('locked_carrier'))
+if (-not [string]::IsNullOrWhiteSpace($lockedCarrier)) { $realEntry = $lockedCarrier }
 $harnessModule = [string](Get-PropertyValue -Object $contractObject -Names @('test_harness_module', 'harness_module'))
+if ([string]::IsNullOrWhiteSpace($harnessModule)) {
+    $harnessModule = [string](Get-PropertyValue -Object $contractObject -Names @('existing_test_harness_module'))
+}
 $redCommand = [string](Get-PropertyValue -Object $contractObject -Names @('red_command'))
 $greenCommand = [string](Get-PropertyValue -Object $contractObject -Names @('green_command', 'maven_test_command_template'))
-$sideEffectProbe = Get-PropertyValue -Object $contractObject -Names @('side_effect_probe', 'side_effect_or_output_probe', 'side_effect_or_output', 'required_side_effects')
+$sideEffectProbe = Get-PropertyValue -Object $contractObject -Names @('side_effect_probe', 'side_effect_assertion', 'side_effect_or_output_probe', 'side_effect_or_output', 'required_side_effects')
+$runCardStatus = [string](Get-PropertyValue -Object $contractObject -Names @('status'))
 $proofType = [string](Get-PropertyValue -Object $contractObject -Names @('required_proof_type', 'proof_type', 'family_id'))
 
+if (-not [string]::IsNullOrWhiteSpace($runCardStatus) -and @('ALLOW', 'AUTHORIZED', 'PASS') -notcontains $runCardStatus) {
+    $issues.Add("first_slice_run_card_status_$runCardStatus") | Out-Null
+}
 if (Test-ForbiddenText $realEntry) { $issues.Add('real_entry_signature_missing_or_forbidden') | Out-Null }
 if (Test-ForbiddenText $harnessModule) { $issues.Add('test_harness_module_missing_or_forbidden') | Out-Null }
 if (Test-ForbiddenText $redCommand) { $issues.Add('red_command_missing_or_forbidden') | Out-Null }

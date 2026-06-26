@@ -6158,6 +6158,17 @@ Do not create new production files, test files, or worktree changes.
                 -SliceType 'phase1' | Out-Null
 
             if (@(86, 87) -notcontains $phase1ExitCode) {
+                if ((Test-Path -LiteralPath $roundResultPath) -eq $false) {
+                    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Write-RoundResultFallback.ps1') `
+                        -ReplayRoot $replayRoot `
+                        -Worktree $worktree `
+                        -BaseCommit (Require-Key $config 'base_commit') `
+                        -FeatureName $featureName `
+                        -RequirementSource $requirementSource | Out-Null
+                    if (Test-Path -LiteralPath $roundResultPath) {
+                        Add-Content -LiteralPath $blocker -Encoding UTF8 -Value "`n- deterministic_round_result: $roundResultPath"
+                    }
+                }
                 Write-PlanEarlyStopEvolutionArtifacts `
                     -ReplayRoot $replayRoot `
                     -ScriptRoot $scriptRoot `
@@ -6168,8 +6179,8 @@ Do not create new production files, test files, or worktree changes.
                     -TargetCoverage $targetCoverage `
                     -Phase0Status $phase0Status `
                     -PlanStatus 'BLOCKED' `
-                    -PlanText $phase1BlockerText `
-                    -Reason "Phase 1 stopped before producing a complete ROUND_RESULT.md. reason=$blockerReason; exit_code=$phase1ExitCode; inspect $($phase1GateEvidence.EvidencePath) and logs under $phase1WrapperLogDir." `
+                    -PlanText (Read-TextIfExists $blocker) `
+                    -Reason "Phase 1 stopped before producing executor-authored ROUND_RESULT.md. reason=$blockerReason; exit_code=$phase1ExitCode; inspect $roundResultPath, $($phase1GateEvidence.EvidencePath), and logs under $phase1WrapperLogDir." `
                     -BestOracleCoverage $bestOracleCoverage `
                     -NoImprovementCount $noImprovementCount `
                     -RunEvolutionActual $runEvolutionActual `

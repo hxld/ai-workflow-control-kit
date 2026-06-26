@@ -26,6 +26,9 @@ Assert-True ($replayText.Contains('failure_category = if ($phase1ExitCode -eq 95
 Assert-True ($replayText.Contains('elseif ($phase1ExitCode -eq 95) { "phase1_init_failure" }')) 'Run-ReplayLoop must classify exit 95 as phase1_init_failure.'
 Assert-True ($replayText -match 'PHASE1_INIT_FAILURE\.json') 'Run-ReplayLoop must read PHASE1_INIT_FAILURE evidence.'
 Assert-True ($replayText -match 'Phase1 Init Blocker') 'Run-ReplayLoop must expose a specific Phase1 init blocker.'
+Assert-True ($replayText.Contains("Write-RoundResultFallback.ps1')")) 'Run-ReplayLoop must generate deterministic ROUND_RESULT fallback before Phase1 early-stop evolution.'
+Assert-True ($replayText.Contains('- deterministic_round_result: $roundResultPath')) 'Run-ReplayLoop must record fallback ROUND_RESULT evidence in the Phase1 blocker.'
+Assert-True ($replayText.Contains('inspect $roundResultPath')) 'Run-ReplayLoop Phase1 evolution reason must point to concrete ROUND_RESULT evidence.'
 
 Assert-True ($sliceText -match 'function Write-Phase1InitFailure') 'Run-SliceLoop must define init failure writer.'
 Assert-True ($sliceText -match 'phase1_init_failure\.v1') 'Run-SliceLoop must persist structured init failure JSON.'

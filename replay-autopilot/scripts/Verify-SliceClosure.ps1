@@ -1254,8 +1254,15 @@ if ($behaviorCharterRequired) {
             }
         }
         $behaviorCharterEvidenceResolvedPath = ($behaviorCharterEvidenceResolvedPaths -join ', ')
-        $charterText = ($behaviorCharter | ConvertTo-Json -Depth 8)
-        if ($charterText -match '(?i)\b(mock-only|helper-only|static-only|file_presence_only|mapper-presence-only|Noop|Stub|Fake|Dummy|Placeholder|InMemory|TestOnly|Scaffold)\b') {
+        # `must_not` often names disallowed proof styles; only scan the authorizing proof fields.
+        $behaviorCharterAuthorizingText = @(
+            (Get-ObjectStringValue $behaviorCharter 'proof_kind'),
+            (Get-ObjectStringValue $behaviorCharter 'production_entry'),
+            (Get-ObjectStringValue $behaviorCharter 'state_or_output'),
+            (Get-ObjectStringValue $behaviorCharter 'evidence_file'),
+            ((Get-StringArray (Get-ObjectPropertyValue -Object $behaviorCharter -Name 'evidence_files')) -join ' ')
+        ) -join "`n"
+        if ($behaviorCharterAuthorizingText -match '(?i)\b(mock-only|helper-only|static-only|file_presence_only|mapper-presence-only|Noop|Stub|Fake|Dummy|Placeholder|InMemory|TestOnly|Scaffold)\b') {
             $warnings.Add('behavior_test_charter_non_authorizing') | Out-Null
             $missingCharterFields.Add('authorizing_behavior_boundary') | Out-Null
         }

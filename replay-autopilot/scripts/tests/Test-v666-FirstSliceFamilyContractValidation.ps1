@@ -26,7 +26,7 @@ try {
     New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'sample-harness') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
 
     @{
@@ -52,11 +52,11 @@ try {
                 weight = 95
                 recommended_slice_type = 'stateful_success_slice'
                 touched_count = 0
-                first_executable_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                first_executable_carrier = 'com.example.workflow.TaskProcessor.handleTaskResponse'
                 proof_required = @('processor_entry_invocation', 'persisted_compensation_or_status_effect')
                 forbidden_proof = @('helper_only', 'static_only', 'mock_only')
                 coverage_cap_if_open = 40
-                open_sibling_surfaces = @('com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse')
+                open_sibling_surfaces = @('com.example.workflow.TaskProcessor.handleTaskResponse')
                 open_sibling_count = 1
             }
         )
@@ -64,10 +64,10 @@ try {
 
     @{
         plan_status = 'PROCEED'
-        expected_test_class = 'AiApplyClaimApiTaskProcessorTest'
-        expected_test_method = 'handleTaskResponsePersistsBusinessRowsAndAiLog'
+        expected_test_class = 'TaskProcessorStatefulProofTest'
+        expected_test_method = 'handleTaskResponsePersistsBusinessRowsAndAuditLog'
         test_infrastructure_check = @{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'sample-harness'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
@@ -75,8 +75,8 @@ try {
             blocker_reason = 'none'
         }
         expected_side_effects = @(
-            'insert_or_update t_ai_claim_review_material',
-            'insert case_examine_log with AI_ACCEPT_LOG_TAG'
+            'persist workflow_result rows',
+            'append audit_log entry'
         )
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_RESULT.json') -Encoding UTF8
 
@@ -86,10 +86,10 @@ try {
         forced_requirement_family = 'stateful_side_effect'
         forced_slice_type = 'stateful_success_slice'
         authorization = 'ALLOW'
-        real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        production_boundary = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        downstream_side_effect_or_output = 'real processor invocation stores AI business result tables and writes AI processing log'
+        real_entry = 'com.example.workflow.TaskProcessor.handleTaskResponse'
+        selected_carrier = 'com.example.workflow.TaskProcessor.handleTaskResponse'
+        production_boundary = 'com.example.workflow.TaskProcessor.handleTaskResponse'
+        downstream_side_effect_or_output = 'real processor invocation stores workflow result rows and writes an audit log'
         red_expectation = 'business assertion fails before handleTaskResponse reaches all required persistence/log boundaries'
         issues = @()
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $replayRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
@@ -99,13 +99,13 @@ try {
         slice_index = 1
         authorization = 'ALLOW'
         can_proceed = $true
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        selected_real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+        selected_carrier = 'com.example.workflow.TaskProcessor.handleTaskResponse'
+        selected_real_entry = 'com.example.workflow.TaskProcessor.handleTaskResponse'
         resolved_signature = @{
             selected_carrier = @{
-                class_name = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor'
+                class_name = 'com.example.workflow.TaskProcessor'
                 visibility = 'public'
-                formatted = 'void com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)'
+                formatted = 'void com.example.workflow.TaskProcessor.handleTaskResponse(WorkflowTask, WorkflowResponse)'
             }
         }
         blockers = @()
@@ -115,13 +115,13 @@ try {
 first_slice: S1-core-stateful-ai-apply-response
 highest_weight_open_gate: stateful_side_effect
 first_slice_family: stateful_side_effect
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java#handleTaskResponsePersistsBusinessRowsAndAiLog
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-minimum_side_effect_or_blocker: real processor invocation stores AI business result tables through persistence boundaries and writes AI processing log
-production_boundary: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java:handleTaskResponse, saveOrUpdateReviewMaterial, CaseExamineLogService.saveExamineLog
-red_expectation: RED fails before implementation if handleTaskResponse does not reach all required AI business persistence boundaries and AI log side effect
-expected_green_assertion: real processor invocation stores AI business result tables and writes AI processing log
+first_red_test: sample-harness/src/test/java/com/example/workflow/TaskProcessorStatefulProofTest.java#handleTaskResponsePersistsBusinessRowsAndAuditLog
+selected_real_entry: com.example.workflow.TaskProcessor.handleTaskResponse
+selected_carrier: com.example.workflow.TaskProcessor.handleTaskResponse
+minimum_side_effect_or_blocker: real processor invocation stores workflow result rows through persistence boundaries and writes an audit log
+production_boundary: workflow-core/src/main/java/com/example/workflow/TaskProcessor.java:handleTaskResponse, saveOrUpdateWorkflowResult, AuditLogService.append
+red_expectation: RED fails before implementation if handleTaskResponse does not reach all required workflow persistence boundaries and audit-log side effect
+expected_green_assertion: real processor invocation stores workflow result rows and writes an audit log
 proof_kind: stateful_side_effect
 must_not_behavior: do not use helper/static/mock/dto-only proof as closure
 '@
@@ -168,8 +168,8 @@ function Get-StringArray {
     Assert-True ([string]$proofGate.status -eq 'PASS') 'proof-type gate must use contract fallback when ledger lacks required_proof_type'
     Assert-True ([string]$proofGate.required_proof_type -eq 'stateful_side_effect') 'proof-type gate must expose fallback required proof type'
     Assert-True ([string]$firstContract.red_command -match '(?i)^mvn\s+--%') 'generated RED command must include PowerShell stop-parsing marker'
-    Assert-True ([string]$firstContract.red_command -match '-pl claim-server -am') 'generated RED command must include reactor -am with module'
-    Assert-True ([string]$firstContract.red_command -match '-Dtest=AiApplyClaimApiTaskProcessorTest#handleTaskResponsePersistsBusinessRowsAndAiLog') 'generated RED command must target inferred test selector'
+    Assert-True ([string]$firstContract.red_command -match '-pl sample-harness -am') 'generated RED command must include reactor -am with module'
+    Assert-True ([string]$firstContract.red_command -match '-Dtest=TaskProcessorStatefulProofTest#handleTaskResponsePersistsBusinessRowsAndAuditLog') 'generated RED command must target inferred test selector'
 
     $contractBefore = Get-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_EXECUTABLE_CONTRACT.json') -Raw -Encoding UTF8
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'validate-first-slice-contract.ps1') `

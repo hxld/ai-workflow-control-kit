@@ -49,6 +49,16 @@ function Get-BoolValue {
     return $false
 }
 
+function Get-FamilyCarrierFromRank {
+    param($CarrierRank, [string]$FamilyId)
+    if ($null -eq $CarrierRank -or [string]::IsNullOrWhiteSpace($FamilyId) -or $null -eq $CarrierRank.families) {
+        return ''
+    }
+    $row = @($CarrierRank.families | Where-Object { [string]$_.family -eq $FamilyId } | Select-Object -First 1)
+    if ($row.Count -eq 0) { return '' }
+    return [string]$row[0].production_carrier
+}
+
 function Test-SourceChainAppliesForSlice {
     param(
         $SourceChain,
@@ -606,7 +616,13 @@ if ($null -ne $carrierRank) {
         $missingRankCarriers = $filteredByWhitelist
     }
     if ($missingRankCarriers.Count -gt 0) {
-        $issues.Add("carrier_rank_missing:$($missingRankCarriers -join ',')") | Out-Null
+        $forcedFamilyCarrier = Get-FamilyCarrierFromRank -CarrierRank $carrierRank -FamilyId $ForcedRequirementFamily
+        $currentSliceMissing = @($missingRankCarriers | Where-Object { [string]$_ -eq $ForcedRequirementFamily })
+        if ($currentSliceMissing.Count -gt 0 -or [string]::IsNullOrWhiteSpace($forcedFamilyCarrier)) {
+            $issues.Add("carrier_rank_missing:$($missingRankCarriers -join ',')") | Out-Null
+        } else {
+            $warnings.Add("carrier_rank_missing_deferred:$($missingRankCarriers -join ',')") | Out-Null
+        }
     }
     $rankRows = @()
     if ($null -ne $carrierRank.families) {

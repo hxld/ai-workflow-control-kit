@@ -113,7 +113,9 @@ Do not re-summarize the whole feature family after Phase 0. If a runnable contra
 ## Validation Steps
 
 1. **Verify Carrier Exists in Baseline**
-   - Run: `python scripts/verify_carrier_signature.py --input '{"plan_carrier": "YourCarrier.method", "worktree_path": "{{WORKTREE}}"}'`
+   - Preferred evidence: read `{{REPLAY_ROOT}}\PRE_S1_CARRIER_SIGNATURE_AUTHORIZATION.json`, `{{REPLAY_ROOT}}\CARRIER_INVOCATION_CONTRACT_01.json`, `{{REPLAY_ROOT}}\CALLABLE_CARRIER_AUTHORIZATION_01.json`, and `{{REPLAY_ROOT}}\CARRIER_LOCK.json`. If these runner-owned artifacts authorize the selected real entry/carrier and the locked carrier matches the planned entry, do not rerun a worktree-relative tooling command.
+   - If you must rerun the signature verifier manually, run it from the replay-autopilot tool root, not from the isolated worktree:
+     `python "{{REPLAY_AUTOPILOT_SCRIPTS}}\verify_carrier_signature.py" --input '{"plan_carrier": "YourCarrier.method", "worktree_path": "{{WORKTREE}}"}'`
    - Exit code 0 = PASS, Exit code 1 = FAIL
    - If FAIL: DO NOT proceed with implementation. Write BLOCKED JSON.
 
@@ -130,7 +132,9 @@ Do not re-summarize the whole feature family after Phase 0. If a runnable contra
    - What are the preconditions? (Case exists, user authenticated, etc.)
 
 4. **Run Quality Gate**
-   - Run: `.\scripts\v348_slice_quality_gate.ps1 -SliceDir {{REPLAY_ROOT}} -Worktree {{WORKTREE}} -WarnOnly`
+   - Preferred evidence: the runner will execute `{{REPLAY_AUTOPILOT_SCRIPTS}}\v348_slice_quality_gate.ps1` after you write `{{SLICE_RESULT}}`. Do not block before RED/GREEN merely because `.\scripts\v348_slice_quality_gate.ps1` is absent from the isolated worktree.
+   - If you must run it manually, use the absolute tool path:
+     `powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\v348_slice_quality_gate.ps1" -SliceDir {{REPLAY_ROOT}} -Worktree {{WORKTREE}} -WarnOnly`
    - Check for blocking issues before proceeding
 
 ## P0 Violation Consequences
@@ -145,7 +149,7 @@ If you proceed WITHOUT carrier validation:
 
 1. Extract exact carrier signature → 2. Write RED test with that signature → 3. Run Maven test → 4. Implement GREEN → 5. Run quality gate → 6. Verify side effects
 
-**DO NOT invent signatures. DO NOT proceed without validation.**
+**DO NOT invent signatures. DO NOT proceed without validation. Do not treat missing `scripts\...` paths inside `{{WORKTREE}}` as a blocker; replay tooling lives under `{{REPLAY_AUTOPILOT_SCRIPTS}}`, and runner-owned gate artifacts in `{{REPLAY_ROOT}}` are authoritative validation evidence.**
 
 ---
 
@@ -630,7 +634,7 @@ Your TEST_CHARTER.md must contain ALL of the following sections:
 Before starting RED phase, the runner wrapper will validate your TEST_CHARTER.md:
 
 ```powershell
-scripts\Invoke-TestCharterPrevalidator.ps1 -WorkDir {{REPLAY_ROOT}} -PassThru
+powershell -NoProfile -ExecutionPolicy Bypass -File "{{REPLAY_AUTOPILOT_SCRIPTS}}\Invoke-TestCharterPrevalidator.ps1" -WorkDir "{{REPLAY_ROOT}}" -PassThru
 ```
 
 If validation FAILS, you MUST:

@@ -35,9 +35,10 @@ try {
         $runSliceLoopText.Contains('-Worktree $Worktree')
     )
     Assert-True 'phase1_prompt_uses_generic_cross_module_rule' (
-        $promptText.Contains('默认把测试放在生产文件同一 Maven 模块') -and
+        $promptText.Contains('artifactId') -and
+        $promptText.Contains('pom.xml') -and
         $promptText.Contains('cross_module_test_harness_depends_on_production_module') -and
-        $promptText.Contains('scripts\Invoke-TestCharterPrevalidator.ps1')
+        $promptText.Contains('{{REPLAY_AUTOPILOT_SCRIPTS}}\Invoke-TestCharterPrevalidator.ps1')
     )
     Assert-True 'requirement_wrapper_handles_non_json_plan' (
         $wrapperText.Contains('PLAN_RESULT_NOT_JSON') -and

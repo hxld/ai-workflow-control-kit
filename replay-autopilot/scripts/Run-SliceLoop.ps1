@@ -4951,6 +4951,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         ORACLE_COMMIT = $OracleCommit
         BASE_COMMIT = $BaseCommit
         REPLAY_ROOT = $replayRootFull
+        REPLAY_AUTOPILOT_SCRIPTS = $PSScriptRoot
         WORKTREE = $worktreeFull
         BASELINE_INDEX = $baselineIndexFull
         CONTEXT_MANIFEST = $contextManifestFull

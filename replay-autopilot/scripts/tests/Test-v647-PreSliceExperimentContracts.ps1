@@ -48,7 +48,8 @@ public class RealEntry {
         authorization = 'ALLOW'
         real_entry = 'demo.RealEntry.handle(String): String'
         selected_carrier = 'demo.RealEntry.handle(String): String'
-        production_boundary = 'demo.RealEntry.handle(String): String'
+        entry_file = 'src/main/java/demo/RealEntry.java'
+        production_boundary = 'src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String'
         downstream_side_effect_or_output = 'returned payload value'
         red_expectation = 'RealEntryContractTest should fail before the return mapping is fixed'
         issues = @()
@@ -60,6 +61,7 @@ public class RealEntry {
         can_proceed = $true
         selected_carrier = 'demo.RealEntry.handle(String): String'
         selected_real_entry = 'demo.RealEntry.handle(String): String'
+        file_path = 'src/main/java/demo/RealEntry.java'
         resolved_signature = @{
             selected_carrier = @{
                 class_name = 'demo.RealEntry'
@@ -110,7 +112,8 @@ public class RealEntry {
 - expected_green_assertion: assertEquals("mapped", result) passes through RealEntry
 - red_assertion: assertEquals("mapped", result)
 - downstream_output_or_side_effect: returned payload value
-- production_boundary: demo.RealEntry.handle(String): String
+- entry_file: src/main/java/demo/RealEntry.java
+- production_boundary: src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String
 - must_not_behavior: must not use helper-only or mock-only closure
 - green_change_boundary: RealEntry.handle return mapping
 - validation_command: mvn --% -f WORKTREE\pom.xml -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test
@@ -130,6 +133,7 @@ public class RealEntry {
     $runnable = Get-Content -LiteralPath (Join-Path $passRoot 'RUNNABLE_SLICE_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $callable = Get-Content -LiteralPath (Join-Path $passRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $charter = Get-Content -LiteralPath (Join-Path $passRoot 'TEST_CHARTER_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $carrierLock = Get-Content -LiteralPath (Join-Path $passRoot 'CARRIER_LOCK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([bool]$dryRun.pre_authorized) 'dry-run must expose pre_authorized=true'
     Assert-True ([string]$plan.authorization -eq 'ALLOW') 'slice plan contract must authorize valid proof plan'
     Assert-True ([string]$firstExecutable.authorization -eq 'ALLOW') 'first slice executable contract must authorize valid proof plan'
@@ -141,6 +145,7 @@ public class RealEntry {
     Assert-True ([bool]$firstExecutable.uses_isolated_replay_pom) 'first slice executable contract must prove isolated replay POM use'
     Assert-True ([string]$firstExecutable.green_business_assertion -match 'assertEquals') 'first slice executable contract must expose green business assertion'
     Assert-True ([string]$firstExecutable.existing_entry_qn -match 'demo\.RealEntry') 'first slice executable contract must bind an existing entry qn'
+    Assert-True (@($carrierLock.expected_production_files) -contains 'src/main/java/demo/RealEntry.java') 'carrier lock must expose expected production file'
     Assert-True ([string]$runnable.status -eq 'AUTHORIZED') 'runnable slice authorization must authorize copy-ready commands'
     Assert-True ([string]$runnable.real_entry_fqn -match 'demo\.RealEntry') 'runnable authorization must expose real_entry_fqn'
     Assert-True ([string]$runnable.test_harness_module -eq 'demo-harness') 'runnable authorization must expose test_harness_module'

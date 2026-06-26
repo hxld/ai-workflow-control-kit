@@ -76,6 +76,78 @@ function Get-ObjectString {
     return ''
 }
 
+function Normalize-RepoPathText {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $text = ([string]$Path).Trim().Trim('"').Trim("'") -replace '\\', '/'
+    $text = $text -replace '^[A-Z]:/', ''
+    $srcIndex = $text.IndexOf('/src/', [System.StringComparison]::OrdinalIgnoreCase)
+    if ($srcIndex -gt 0) {
+        $moduleStart = $text.LastIndexOf('/', $srcIndex - 1)
+        if ($moduleStart -ge 0 -and $moduleStart -lt $text.Length - 1) {
+            $text = $text.Substring($moduleStart + 1)
+        }
+    }
+    return $text.TrimStart('/')
+}
+
+function Get-JavaFilePathsFromText {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches($Text, '(?i)(?:[A-Za-z]:)?[A-Za-z0-9_.\-/\\]+src[\\/]+main[\\/]+java[\\/]+[A-Za-z0-9_.\-/\\]+\.java')) {
+        $path = Normalize-RepoPathText -Path $match.Value
+        if (-not [string]::IsNullOrWhiteSpace($path) -and -not $paths.Contains($path)) {
+            $paths.Add($path) | Out-Null
+        }
+    }
+    return @($paths)
+}
+
+function Get-JavaLeafFromCarrierText {
+    param([string[]]$Values)
+    foreach ($value in @($Values)) {
+        $text = [string]$value
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        foreach ($path in @(Get-JavaFilePathsFromText -Text $text)) {
+            $leaf = [System.IO.Path]::GetFileName($path)
+            if (-not [string]::IsNullOrWhiteSpace($leaf)) { return $leaf }
+        }
+        $head = @($text -split '\s*->\s*' | Select-Object -First 1)[0]
+        if ([string]$head -match '\b([A-Z][A-Za-z0-9_]*)[.#][A-Za-z_][A-Za-z0-9_]*\s*(?:\(|$)') {
+            return "$($matches[1]).java"
+        }
+        if ([string]$head -match '\b([A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Event|Mapper|Processor|Handler|Client|Provider|Task|Util|Helper|Repository|Dao|DAO))\b') {
+            return "$($matches[1]).java"
+        }
+    }
+    return ''
+}
+
+function Get-ExpectedProductionFiles {
+    param(
+        [string]$ProductionBoundary,
+        [string]$EntryFile,
+        [string]$SelectedCarrier,
+        [string]$SelectedEntry,
+        [string]$SelectedSignature
+    )
+
+    $files = New-Object System.Collections.Generic.List[string]
+    $entryPath = Normalize-RepoPathText -Path $EntryFile
+    if ($entryPath -match '(?i)(^|/)src/main/java/.+\.java$') {
+        $files.Add($entryPath) | Out-Null
+    }
+    $carrierLeaf = Get-JavaLeafFromCarrierText -Values @($SelectedEntry, $SelectedCarrier, $SelectedSignature)
+    foreach ($path in @(Get-JavaFilePathsFromText -Text $ProductionBoundary)) {
+        $leaf = [System.IO.Path]::GetFileName($path)
+        if ([string]::IsNullOrWhiteSpace($carrierLeaf) -or $leaf -ieq $carrierLeaf) {
+            if (-not $files.Contains($path)) { $files.Add($path) | Out-Null }
+        }
+    }
+    return @($files)
+}
+
 function Test-ForbiddenProofText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $true }
@@ -411,6 +483,13 @@ if ([string]::IsNullOrWhiteSpace($selectedEntry)) { $carrierBlockers.Add('select
 
 $preAuthorized = ($carrierBlockers.Count -eq 0)
 if ($SliceIndex -eq 1) {
+    $carrierSourceFile = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
+    $expectedProductionFiles = @(Get-ExpectedProductionFiles `
+        -ProductionBoundary $productionBoundary `
+        -EntryFile $carrierSourceFile `
+        -SelectedCarrier $selectedCarrier `
+        -SelectedEntry $selectedEntry `
+        -SelectedSignature $selectedSignature)
     $carrierLock = [ordered]@{
         schema = 'carrier_lock.v1'
         experiment = 'pre_budget_carrier_lock'
@@ -418,7 +497,9 @@ if ($SliceIndex -eq 1) {
         selected_family = $selectedFamilyForSlice
         selected_carrier_fqn = $selectedCarrier
         selected_entry_kind = 'production_existing'
-        existing_source_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }), $(if ($null -ne $callable) { [string]$callable.file_path } else { '' }))
+        existing_source_file = $carrierSourceFile
+        source_file = $carrierSourceFile
+        expected_production_files = @($expectedProductionFiles)
         method_signature_found = ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry))
         callable_from_test_harness = $preAuthorized
         authorization_status = if ($preAuthorized -and -not [string]::IsNullOrWhiteSpace($selectedEntry)) { 'PASS' } else { 'STOP' }

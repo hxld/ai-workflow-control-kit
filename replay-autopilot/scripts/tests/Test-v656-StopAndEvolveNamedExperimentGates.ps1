@@ -28,7 +28,9 @@ try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
     New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'demo-harness') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'demo-core\src\main\java\demo') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
+    Write-Utf8 (Join-Path $worktree 'demo-core\src\main\java\demo\RealEntry.java') 'package demo; public class RealEntry { public String handle(String value) { return value; } }'
 
     $command = "mvn --% -f $(Join-Path $worktree 'pom.xml') -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test"
     @{
@@ -48,7 +50,8 @@ try {
         authorization = 'ALLOW'
         real_entry = 'demo.RealEntry.handle(String): String'
         selected_carrier = 'demo.RealEntry.handle(String): String'
-        production_boundary = 'demo.RealEntry.handle(String): String'
+        entry_file = 'demo-core/src/main/java/demo/RealEntry.java'
+        production_boundary = 'demo-core/src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String'
         downstream_side_effect_or_output = 'returned payload value'
         red_expectation = 'assertEquals("mapped", result) fails before mapping is fixed'
         issues = @()
@@ -60,6 +63,7 @@ try {
         can_proceed = $true
         selected_carrier = 'demo.RealEntry.handle(String): String'
         selected_real_entry = 'demo.RealEntry.handle(String): String'
+        file_path = 'demo-core/src/main/java/demo/RealEntry.java'
         resolved_signature = @{ selected_carrier = @{ class_name = 'demo.RealEntry'; visibility = 'public'; formatted = 'String demo.RealEntry.handle(String)' } }
         blockers = @()
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
@@ -73,7 +77,8 @@ try {
 - expected_green_assertion: assertEquals("mapped", result) passes through the existing entry
 - red_assertion: assertEquals("mapped", result)
 - downstream_output_or_side_effect: returned payload value
-- production_boundary: demo.RealEntry.handle(String): String
+- entry_file: demo-core/src/main/java/demo/RealEntry.java
+- production_boundary: demo-core/src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String
 - must_not_behavior: must not use helper-only or mock-only closure
 - green_change_boundary: RealEntry.handle return mapping
 - validation_command: $command
@@ -99,6 +104,7 @@ try {
     $runCard = Get-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_RUN_CARD.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([string]$carrierLock.status -eq 'LOCKED') 'CARRIER_LOCK.json must lock the first real carrier'
     Assert-True ([string]$carrierLock.qualified_entry -eq 'demo.RealEntry.handle(String): String') 'carrier lock qualified_entry must match selected real entry'
+    Assert-True (@($carrierLock.expected_production_files) -contains 'demo-core/src/main/java/demo/RealEntry.java') 'carrier lock must name expected production carrier file'
     Assert-True ([string]$runCard.status -eq 'ALLOW') 'FIRST_SLICE_RUN_CARD.json must authorize complete first slice inputs'
     Assert-True ([string]$runCard.locked_carrier -eq [string]$carrierLock.qualified_entry) 'run card must consume CARRIER_LOCK qualified_entry'
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'pre_slice_authorization_gate.ps1') `

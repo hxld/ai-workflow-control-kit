@@ -57,6 +57,13 @@ if ($null -eq $carrierLock) {
                 $issues.Add("carrier_lock_pass_missing_$field") | Out-Null
             }
         }
+        $expectedProductionFiles = @()
+        if ($carrierLock.PSObject.Properties['expected_production_files']) {
+            $expectedProductionFiles = @($carrierLock.expected_production_files | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        }
+        if ($expectedProductionFiles.Count -eq 0) {
+            $issues.Add('carrier_lock_pass_missing_expected_production_files') | Out-Null
+        }
     }
 }
 

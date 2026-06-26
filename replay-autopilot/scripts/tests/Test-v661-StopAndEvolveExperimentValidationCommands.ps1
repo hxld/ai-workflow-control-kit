@@ -22,7 +22,9 @@ function New-ValidReplayFixture {
     param([string]$ReplayRoot, [string]$Worktree)
 
     New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'demo-harness') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'demo-core\src\main\java\demo') | Out-Null
     Write-Utf8 (Join-Path $Worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
+    Write-Utf8 (Join-Path $Worktree 'demo-core\src\main\java\demo\RealEntry.java') 'package demo; public class RealEntry { public String handle(String value) { return value; } }'
     $command = "mvn --% -f $(Join-Path $Worktree 'pom.xml') -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test"
 
     @{
@@ -38,7 +40,8 @@ function New-ValidReplayFixture {
         authorization = 'ALLOW'
         real_entry = 'demo.RealEntry.handle(String): String'
         selected_carrier = 'demo.RealEntry.handle(String): String'
-        production_boundary = 'demo.RealEntry.handle(String): String'
+        entry_file = 'demo-core/src/main/java/demo/RealEntry.java'
+        production_boundary = 'demo-core/src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String'
         downstream_side_effect_or_output = 'returned payload value and audit status write'
         red_expectation = 'assertEquals("mapped", result) fails before mapping is fixed'
         issues = @()
@@ -51,6 +54,7 @@ function New-ValidReplayFixture {
         can_proceed = $true
         selected_carrier = 'demo.RealEntry.handle(String): String'
         selected_real_entry = 'demo.RealEntry.handle(String): String'
+        file_path = 'demo-core/src/main/java/demo/RealEntry.java'
         resolved_signature = @{ selected_carrier = @{ class_name = 'demo.RealEntry'; visibility = 'public'; formatted = 'String demo.RealEntry.handle(String)' } }
         blockers = @()
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $ReplayRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
@@ -65,7 +69,8 @@ function New-ValidReplayFixture {
 - expected_green_assertion: assertEquals("mapped", result) passes through the existing entry
 - red_assertion: assertEquals("mapped", result)
 - downstream_output_or_side_effect: returned payload value and audit status write
-- production_boundary: demo.RealEntry.handle(String): String
+- entry_file: demo-core/src/main/java/demo/RealEntry.java
+- production_boundary: demo-core/src/main/java/demo/RealEntry.java -> demo.RealEntry.handle(String): String
 - must_not_behavior: must not use helper-only or mock-only closure
 - green_change_boundary: RealEntry.handle return mapping
 - validation_command: $command

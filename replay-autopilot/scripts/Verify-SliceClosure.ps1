@@ -111,6 +111,117 @@ function Add-UniqueString {
     }
 }
 
+function Normalize-RepoPathText {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $text = ([string]$Path).Trim().Trim('"').Trim("'") -replace '\\', '/'
+    $text = $text -replace '^[A-Z]:/', ''
+    $srcIndex = $text.IndexOf('/src/', [System.StringComparison]::OrdinalIgnoreCase)
+    if ($srcIndex -gt 0) {
+        $moduleStart = $text.LastIndexOf('/', $srcIndex - 1)
+        if ($moduleStart -ge 0 -and $moduleStart -lt $text.Length - 1) {
+            $text = $text.Substring($moduleStart + 1)
+        }
+    }
+    return $text.TrimStart('/')
+}
+
+function Get-JavaFilePathsFromText {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
+    $paths = New-Object System.Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches($Text, '(?i)(?:[A-Za-z]:)?[A-Za-z0-9_.\-/\\]+src[\\/]+main[\\/]+java[\\/]+[A-Za-z0-9_.\-/\\]+\.java')) {
+        $path = Normalize-RepoPathText -Path $match.Value
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            Add-UniqueString -List $paths -Value $path
+        }
+    }
+    return @($paths)
+}
+
+function Get-JavaLeafFromCarrierText {
+    param([string[]]$Values)
+    foreach ($value in @($Values)) {
+        $text = [string]$value
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        foreach ($path in @(Get-JavaFilePathsFromText -Text $text)) {
+            $leaf = [System.IO.Path]::GetFileName($path)
+            if (-not [string]::IsNullOrWhiteSpace($leaf)) { return $leaf }
+        }
+        $head = @($text -split '\s*->\s*' | Select-Object -First 1)[0]
+        if ([string]$head -match '\b([A-Z][A-Za-z0-9_]*)[.#][A-Za-z_][A-Za-z0-9_]*\s*(?:\(|$)') {
+            return "$($matches[1]).java"
+        }
+        if ([string]$head -match '\b([A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Event|Mapper|Processor|Handler|Client|Provider|Task|Util|Helper|Repository|Dao|DAO))\b') {
+            return "$($matches[1]).java"
+        }
+    }
+    return ''
+}
+
+function Get-CarrierLockExpectedProductionFiles {
+    param($CarrierLock)
+
+    $files = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $CarrierLock) { return @() }
+
+    foreach ($fieldName in @('source_file', 'existing_source_file', 'entry_file')) {
+        if ($CarrierLock.PSObject.Properties[$fieldName]) {
+            foreach ($value in @(Get-StringArray $CarrierLock.$fieldName)) {
+                $path = Normalize-RepoPathText -Path ([string]$value)
+                if ($path -match '(?i)(^|/)src/main/java/.+\.java$') {
+                    Add-UniqueString -List $files -Value $path
+                }
+            }
+        }
+    }
+    if ($CarrierLock.PSObject.Properties['expected_production_files']) {
+        foreach ($value in @(Get-StringArray $CarrierLock.expected_production_files)) {
+            $path = Normalize-RepoPathText -Path ([string]$value)
+            if ($path -match '(?i)(^|/)src/main/java/.+\.java$') {
+                Add-UniqueString -List $files -Value $path
+            }
+        }
+    }
+
+    $carrierLeaf = Get-JavaLeafFromCarrierText -Values @(
+        [string]$CarrierLock.qualified_entry,
+        [string]$CarrierLock.selected_carrier,
+        [string]$CarrierLock.selected_carrier_fqn,
+        [string]$CarrierLock.signature
+    )
+    foreach ($path in @(Get-JavaFilePathsFromText -Text ([string]$CarrierLock.production_boundary))) {
+        $leaf = [System.IO.Path]::GetFileName($path)
+        if ([string]::IsNullOrWhiteSpace($carrierLeaf) -or $leaf -ieq $carrierLeaf) {
+            Add-UniqueString -List $files -Value $path
+        }
+    }
+
+    return @($files)
+}
+
+function Test-MavenCommandIsCompileOnly {
+    param([string]$Command)
+    if ([string]::IsNullOrWhiteSpace($Command)) { return $false }
+    return $Command -match '(?i)(^|[\s"`''])test-compile($|[\s"`''])'
+}
+
+function Test-MavenCommandHasFocusedTestFilter {
+    param([string]$Command)
+    if ([string]::IsNullOrWhiteSpace($Command)) { return $false }
+    return $Command -match '(?i)(^|[\s"`''])-D(?:it\.)?test\s*='
+}
+
+function Test-MavenCommandRunsFocusedBehaviorTest {
+    param([string]$Command)
+    if ([string]::IsNullOrWhiteSpace($Command)) { return $false }
+    return (
+        $Command -match '(?i)\bmvn(?:\.cmd)?\b' -and
+        -not (Test-MavenCommandIsCompileOnly -Command $Command) -and
+        (Test-MavenCommandHasFocusedTestFilter -Command $Command)
+    )
+}
+
 function Remove-FeatureExemptedGapFlags {
     param(
         [string[]]$GapFlags,
@@ -528,20 +639,53 @@ function Test-ProofTypeMatch {
     return $false
 }
 
-function Test-PolicyRebuildRealBuilderProof {
+function Get-ContractStringArray {
+    param($Object, [string[]]$Names)
+    $values = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Object) { return @() }
+    foreach ($name in @($Names)) {
+        if ($Object.PSObject.Properties[$name]) {
+            foreach ($value in @(Get-StringArray $Object.$name)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+                    Add-UniqueString -List $values -Value ([string]$value)
+                }
+            }
+        }
+    }
+    return @($values)
+}
+
+function Test-TextContainsAllTokens {
+    param([string]$Text, [string[]]$Tokens)
+    foreach ($token in @($Tokens)) {
+        $tokenText = [string]$token
+        if ([string]::IsNullOrWhiteSpace($tokenText)) { continue }
+        if ($Text -notmatch [regex]::Escape($tokenText)) { return $false }
+    }
+    return $true
+}
+
+function Test-SourceChainRealBuilderProof {
     param(
         [string]$TestText,
         [string]$ResultText,
-        [int]$TouchedRequiredProductionCount
+        [int]$TouchedRequiredProductionCount,
+        $SourceChainContract
     )
 
     if ($TouchedRequiredProductionCount -le 0) { return $false }
     $proofText = @($TestText, $ResultText) -join "`n"
-    if ($proofText -notmatch '(?i)\bAiClaimDataAssemblyHelper\.RequestBuildFunction\b|\bRequestBuildFunction\b') { return $false }
+    $nextSlice = if ($null -ne $SourceChainContract) { $SourceChainContract.next_required_slice } else { $null }
+    $requiredTokens = @(
+        Get-ContractStringArray -Object $SourceChainContract -Names @('required_builder_tokens', 'required_source_tokens', 'source_chain_required_tokens')
+        Get-ContractStringArray -Object $nextSlice -Names @('required_builder_tokens', 'required_source_tokens', 'source_fields', 'target_fields')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+
+    if ($proofText -notmatch '(?i)\bRequestBuildFunction\b') { return $false }
     if ($proofText -notmatch '(?i)\bbuildRequestCommon\b') { return $false }
     if ($proofText -notmatch '(?i)\b(?:builder|RequestBuildFunction)\s*\.\s*apply\s*\(\s*buildContext\s*\)') { return $false }
     if ($proofText -notmatch '(?i)\brebuildTaskData\b') { return $false }
-    if ($proofText -notmatch '(?i)\bpolicyNum\b' -or $proofText -notmatch '(?i)\binsureNum\b') { return $false }
+    if ($requiredTokens.Count -gt 0 -and -not (Test-TextContainsAllTokens -Text $proofText -Tokens $requiredTokens)) { return $false }
     if ($proofText -notmatch '(?i)\bassert(?:Equals|That|True|NotNull)\b') { return $false }
     return $true
 }
@@ -820,7 +964,7 @@ foreach ($test in $tests) {
     $resultText = ([string](Get-ObjectPropertyValue -Object $test -Name 'result')).ToLowerInvariant()
     $evidenceText = [string](Get-ObjectPropertyValue -Object $test -Name 'evidence')
 
-    if ($phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
+    if ($phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass' -and -not (Test-MavenCommandIsCompileOnly -Command $commandText)) {
         if ([string]::IsNullOrWhiteSpace($commandText)) {
             Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing'
         } elseif ($commandText -notmatch '(?i)\bmvn(?:\.cmd)?\b') {
@@ -829,7 +973,7 @@ foreach ($test in $tests) {
             if ($commandText -notmatch '(?i)(?:^|\s)-f\s+\S*pom\.xml\b') {
                 Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_isolated_pom'
             }
-            if ($commandText -notmatch '(?i)(?:^|\s)-Dtest=') {
+            if (-not (Test-MavenCommandHasFocusedTestFilter -Command $commandText)) {
                 Add-UniqueString -List $behaviorCommandIssues -Value 'test_command_missing_test_filter'
             }
             if ($commandText -notmatch '(?i)(?:^|\s)-am(?:\s|$)') {
@@ -848,7 +992,7 @@ foreach ($test in $tests) {
         $testCompilationEvidence = $true
         if ([string]::IsNullOrWhiteSpace($testCompilationEvidenceSource)) { $testCompilationEvidenceSource = 'SLICE_RESULT.tests' }
     }
-    if ($commandText -match '(?i)\bmvn(?:\.cmd)?\b' -and $phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
+    if ((Test-MavenCommandRunsFocusedBehaviorTest -Command $commandText) -and $phaseText -in @('GREEN', 'VERIFY') -and $resultText -eq 'pass') {
         $testCompilationEvidence = $true
         $testExecutionEvidence = $true
         $independentBehaviorCommandCaptured = $true
@@ -921,6 +1065,8 @@ if ($forceCurrentSliceNoDiffStop) {
     if ($gapFlags -notcontains 'no_progress_slice') { $gapFlags += 'no_progress_slice' }
     $coverageDelta = 0
 }
+$expectedCarrierSource = 'none'
+$carrierFamilyMatch = $true
 $forbiddenDependencyDriftFiles = @($currentSliceChangedFiles | Where-Object {
     [string]$_ -match '(^|[\\/])pom\.xml$'
 })
@@ -1125,25 +1271,44 @@ if ($null -ne $sourceChainContract -and [bool]$sourceChainContract.required_sour
             -not [string]::IsNullOrWhiteSpace($leaf) -and $impl.IndexOf($leaf, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
         }).Count -gt 0
     })
-    $realBuilderSourceChainProof = Test-PolicyRebuildRealBuilderProof `
+    $realBuilderSourceChainProof = Test-SourceChainRealBuilderProof `
         -TestText $testImplementedText `
         -ResultText $resultEvidenceText `
-        -TouchedRequiredProductionCount $sourceChainTouched.Count
+        -TouchedRequiredProductionCount $sourceChainTouched.Count `
+        -SourceChainContract $sourceChainContract
     $fixedCaseIdFixtureSignal = (
         $testImplementedText -match '(?i)(fixed\s+(database\s+)?caseId|fixed\s+DB\s+caseId|12345L|67890L)'
     )
+    $contractForbiddenPatterns = @(
+        Get-ContractStringArray -Object $sourceChainContract -Names @('forbidden_synthetic_patterns', 'forbidden_source_chain_patterns')
+        Get-ContractStringArray -Object $nextRequiredSlice -Names @('forbidden_synthetic_patterns', 'forbidden_source_chain_patterns', 'forbidden_proof')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $contractTerminalCarriers = @(
+        Get-ContractStringArray -Object $sourceChainContract -Names @('terminal_only_carriers', 'terminal_supporting_files')
+        Get-ContractStringArray -Object $nextRequiredSlice -Names @('terminal_only_carriers', 'terminal_supporting_files')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $contractSyntheticPatternHit = @($contractForbiddenPatterns | Where-Object {
+        $patternText = [string]$_
+        -not [string]::IsNullOrWhiteSpace($patternText) -and
+        (@($testImplementedText, $resultEvidenceText) -join "`n") -match $patternText
+    }).Count -gt 0
     $hardSyntheticSourceCarrier = (
-        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|new\s+AiApplyClaimTaskData|new\s+AiCalculateLossTaskData|new\s+AiApplyClaimRequest|new\s+AiCalculateLossRequest|return\s+new\s+Ai(?:ApplyClaim|CalculateLoss)Request|createMockRequest|hand[- ]?built|manual(?:ly)?\s+injected' -or
-        $testImplementedText -match '(?i)(taskData\s*==\s*null|result\s*==\s*null|null\s+then\s+(pass|warn|print)|hasPolicyNumAndInsureNumFields|getter/setter|field\s+existence)' -or
-        $resultEvidenceText -match '(?i)hand[- ]?built task data|hand[- ]?built request|manually injected|when values already exist on task data|terminal payload|DTO getter|getter/setter|field existence|hasPolicyNumAndInsureNumFields'
+        $contractSyntheticPatternHit -or
+        $testImplementedText -match '(?i)setFieldIfPresent|setRequiredField|createMockRequest|hand[- ]?built|manual(?:ly)?\s+injected' -or
+        $testImplementedText -match '(?i)(taskData\s*==\s*null|result\s*==\s*null|null\s+then\s+(pass|warn|print)|getter/setter|field\s+existence)' -or
+        $resultEvidenceText -match '(?i)hand[- ]?built task data|hand[- ]?built request|manually injected|when values already exist on task data|terminal payload|DTO getter|getter/setter|field existence'
     )
     $syntheticSourceCarrier = $hardSyntheticSourceCarrier -or ($fixedCaseIdFixtureSignal -and -not $realBuilderSourceChainProof)
     if ($fixedCaseIdFixtureSignal -and $realBuilderSourceChainProof) {
         $warnings.Add('source_chain_fixed_caseid_fixture_warning') | Out-Null
     }
-    $terminalOnly = $sourceChainTouched.Count -eq 0 -and (
-        $implementedFiles -match 'AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor|AiClaimBaseTaskData|AIClaimConstant'
-    )
+    $terminalOnly = $sourceChainTouched.Count -eq 0 -and $contractTerminalCarriers.Count -gt 0 -and @($implementedFiles | Where-Object {
+        $impl = [string]$_
+        @($contractTerminalCarriers | Where-Object {
+            $carrier = [string]$_
+            -not [string]::IsNullOrWhiteSpace($carrier) -and $impl -match [regex]::Escape($carrier)
+        }).Count -gt 0
+    }).Count -gt 0
     if ($syntheticSourceCarrier -or $terminalOnly) {
         $carrierOrigin = 'synthetic_carrier'
         $carrierStart = 'downstream_terminal_payload_or_hand_built_task_data'
@@ -1180,6 +1345,15 @@ foreach ($file in $changedFiles) {
     }
 }
 
+$changedProductionFiles = New-Object System.Collections.Generic.List[string]
+foreach ($file in $changedFiles) {
+    $text = Normalize-RepoPathText -Path ([string]$file)
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    if ($text -match '(?i)(^|/)src/main/(java|kotlin|resources)/' -and $text -notmatch '(?i)(^|/)src/test/') {
+        Add-UniqueString -List $changedProductionFiles -Value $text
+    }
+}
+
 $statefulDomainCarrierText = @($productionImplementedText, $productionBoundary, $resultEvidenceText) -join "`n"
 $statefulNewCarrierLooksDomainReal = (
     ($closedFamilies -contains 'stateful_side_effect') -and
@@ -1201,6 +1375,43 @@ if ($sliceStatus -eq 'DONE' -and ($closedFamilies -contains 'stateful_side_effec
     if ($gapFlags -notcontains 'shallow_module') {
         $gapFlags += 'shallow_module'
     }
+}
+
+$carrierLockExpectedProductionFiles = @(Get-CarrierLockExpectedProductionFiles -CarrierLock $carrierLock)
+$carrierLockTouchedProductionFiles = New-Object System.Collections.Generic.List[string]
+foreach ($changedProductionFile in @($changedProductionFiles + $trackedChangedProductionFiles + $trackedProductionImplementedFiles | Select-Object -Unique)) {
+    $changedNormalized = Normalize-RepoPathText -Path ([string]$changedProductionFile)
+    foreach ($expectedFile in @($carrierLockExpectedProductionFiles)) {
+        $expectedNormalized = Normalize-RepoPathText -Path ([string]$expectedFile)
+        $expectedLeaf = [System.IO.Path]::GetFileName($expectedNormalized)
+        $changedLeaf = [System.IO.Path]::GetFileName($changedNormalized)
+        if ($changedNormalized -ieq $expectedNormalized -or (
+                -not [string]::IsNullOrWhiteSpace($expectedLeaf) -and
+                $changedLeaf -ieq $expectedLeaf
+            )) {
+            Add-UniqueString -List $carrierLockTouchedProductionFiles -Value $changedNormalized
+        }
+    }
+}
+$carrierLockImplementationRequired = (
+    $sliceStatus -eq 'DONE' -and
+    $carrierLockExpectedProductionFiles.Count -gt 0 -and
+    (
+        ($touchedFamilies -contains 'core_entry') -or
+        ($closedFamilies -contains 'core_entry') -or
+        ($touchedFamilies -contains 'stateful_side_effect') -or
+        ($closedFamilies -contains 'stateful_side_effect')
+    )
+)
+if ($carrierLockImplementationRequired -and $carrierLockTouchedProductionFiles.Count -eq 0) {
+    $carrierFamilyMatch = $false
+    $expectedCarrierSource = 'CARRIER_LOCK.expected_production_files'
+    $warnings.Add("carrier_lock_implementation_gap:$($carrierLockExpectedProductionFiles -join ';')") | Out-Null
+    foreach ($flag in @('carrier_lock_implementation_gap', 'wrong_test_surface', 'tooling_enforcement_stop')) {
+        if ($gapFlags -notcontains $flag) { $gapFlags += $flag }
+    }
+    $coverageDelta = 0
+    $hasBehaviorEvidence = $false
 }
 
 $syntheticCarrierRegex = '(?i)(^|[\\/])[^\\/]*(Noop|Stub|Fake|Dummy|Placeholder|Mock|InMemory|TestOnly|Scaffold)[^\\/]*\.(java|kt|cs|ts|js|py|go)$'
@@ -1923,8 +2134,6 @@ $hasShallowModuleGap = @('shallow_module') | Where-Object { $gapFlags -contains 
 $hasSyntheticCarrierGap = @('synthetic_carrier_gap') | Where-Object { $gapFlags -contains $_ }
 $hasDependencySpyGap = @('dependency_spy_output_gap') | Where-Object { $gapFlags -contains $_ }
 
-$expectedCarrierSource = 'none'
-$carrierFamilyMatch = $true
 $planMismatchedFamilies = New-Object System.Collections.Generic.List[string]
 $currentCarrierText = @(
     $targetSubsurface,
@@ -1964,9 +2173,29 @@ if (-not [string]::IsNullOrWhiteSpace($carrierLockQualifiedEntry)) {
     }
 }
 $sourceChainRequiredForPlanLock = $null -ne $sourceChainContract -and [bool]$sourceChainContract.required_source_chain
+$sourceChainMarkerTokens = @(
+    'DataAssembly',
+    'BuildContext',
+    'BaseRequest',
+    'BaseTaskData',
+    'InputData',
+    'RequestBuildFunction',
+    'RequestBuildContext',
+    'source_chain',
+    'source field',
+    'wire field',
+    'input_data'
+)
+if ($null -ne $sourceChainContract) {
+    $sourceChainMarkerTokens = @($sourceChainMarkerTokens + @(Get-ContractStringArray -Object $sourceChainContract -Names @('unrequired_source_chain_markers', 'source_chain_markers')) | Select-Object -Unique)
+}
+$unrequiredSourceChainMarkerHit = @($sourceChainMarkerTokens | Where-Object {
+    $marker = [string]$_
+    -not [string]::IsNullOrWhiteSpace($marker) -and $currentCarrierText -match [regex]::Escape($marker)
+}).Count -gt 0
 $unrequiredSourceChainCarrier = (
     -not $sourceChainRequiredForPlanLock -and
-    $currentCarrierText -match '(?i)\b(AiClaimDataAssemblyHelper|AiApplyClaimService|AiCalculateLossService|InputData|policy_num|insure_num|AiPolicyNumSourceChainTest)\b'
+    $unrequiredSourceChainMarkerHit
 )
 if ($unrequiredSourceChainCarrier) {
     $carrierFamilyMatch = $false
@@ -2019,6 +2248,14 @@ if ($touchedFamilies -contains 'core_entry') {
                 ($actualPlannedTestClasses.Count -gt 0 -and @($actualPlannedTestClasses | Where-Object { [string]$_ -eq $plannedClass }).Count -gt 0)
             )
         }
+        $equivalentReplacementMarkers = @()
+        if ($null -ne $sourceChainContract) {
+            $equivalentReplacementMarkers = @(Get-ContractStringArray -Object $sourceChainContract -Names @('equivalent_replacement_markers', 'replacement_test_markers'))
+        }
+        $hasEquivalentReplacementMarkers = $equivalentReplacementMarkers.Count -gt 0 -and @($equivalentReplacementMarkers | Where-Object {
+            $marker = [string]$_
+            -not [string]::IsNullOrWhiteSpace($marker) -and $currentCarrierText -match [regex]::Escape($marker)
+        }).Count -eq $equivalentReplacementMarkers.Count
         $behaviorallyEquivalentReplacementTest = (
             $narrowReadOnlyFeature -and
             $testExecutionEvidence -and
@@ -2026,10 +2263,7 @@ if ($touchedFamilies -contains 'core_entry') {
             $greenOrVerifyPassed -and
             $behaviorCharterReady -and
             $productionImplementedFiles.Count -gt 0 -and
-            $currentCarrierText -match '(?i)\bAiApplyClaimApiTaskProcessor\b' -and
-            $currentCarrierText -match '(?i)\bAiCalculateLossApiTaskProcessor\b' -and
-            $currentCarrierText -match '(?i)\bpolicyNum\b' -and
-            $currentCarrierText -match '(?i)\binsureNum\b'
+            $hasEquivalentReplacementMarkers
         )
         if (-not $plannedRedTestSatisfied) {
             if ($behaviorallyEquivalentReplacementTest) {
@@ -2197,6 +2431,7 @@ $nonAuthorizingEvidenceFlags = @(
     'carrier_authorization_stop',
     'carrier_lock_missing',
     'carrier_lock_mismatch',
+    'carrier_lock_implementation_gap',
     'public_response_contract_missing',
     'deploy_surface_unproven',
     'exact_contract_assertion_missing',
@@ -2267,6 +2502,7 @@ if ($hasWrongSurfaceGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 
 if ($hasShallowModuleGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 55) }
 if ($hasSyntheticCarrierGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 35) }
 if ($gapFlags -contains 'behavior_carrier_gap') { $coverageCap = [Math]::Min($coverageCap, 10) }
+if ($gapFlags -contains 'carrier_lock_implementation_gap') { $coverageCap = [Math]::Min($coverageCap, 0) }
 if ($gapFlags -contains 'facade_direction_gap') { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($hasDependencySpyGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 45) }
 if ($hasDeployCarrierGap.Count -gt 0) { $coverageCap = [Math]::Min($coverageCap, 65) }
@@ -2284,7 +2520,7 @@ if ($hasImplementationAfterBlockedRed) { $coverageCap = [Math]::Min($coverageCap
 if ($isCoreEntrySlice -and $hasTddRedNotReplayed) { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($isCoreEntrySlice -and $hasRedPhaseDidNotFail) { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($hasSubstituteProof) { $coverageCap = [Math]::Min($coverageCap, 10) }
-if (@('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion') | Where-Object { $gapFlags -contains $_ }) { $coverageCap = [Math]::Min($coverageCap, 10) }
+if (@('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap') | Where-Object { $gapFlags -contains $_ }) { $coverageCap = [Math]::Min($coverageCap, 10) }
 if ($hasNoProgressSignal) { $coverageCap = [Math]::Min($coverageCap, 40) }
 if ($warnings -contains 'target_subsurface_missing' -or
     $warnings -contains 'production_boundary_missing' -or
@@ -2314,10 +2550,13 @@ if ($coverageDelta -ne $null) {
     if ($hasSubstituteProof) {
         $adjustedCoverageDelta = 0
     }
-    if (@('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion') | Where-Object { $gapFlags -contains $_ }) {
+    if (@('carrier_authorization_missing', 'carrier_authorization_stop', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop', 'side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap') | Where-Object { $gapFlags -contains $_ }) {
         $adjustedCoverageDelta = 0
     }
     if ($gapFlags -contains 'behavior_carrier_gap' -or $gapFlags -contains 'facade_direction_gap') {
+        $adjustedCoverageDelta = 0
+    }
+    if ($gapFlags -contains 'carrier_lock_implementation_gap') {
         $adjustedCoverageDelta = 0
     }
     if ($gapFlags -contains 'behavior_test_charter_gap') {
@@ -2381,6 +2620,7 @@ foreach ($flag in @('carrier_authorization_missing', 'carrier_authorization_stop
 foreach ($flag in @('carrier_lock_missing', 'carrier_lock_mismatch')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
 }
+if ($gapFlags -contains 'carrier_lock_implementation_gap') { $nonAuthorizingReasons.Add('carrier_lock_implementation_gap') | Out-Null }
 if ($gapFlags -contains 'behavior_test_charter_gap') { $nonAuthorizingReasons.Add('behavior_test_charter_gap') | Out-Null }
 foreach ($flag in @('test_compilation_failed', 'test_compilation_evidence_missing', 'test_execution_failed', 'no_test_execution_evidence')) {
     if ($gapFlags -contains $flag) { $nonAuthorizingReasons.Add($flag) | Out-Null }
@@ -2407,6 +2647,7 @@ $hardAuthorizationGapFlags = @(
     'carrier_authorization_stop',
     'carrier_lock_missing',
     'carrier_lock_mismatch',
+    'carrier_lock_implementation_gap',
     'exact_contract_assertion_missing',
     'exact_contract_boundary_proof_stop',
     'side_effect_evidence_missing',
@@ -2495,6 +2736,8 @@ $verify = [ordered]@{
     carrier_lock_path = $carrierLockPath
     carrier_lock_status = $carrierLockStatus
     carrier_lock_qualified_entry = $carrierLockQualifiedEntry
+    carrier_lock_expected_production_files = @($carrierLockExpectedProductionFiles)
+    carrier_lock_touched_production_files = @($carrierLockTouchedProductionFiles)
     planned_first_red_test = $plannedFirstRedTest
     planned_selected_carrier = $plannedSelectedCarrier
     planned_selected_entry = $plannedSelectedEntry

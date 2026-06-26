@@ -66,6 +66,37 @@ public class ResponseDto {
 }
 '@
 
+    Write-Utf8 (Join-Path $sourceDir 'Task.java') @'
+package com.example;
+
+public class Task {
+}
+'@
+
+    Write-Utf8 (Join-Path $sourceDir 'TaskResponse.java') @'
+package com.example;
+
+public class TaskResponse {
+}
+'@
+
+    Write-Utf8 (Join-Path $sourceDir 'AbstractTaskProcessor.java') @'
+package com.example;
+
+public abstract class AbstractTaskProcessor {
+    public final TaskResponse executeQuery(Task task) {
+        return null;
+    }
+}
+'@
+
+    Write-Utf8 (Join-Path $sourceDir 'ApplyTaskProcessor.java') @'
+package com.example;
+
+public class ApplyTaskProcessor extends AbstractTaskProcessor {
+}
+'@
+
     Write-Host '[Scenario 1] Path-shaped Class.java#method authorizes as callable method reference...'
     $pathInput = @{
         worktree_path = $worktree
@@ -124,7 +155,41 @@ selected_carrier: com.example.ExampleFacadeImpl
     Assert-True ($classOnlyGateJson.authorization -eq 'ALLOW') "class-only callable gate should ALLOW, got $($classOnlyGateJson.authorization)"
     Assert-True ($classOnlyGateJson.resolved_signature.selected_carrier.method_name -eq 'batchQueryCaseDetail') 'class-only carrier should lock to the selected_real_entry method'
 
-    Write-Host '[Scenario 4] Explicit wrong params still fail strict signature comparison...'
+    Write-Host '[Scenario 4] Inherited real-entry methods authorize through the concrete production subclass...'
+    $inheritedInput = @{
+        worktree_path = $worktree
+        selected_real_entry = 'com.example.ApplyTaskProcessor.executeQuery'
+        selected_carrier = 'com.example.ApplyTaskProcessor'
+        test_invocation_path = 'invoke_concrete_processor_execute_query'
+        proof_observation_point = 'assert_stateful_side_effect_from_execute_query'
+    } | ConvertTo-Json -Compress
+    $inheritedOutput = $inheritedInput | python $signatureScript
+    Assert-True ($LASTEXITCODE -eq 0) "inherited real-entry carrier should pass, output=$inheritedOutput"
+    $inheritedJson = $inheritedOutput | ConvertFrom-Json
+    Assert-True ([bool]$inheritedJson.authorized) 'inherited real-entry carrier should expose authorized=true'
+    Assert-True ($inheritedJson.resolved_signature.selected_real_entry.method_name -eq 'executeQuery') 'inherited real-entry should resolve the parent method name'
+    Assert-True ($inheritedJson.resolved_signature.selected_real_entry.return_type -eq 'TaskResponse') 'inherited real-entry should resolve the parent return type'
+
+    Write-Host '[Scenario 5] Callable gate accepts inherited concrete subclass real entry...'
+    $inheritedReplayRoot = Join-Path $tempRoot 'inherited-replay'
+    New-Item -ItemType Directory -Force -Path $inheritedReplayRoot | Out-Null
+    Write-Utf8 (Join-Path $inheritedReplayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
+selected_real_entry: com.example.ApplyTaskProcessor.executeQuery
+selected_carrier: com.example.ApplyTaskProcessor
+'@
+    @{
+        real_entry = 'com.example.ApplyTaskProcessor.executeQuery'
+        selected_carrier = 'com.example.ApplyTaskProcessor'
+        downstream_side_effect_or_output = 'assert_stateful_side_effect_from_execute_query'
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $inheritedReplayRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $callableGateScript -ReplayRoot $inheritedReplayRoot -Worktree $worktree -SliceIndex 1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'callable carrier gate should pass inherited subclass selected_real_entry'
+    $inheritedGateJson = Get-Content -LiteralPath (Join-Path $inheritedReplayRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ($inheritedGateJson.authorization -eq 'ALLOW') "inherited callable gate should ALLOW, got $($inheritedGateJson.authorization)"
+    Assert-True ($inheritedGateJson.resolved_signature.selected_real_entry.method_name -eq 'executeQuery') 'inherited callable gate should expose resolved parent method'
+
+    Write-Host '[Scenario 6] Explicit wrong params still fail strict signature comparison...'
     $strictInput = @{
         plan_carrier = 'com.example.ExampleFacadeImpl.batchQueryCaseDetail(String): ResultModel'
         worktree_path = $worktree

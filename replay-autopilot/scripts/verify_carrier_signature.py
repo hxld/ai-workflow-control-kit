@@ -205,7 +205,7 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     # Pattern for method declaration
     # Matches: public/private/protected/package-private [static] [final] ReturnType methodName(params) [throws ...]
     pattern = re.compile(
-        r'^\s*(?:(public|private|protected)\s+)?(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
+        r'^\s*(?:(public|private|protected)\s+)?(?:(?:static|final|abstract|synchronized|native)\s+)*([^\s]+)\s+' +
         re.escape(method_name) +
         r'\s*\(([^)]*)\)\s*(?:throws\s+[^{]+)?',
         re.MULTILINE
@@ -225,6 +225,8 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
                 param_parts = [p.strip() for p in params_str.split(",")]
                 for param in param_parts:
                     if param:
+                        param = re.sub(r'@\w+(?:\([^)]*\))?\s*', '', param).strip()
+                        param = re.sub(r'\bfinal\s+', '', param).strip()
                         # Extract type from "Type name" or just "Type"
                         type_match = re.match(r'^([A-Za-z][A-Za-z0-9_<>, ?\[\]\.]*)', param)
                         if type_match:
@@ -238,16 +240,62 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     return None
 
 
-def search_method_in_worktree(worktree: str, class_name: str, method_name: str) -> Optional[Dict]:
-    """
-    Search for method implementation in worktree.
+def extract_package_name(source: str) -> str:
+    """Extract the Java package declaration from source text."""
+    match = re.search(r'^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;', source, re.MULTILINE)
+    return match.group(1) if match else ""
 
-    Returns dict with 'file_path' and 'source' if found.
-    """
-    # Search for the class file
+
+def extract_extends_name(source: str, class_name: str) -> str:
+    """Extract the direct superclass name for a Java class, if any."""
     search_class_name = simple_java_name(class_name)
-    search_cmd = ["rg", "--type", "java", "--files-with-matches", rf"\bclass\s+{re.escape(search_class_name)}\b"]
+    if not search_class_name:
+        return ""
+    match = re.search(
+        rf'\bclass\s+{re.escape(search_class_name)}\b(?P<header>[\s\S]*?)\{{',
+        source,
+        re.MULTILINE,
+    )
+    if not match:
+        return ""
+    extends_match = re.search(r'\bextends\s+([A-Za-z_$][A-Za-z0-9_.$]*)', match.group('header'))
+    return extends_match.group(1).replace('$', '.') if extends_match else ""
+
+
+def resolve_parent_class_name(parent_name: str, child_source: str) -> str:
+    """Resolve a direct superclass name against imports and package context."""
+    if not parent_name:
+        return ""
+    if "." in parent_name:
+        return parent_name
+
+    import_pattern = re.compile(
+        rf'^\s*import\s+([A-Za-z_][A-Za-z0-9_.]*\.{re.escape(parent_name)})\s*;',
+        re.MULTILINE,
+    )
+    import_match = import_pattern.search(child_source)
+    if import_match:
+        return import_match.group(1)
+
+    package_name = extract_package_name(child_source)
+    return f"{package_name}.{parent_name}" if package_name else parent_name
+
+
+def find_class_candidates(worktree: str, class_name: str) -> List[Path]:
+    """Find Java source files declaring the requested class name."""
+    search_class_name = simple_java_name(class_name)
+    if not search_class_name:
+        return []
+
+    search_cmd = [
+        "rg",
+        "--type",
+        "java",
+        "--files-with-matches",
+        rf"\bclass\s+{re.escape(search_class_name)}\b",
+    ]
     candidate_paths: List[Path] = []
+    seen = set()
 
     returncode, stdout, stderr = run_command(search_cmd, worktree, timeout=30)
     if returncode == 0 and stdout.strip():
@@ -255,10 +303,14 @@ def search_method_in_worktree(worktree: str, class_name: str, method_name: str) 
         # confused with rg's normal match separators.
         for line in stdout.strip().split("\n"):
             file_path_text = line.strip()
-            if file_path_text:
-                candidate_path = Path(file_path_text)
-                if not candidate_path.is_absolute():
-                    candidate_path = Path(worktree) / candidate_path
+            if not file_path_text:
+                continue
+            candidate_path = Path(file_path_text)
+            if not candidate_path.is_absolute():
+                candidate_path = Path(worktree) / candidate_path
+            key = str(candidate_path).lower()
+            if key not in seen:
+                seen.add(key)
                 candidate_paths.append(candidate_path)
 
     # rg can be missing from PATH or behave differently in nested executor
@@ -273,9 +325,41 @@ def search_method_in_worktree(worktree: str, class_name: str, method_name: str) 
             except OSError:
                 continue
             if class_pattern.search(source):
-                candidate_paths.append(java_path)
+                key = str(java_path).lower()
+                if key not in seen:
+                    seen.add(key)
+                    candidate_paths.append(java_path)
 
-    for candidate_path in candidate_paths[:20]:
+    return candidate_paths
+
+
+def search_method_in_worktree(worktree: str, class_name: str, method_name: str) -> Optional[Dict]:
+    """
+    Search for a method implementation in the requested class or inherited
+    from its direct superclass chain.
+
+    Returns dict with 'file_path' and 'source' if found.
+    """
+    return search_method_in_type_hierarchy(worktree, class_name, method_name, visited=set())
+
+
+def search_method_in_type_hierarchy(
+    worktree: str,
+    class_name: str,
+    method_name: str,
+    visited: set,
+) -> Optional[Dict]:
+    search_class_name = simple_java_name(class_name)
+    if not search_class_name:
+        return None
+    visited_key = search_class_name.lower()
+    if visited_key in visited:
+        return None
+    visited.add(visited_key)
+
+    expected_package = class_name.rsplit(".", 1)[0] if "." in class_name else ""
+    loaded_candidates = []
+    for candidate_path in find_class_candidates(worktree, class_name)[:50]:
         try:
             source = candidate_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -283,13 +367,40 @@ def search_method_in_worktree(worktree: str, class_name: str, method_name: str) 
         except OSError:
             continue
 
-        if method_name not in source:
-            continue
+        package_name = extract_package_name(source)
+        package_rank = 0 if expected_package and package_name == expected_package else 1
+        loaded_candidates.append((package_rank, str(candidate_path), candidate_path, source))
 
-        return {
-            "file_path": str(candidate_path),
-            "source": source
-        }
+    loaded_candidates.sort(key=lambda item: (item[0], item[1]))
+
+    for _, _, candidate_path, source in loaded_candidates:
+        impl_sig = extract_method_signature_from_source(source, class_name, method_name)
+        if impl_sig:
+            return {
+                "file_path": str(candidate_path),
+                "source": source,
+                "declaring_class": search_class_name,
+                "requested_class": class_name,
+                "inherited": False,
+            }
+
+    for _, _, candidate_path, source in loaded_candidates:
+        parent_name = extract_extends_name(source, search_class_name)
+        parent_lookup = resolve_parent_class_name(parent_name, source)
+        if not parent_lookup:
+            continue
+        inherited_match = search_method_in_type_hierarchy(
+            worktree,
+            parent_lookup,
+            method_name,
+            visited=visited,
+        )
+        if inherited_match:
+            inherited_match["requested_class"] = class_name
+            inherited_match["inherited"] = True
+            inherited_match["inherited_from_class"] = inherited_match.get("declaring_class") or simple_java_name(parent_lookup)
+            inherited_match["inherited_via_class"] = search_class_name
+            return inherited_match
 
     return None
 

@@ -500,6 +500,31 @@ if (Test-ForbiddenMavenGoal -Command $greenCommand) { $runnableIssues.Add('green
 if ([string]::IsNullOrWhiteSpace($expectedRedFailure) -or (Test-ForbiddenProofText $expectedRedFailure)) { $runnableIssues.Add('missing_expected_red_failure') | Out-Null }
 if ([string]::IsNullOrWhiteSpace($expectedGreenAssertion) -or (Test-ForbiddenProofText $expectedGreenAssertion)) { $runnableIssues.Add('missing_green_business_assertion') | Out-Null }
 $runnableStatus = if ($runnableIssues.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED_NO_RUNNABLE_SLICE' }
+$executionAuthorizationFields = [ordered]@{
+    real_production_carrier = $selectedEntry
+    exact_method_signature = $selectedSignature
+    harness_module = $testHarnessModule
+    red_command = $redCommand
+    green_command = $greenCommand
+    exact_contract_assertions = $expectedGreenAssertion
+    side_effect_proof_method = $downstream
+    verifier_authorization_targets = @('authorized_for_next_slice', 'authorized_for_synthesis', 'adjusted_coverage_delta')
+}
+$executionAuthorizationMissing = New-Object System.Collections.Generic.List[string]
+foreach ($fieldName in @($executionAuthorizationFields.Keys)) {
+    $fieldValue = $executionAuthorizationFields[$fieldName]
+    if ($fieldValue -is [System.Array]) {
+        if (@($fieldValue).Count -eq 0) { $executionAuthorizationMissing.Add($fieldName) | Out-Null }
+    } elseif ([string]::IsNullOrWhiteSpace([string]$fieldValue) -or (Test-ForbiddenProofText ([string]$fieldValue))) {
+        $executionAuthorizationMissing.Add($fieldName) | Out-Null
+    }
+}
+if ($runnableIssues.Count -gt 0) {
+    foreach ($issue in @($runnableIssues | Select-Object -Unique)) {
+        $executionAuthorizationMissing.Add("runnable:$issue") | Out-Null
+    }
+}
+$executionAuthorized = ($executionAuthorizationMissing.Count -eq 0)
 $preAuthorizeSlice = [ordered]@{
     selected_existing_carrier = $selectedCarrier
     callable_signature = $selectedEntry
@@ -508,12 +533,18 @@ $preAuthorizeSlice = [ordered]@{
     expected_failing_assertion = $expectedRedFailure
     forbidden_substitute_carriers = @('helper_only', 'private_method', 'dto_only', 'terminal_payload', 'generated_service', 'synthetic_carrier', 'mock_only', 'static_contract')
     authorization_status = if ($runnableStatus -eq 'AUTHORIZED') { 'PASS' } else { 'BLOCKED_NO_RUNNABLE_SLICE' }
+    execution_authorized = $executionAuthorized
+    execution_authorization_missing_fields = @($executionAuthorizationMissing | Select-Object -Unique)
     issues = @($runnableIssues | Select-Object -Unique)
 }
 $runnableAuthorization = [ordered]@{
     schema_version = 1
     slice_index = $SliceIndex
     status = $runnableStatus
+    execution_authorized = $executionAuthorized
+    execution_authorization_status = if ($executionAuthorized) { 'AUTHORIZED' } else { 'BLOCKED_EXECUTION_AUTHORIZATION' }
+    execution_authorization_fields = $executionAuthorizationFields
+    execution_authorization_missing_fields = @($executionAuthorizationMissing | Select-Object -Unique)
     pre_authorize_slice = $preAuthorizeSlice
     selected_existing_carrier = $preAuthorizeSlice.selected_existing_carrier
     callable_signature = $preAuthorizeSlice.callable_signature
@@ -529,6 +560,9 @@ $runnableAuthorization = [ordered]@{
     green_command = $greenCommand
     expected_red_failure = $expectedRedFailure
     green_business_assertion = $expectedGreenAssertion
+    exact_contract_assertions = @($expectedGreenAssertion) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and -not (Test-ForbiddenProofText ([string]$_)) }
+    side_effect_proof_method = $downstream
+    verifier_authorization_targets = @('authorized_for_next_slice', 'authorized_for_synthesis', 'adjusted_coverage_delta')
     expected_green_assertion = $expectedGreenAssertion
     forbidden_maven_goals_checked = $true
     uses_isolated_replay_pom = ($redUsesIsolatedPom -and $greenUsesIsolatedPom)
@@ -691,6 +725,10 @@ if ($runnableStatus -ne 'AUTHORIZED') {
     foreach ($issue in @($runnableIssues | Select-Object -Unique)) { $planBlockers.Add($issue) | Out-Null }
     $planBlockers.Add('BLOCKED_NO_RUNNABLE_SLICE') | Out-Null
     $planBlockers.Add('runnable_slice_authorization_not_authorized') | Out-Null
+}
+if (-not $executionAuthorized) {
+    foreach ($fieldName in @($executionAuthorizationMissing | Select-Object -Unique)) { $planBlockers.Add("execution_authorization_missing_$fieldName") | Out-Null }
+    $planBlockers.Add('execution_authorization_not_authorized') | Out-Null
 }
 if ([string]::IsNullOrWhiteSpace($selectedEntry) -or (Test-ForbiddenProofText $selectedEntry)) { $planBlockers.Add('real_entry_method_missing_or_forbidden') | Out-Null }
 if (-not $preAuthorized) { $planBlockers.Add('carrier_dry_run_not_authorized') | Out-Null }
@@ -897,6 +935,8 @@ $sliceExecutionContract = [ordered]@{
     must_not_assertion = $mustNotBehavior
     entry_invocation_method = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_invocation_method'), (Get-PlanField -Text $planText -Name 'test_invocation_expression'), 'invoke the selected real production entry from the behavior test')
     contract_status = if ($planBlockers.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    execution_authorized = ($planBlockers.Count -eq 0 -and $executionAuthorized)
+    execution_authorization_missing_fields = @($executionAuthorizationMissing | Select-Object -Unique)
     issues = @($planBlockers | Select-Object -Unique)
 }
 Write-JsonFile -Value $sliceExecutionContract -Path $sliceExecutionContractPath
@@ -955,6 +995,8 @@ if ($SliceIndex -eq 1) {
             (Get-PlanField -Text $planText -Name 'assertion_names')
         ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
         authorization = $slicePlan.authorization
+        execution_authorized = ($slicePlan.authorization -eq 'ALLOW' -and $executionAuthorized)
+        execution_authorization_missing_fields = @($executionAuthorizationMissing | Select-Object -Unique)
         blockers = @($planBlockers | Select-Object -Unique)
         carrier_authorization_dry_run = $dryRunPath
         slice_plan_contract = $slicePlanPath
@@ -977,6 +1019,8 @@ if ($SliceIndex -eq 1) {
         }
     }
     $firstExecutableContract['contract_status'] = if ($firstContractMissing.Count -eq 0) { 'AUTHORIZED' } else { 'BLOCKED' }
+    $firstExecutableContract['execution_authorized'] = ($firstContractMissing.Count -eq 0 -and $executionAuthorized)
+    $firstExecutableContract['execution_authorization_missing_fields'] = @($executionAuthorizationMissing | Select-Object -Unique)
     $firstExecutableContract['contract_missing_fields'] = @($firstContractMissing | Select-Object -Unique)
     Write-JsonFile -Value $firstExecutableContract -Path $firstExecutableContractPath
     if ($firstContractMissing.Count -gt 0) {

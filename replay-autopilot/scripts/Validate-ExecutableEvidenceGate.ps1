@@ -47,6 +47,27 @@ function Get-StringValue {
     return ''
 }
 
+function Get-BoolValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $false }
+    if (-not ($Object.PSObject.Properties.Name -contains $Name)) { return $false }
+    $value = $Object.$Name
+    if ($value -is [bool]) { return [bool]$value }
+    return ([string]$value) -match '(?i)^(true|yes|1|pass|passed)$'
+}
+
+function Get-IntValue {
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return 0 }
+    foreach ($name in @($Names)) {
+        if (-not ($Object.PSObject.Properties.Name -contains $name)) { continue }
+        $value = $Object.$name
+        if ($value -is [int] -or $value -is [long] -or $value -is [decimal] -or $value -is [double]) { return [int]$value }
+        if ([string]$value -match '^-?\d+$') { return [int]$value }
+    }
+    return 0
+}
+
 function Read-TextIfExists {
     param([string]$Path)
     if (Test-Path -LiteralPath $Path) {
@@ -113,8 +134,8 @@ $testCharterText = Read-TextIfExists -Path $testCharterPath
 # ===== v281 VALIDATION 1: Wrong Test Surface Detection =====
 
 # Check if slice claims to close a family but only tests helpers/DTOs.
-# Leading \b is intentionally omitted so suffix-style carriers such as
-# RequestTaskProcessor still count as real processor entries.
+# Leading \b is intentionally omitted so suffix-style production processor
+# carriers still count as real entries.
 $hasRealEntryBinding = (
     $targetSubsurface -match '(?i)(Facade(?:Impl)?|Controller(?:Impl)?|Service|Processor|Handler|Task|Route|Endpoint)\b' -or
     $targetSubsurface -match '\.java#\w+\(' -or
@@ -369,6 +390,57 @@ if ($successSliceStatus) {
         $issues.Add('behavior_evidence_missing:no_executable_command_evidence') | Out-Null
         $warnings.Add('Success-shaped slice missing test_execution_command/exit_code; use machine-verifiable Maven commands instead of natural-language summaries') | Out-Null
     }
+
+    # v675: Business behavior credit requires an executed matching test, the
+    # selected real entry, and at least one asserted side effect or exact output.
+    # Compile-only, static, helper-only, and zero-test "greens" remain setup
+    # evidence and cannot authorize coverage.
+    $matchedTestCount = Get-IntValue -Object $slice -Names @('matched_test_count', 'matching_test_count', 'matched_tests')
+    if ($matchedTestCount -le 0 -and $null -ne $slice.tests) {
+        foreach ($test in @($slice.tests)) {
+            if ($null -eq $test -or -not ($test -is [System.Management.Automation.PSCustomObject])) { continue }
+            $phase = [string]$test.phase
+            $resultText = [string]$test.result
+            $commandText = [string]$test.command
+            if ($phase -match '(?i)^(GREEN|VERIFY)$' -and
+                $resultText -match '(?i)^(pass|success)$' -and
+                -not [string]::IsNullOrWhiteSpace($commandText) -and
+                $commandText -match '(?i)-D(?:it\.)?test\s*=') {
+                $matchedTestCount++
+            }
+        }
+    }
+    $realEntryInvoked = (
+        (Get-BoolValue -Object $slice -Name 'real_entry_invoked') -or
+        (Get-BoolValue -Object $slice.side_effect_evidence -Name 'real_entry_invoked') -or
+        (-not [string]::IsNullOrWhiteSpace($sideEffectEntryCall) -and $sideEffectEntryCall -notmatch '(?i)(TODO|placeholder|none|null|helper_only|static_only)')
+    )
+    $sideEffectAssertions = @(
+        (Get-StringArray $slice.side_effect_assertions) +
+        (Get-StringArray $sideEffectObj.side_effect_assertions) +
+        (Get-StringArray $sideExpectedWrites)
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $exactOutputAssertions = @(
+        (Get-StringArray $slice.exact_output_assertions) +
+        (Get-StringArray $slice.output_assertions) +
+        (Get-StringArray $slice.closed_assertions)
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and [string]$_ -match $meaningfulAssertionPattern } | Select-Object -Unique
+
+    if ($matchedTestCount -le 0) {
+        $issues.Add('behavior_evidence_missing:matched_test_count_zero') | Out-Null
+        $warnings.Add('Success-shaped slice has no matched behavior test execution; zero matching tests cannot authorize coverage') | Out-Null
+        if ($gapFlags -notcontains 'no_test_execution_evidence') { $gapFlags += 'no_test_execution_evidence' }
+    }
+    if (-not $realEntryInvoked) {
+        $issues.Add('wrong_test_surface:real_entry_not_invoked') | Out-Null
+        $warnings.Add('Success-shaped slice does not prove invocation of the selected real production entry') | Out-Null
+        if ($gapFlags -notcontains 'wrong_test_surface') { $gapFlags += 'wrong_test_surface' }
+    }
+    if ($sideEffectAssertions.Count -eq 0 -and $exactOutputAssertions.Count -eq 0) {
+        $issues.Add('side_effect_ledger_gap:no_side_effect_or_exact_output_assertion') | Out-Null
+        $warnings.Add('Success-shaped slice has no side-effect assertion or exact output assertion') | Out-Null
+        if ($gapFlags -notcontains 'side_effect_ledger_gap') { $gapFlags += 'side_effect_ledger_gap' }
+    }
 }
 
 # ===== v281 VALIDATION 3: Feedback Loop Blocker Detection =====
@@ -405,23 +477,18 @@ if ($redPassedBeforeImplementation -and $implementedFiles.Count -gt 0 -and -not 
     if ($gapFlags -notcontains 'feedback_loop_blocker') { $gapFlags += 'feedback_loop_blocker' }
 }
 
-# v289: Test harness placement validation. claim-core has no test dependency
-# harness in this repository; RED/VERIFY tests must be authored and executed
-# through claim-server, without modifying POM dependencies.
+# v289: Test harness placement validation. Dependency-deficient modules must
+# not be patched with new test dependencies during replay slice execution.
 $allChangedForHarness = @(
     $implementedFiles +
     (Get-StringArray $slice.current_slice_changed_files) +
     (Get-StringArray $slice.round_changed_files_snapshot)
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-if (@($allChangedForHarness | Where-Object { $_ -match '(?i)claim-core[/\\]src[/\\]test' }).Count -gt 0) {
-    $issues.Add('wrong_test_surface:claim_core_test_harness') | Out-Null
-    $warnings.Add('Tests were placed under claim-core/src/test even though this replay requires claim-server test harness') | Out-Null
-}
 foreach ($test in @($slice.tests)) {
     $commandText = [string]$test.command
-    if ($commandText -match '(?i)-pl\s+claim-core\b') {
-        $issues.Add('wrong_test_surface:claim_core_maven_module') | Out-Null
-        $warnings.Add('RED/GREEN command used -pl claim-core; use -pl claim-server -am for replay tests') | Out-Null
+    if ($commandText -match '(?i)(^|\s)-pl\s+["'']?([^"''\s]+)' -and $commandText -notmatch '(?i)(^|\s)-am(\s|$)') {
+        $issues.Add('wrong_test_surface:maven_module_without_also_make') | Out-Null
+        $warnings.Add('RED/GREEN command used -pl without -am; replay tests must use reactor source modules') | Out-Null
     }
 }
 if (@($allChangedForHarness | Where-Object { $_ -match '(?i)(^|[/\\])pom\.xml$' }).Count -gt 0) {
@@ -537,6 +604,10 @@ $result = [ordered]@{
     has_production_files = $hasProductionFiles
     touches_stateful_family = $touchesStatefulFamily
     has_state_change_evidence = $hasStateChangeKeywords -or $testEvidenceShowsStateChange
+    matched_test_count = if ($successSliceStatus) { $matchedTestCount } else { 0 }
+    real_entry_invoked = if ($successSliceStatus) { $realEntryInvoked } else { $false }
+    side_effect_assertions = if ($successSliceStatus) { @($sideEffectAssertions) } else { @() }
+    exact_output_assertions = if ($successSliceStatus) { @($exactOutputAssertions) } else { @() }
     red_was_blocked = $redBlocked
     implementation_after_blocked_red = $redBlocked -and $implementedFiles.Count -gt 0
     generated_at = (Get-Date).ToString('s')

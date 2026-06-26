@@ -684,7 +684,21 @@ function Test-SourceChainRealBuilderProof {
     if ($proofText -notmatch '(?i)\bRequestBuildFunction\b') { return $false }
     if ($proofText -notmatch '(?i)\bbuildRequestCommon\b') { return $false }
     if ($proofText -notmatch '(?i)\b(?:builder|RequestBuildFunction)\s*\.\s*apply\s*\(\s*buildContext\s*\)') { return $false }
-    if ($proofText -notmatch '(?i)\brebuildTaskData\b') { return $false }
+    $entryTokens = Get-ContractStringArray -Object $nextSlice -Names @('entry', 'selected_entry', 'selected_real_entry', 'carrier', 'method', 'method_name')
+    $hasBackendRebuildEntry = $false
+    foreach ($entryToken in @($entryTokens)) {
+        $entryText = [string]$entryToken
+        if ([string]::IsNullOrWhiteSpace($entryText)) { continue }
+        if ($proofText -match [regex]::Escape($entryText)) {
+            $hasBackendRebuildEntry = $true
+            break
+        }
+        if ($entryText -match '(?i)\brebuild|build|assemble|map|convert\b' -and $proofText -match '(?i)\brebuild|build|assemble|map|convert\b') {
+            $hasBackendRebuildEntry = $true
+            break
+        }
+    }
+    if (-not $hasBackendRebuildEntry -and $proofText -notmatch '(?i)\b(?:rebuild|build|assemble|map|convert)\w*\s*\(') { return $false }
     if ($requiredTokens.Count -gt 0 -and -not (Test-TextContainsAllTokens -Text $proofText -Tokens $requiredTokens)) { return $false }
     if ($proofText -notmatch '(?i)\bassert(?:Equals|That|True|NotNull)\b') { return $false }
     return $true
@@ -2694,6 +2708,50 @@ foreach ($flag in @($gapFlags | Where-Object { -not [string]::IsNullOrWhiteSpace
 
 $authorizedForNextSlice = $nonAuthorizingReasons.Count -eq 0 -and $verificationStatus -ne 'FAIL' -and $verificationStatus -ne 'BLOCKED'
 $authorizedForSynthesis = $authorizedForNextSlice -and $verificationStatus -eq 'PASS' -and $sliceStatus -eq 'DONE' -and $hasDependencySpyGap.Count -eq 0
+$nextContractPatchMissingFields = New-Object System.Collections.Generic.List[string]
+foreach ($reason in @($nonAuthorizingReasons)) {
+    switch -Regex ([string]$reason) {
+        'behavior_evidence_missing|no_test_execution_evidence|test_execution_failed' {
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'matched_test_count'
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'green_command'
+        }
+        'wrong_test_surface|carrier_authorization|carrier_lock|synthetic_carrier|substitute_or_shallow_proof' {
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'carrier_execution_lock'
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'real_entry_invoked'
+        }
+        'side_effect|exact_contract|public_response_contract|deploy_surface' {
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'side_effect_assertions_or_exact_output_assertions'
+        }
+        'red_phase|tdd_red|feedback_loop' {
+            Add-UniqueString -List $nextContractPatchMissingFields -Value 'business_red_assertion'
+        }
+        default {
+            if (-not [string]::IsNullOrWhiteSpace([string]$reason)) {
+                Add-UniqueString -List $nextContractPatchMissingFields -Value ([string]$reason)
+            }
+        }
+    }
+}
+$nextContractPatchRequired = [ordered]@{
+    required = (-not $authorizedForNextSlice)
+    reason = if ($authorizedForNextSlice) { '' } else { 'non_authorizing_slice_evidence' }
+    missing_fields = @($nextContractPatchMissingFields)
+    next_slice_type = $nextRecommended
+    required_artifacts = @(
+        'RUNNABLE_SLICE_AUTHORIZATION',
+        'CARRIER_LOCK',
+        'SLICE_EXECUTION_CONTRACT',
+        'TEST_CHARTER',
+        'SLICE_RESULT'
+    )
+    required_signals = @(
+        'execution_authorized=true',
+        'carrier_lock_status=PASS',
+        'matched_test_count>0',
+        'real_entry_invoked=true',
+        'side_effect_assertions[] or exact_output_assertions[]'
+    )
+}
 $verifiedTouchedFamilies = @(@($touchedFamilies + $closedFamilies) |
     Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
     Select-Object -Unique)
@@ -2726,6 +2784,7 @@ $verify = [ordered]@{
     authorized_for_next_slice = $authorizedForNextSlice
     authorized_for_synthesis = $authorizedForSynthesis
     authorization_blockers = @($nonAuthorizingReasons)
+    next_contract_patch_required = $nextContractPatchRequired
     required_proof_type = $requiredProofByFamily
     actual_proof_type = $actualProofByFamily
     proof_type_mismatch_families = @($proofTypeMismatchFamilies)

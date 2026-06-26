@@ -87,6 +87,61 @@ try {
 
     Remove-Item -LiteralPath $tempRoot3 -Recurse -Force -ErrorAction SilentlyContinue
 
+    Write-Host "`n[Test 4] valid blocked test infrastructure does not request tooling evolution" -ForegroundColor Yellow
+    $tempRoot4 = Join-Path $env:TEMP ("replay-v600-valid-infra-blocker-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tempRoot4 | Out-Null
+
+    Write-Utf8 -Path (Join-Path $tempRoot4 'PLAN_RESULT.md') -Value @'
+# Plan Result
+
+- plan_status: BLOCKED
+- blocker: PLAN_BLOCKED_TEST_INFRASTRUCTURE
+- next_action: provide an allowed Mockito-capable test harness or authorize isolated-worktree test dependency change
+'@
+    Write-Utf8 -Path (Join-Path $tempRoot4 'PLAN_RESULT.json') -Value @'
+{
+  "plan_status": "BLOCKED",
+  "blocker": "PLAN_BLOCKED_TEST_INFRASTRUCTURE",
+  "test_infrastructure_check": {
+    "test_module_for_target": "claim-server",
+    "test_module_has_dependencies": false,
+    "test_harness_available": false,
+    "can_import_production_classes": true,
+    "compilation_dry_run_exit_code": 1,
+    "compilation_dry_run_command": "mvn --% -f D:\\replay\\worktree\\pom.xml -pl claim-server -am test-compile",
+    "compilation_dry_run_evidence_file": "D:\\replay\\TEST_INFRASTRUCTURE_DRY_RUN.json",
+    "blocker_reason": "Mockito dependency not found in any allowed worktree POM; prompt forbids pom.xml edits"
+  }
+}
+'@
+    Write-Utf8 -Path (Join-Path $tempRoot4 'PLAN_SCHEMA_FAILFAST.json') -Value @'
+{
+  "stage": "PlanSchemaFailFast",
+  "status": "PASS",
+  "required": true,
+  "can_proceed": true,
+  "checks": {
+    "plan_status": "BLOCKED",
+    "valid_plan_status": true,
+    "all_required_fields_present": true,
+    "missing_fields": [],
+    "test_infrastructure_check_present": true,
+    "test_infrastructure_check_valid": true,
+    "test_infrastructure_issues": []
+  },
+  "issues": []
+}
+'@
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sut -ReplayRoot $tempRoot4
+    $proposalText4 = Get-Content -LiteralPath (Join-Path $tempRoot4 'EVOLUTION_PROPOSAL.md') -Raw -Encoding UTF8
+
+    Assert-True -Name 'valid_infrastructure_blocker_should_not_evolve' -Condition ($proposalText4 -match 'should_evolve:\s*False')
+    Assert-True -Name 'valid_infrastructure_blocker_reason' -Condition ($proposalText4 -match 'valid terminal test-infrastructure blocker')
+    Assert-True -Name 'valid_infrastructure_blocker_no_rules' -Condition (-not (Test-Path -LiteralPath (Join-Path $tempRoot4 'VERIFIABLE_RULES.json')))
+
+    Remove-Item -LiteralPath $tempRoot4 -Recurse -Force -ErrorAction SilentlyContinue
+
     Write-Host "`n=== All tests PASS ===" -ForegroundColor Green
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue

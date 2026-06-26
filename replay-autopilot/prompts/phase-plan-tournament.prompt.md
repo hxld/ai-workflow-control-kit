@@ -401,7 +401,7 @@ Status: PROCEED  # ✅ ALLOWED
    - 必须逐字使用以下字段名，供 runner dry-run 校验；不得只写近义词：
      - `first_slice:`
      - `golden_slice_binding:`
-     - `highest_weight_open_gate:` ← **v452 CRITICAL：这是最常被遗漏的字段，必须填写** 
+     - `highest_weight_open_gate:` ← **v452 CRITICAL：这是最常被遗漏的字段，必须填写**
      - `first_slice_family:` ← **v595 CRITICAL：这是 S1 实际 family；前置切片不能误写成 core_entry**
      - `first_red_test:`
      - `selected_real_entry:`
@@ -457,7 +457,7 @@ pattern_evidence_source: <rg command + file path>
    - **测试 harness 选择规则（v289/v473/v475/v476）**：`first_red_test` 必须指向已有测试依赖的模块。默认使用当前 worktree 中真实存在的 `<test-module>/src/test/...` + `-pl <test-module> -am` 作为测试 harness；测试目标可以是 `<production-module>` 中的真实 Service/TaskProcessor carrier。`<production-module>` 若无 JUnit/Mockito/Spring Test 依赖，不得规划 `<production-module>/src/test/...` 测试；必须选择一个已证明依赖生产模块的既有 `<test-module>`，并通过依赖调用生产 carrier。所有 Maven RED/GREEN 命令必须包含 `-am`，PowerShell 下带 `-Dtest`/`#` 时使用 `mvn --% ...` 形态。禁止通过修改任何 `pom.xml` 或新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
      - **测试模块策略预检（v478/v479）**：在最终确定 plan 前，必须完成并记录 test infrastructure check：
        1. 识别生产目标模块与实际测试 harness 模块，例如 `<production-module>` 生产 carrier 可由 `<test-module>/src/test/...` 覆盖。
-       2. 读取候选测试模块 `pom.xml` 与已有 `src/test` 文件，确认 JUnit/TestNG、Mockito/Spring Test 等依赖和 import 风格真实存在。
+       2. 读取候选测试模块 `pom.xml` 与已有 `src/test` 文件，确认 JUnit/TestNG、Mockito/Spring Test 等依赖和 import 风格真实存在。`spring-boot-starter-test`、`spring-test`、`junit`、`testng` 或显式 `mockito-*` 都是已有测试 harness 的静态证据；Plan 禁止仅因递归 POM 文本没有直接出现 `mockito` 就写 `PLAN_BLOCKED_TEST_INFRASTRUCTURE`。如果候选模块已有测试源且存在上述测试依赖，必须输出 intended `test-compile` 命令并让 runner materialize `TEST_INFRASTRUCTURE_DRY_RUN.json`，只有 runner 证据或明确缺少测试模块/测试源/导入链时才能 BLOCKED。
        3. 确认测试模块能 import 目标生产类，不能靠修改任何 `pom.xml` 或新增测试依赖解决。
        4. **Do not execute Maven in Plan.** Plan 只能声明 intended isolated dry-run command：`mvn {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile`，其中 `{{MAVEN_SETTINGS_ARG}}` 仅在 replay config 定义 `maven_settings` 时填入 `-s <settings.xml>`；并把 `compilation_dry_run_evidence_file` 设为 replay root 下的 `TEST_INFRASTRUCTURE_DRY_RUN.json`。runner 会在 Plan 返回后、schema gate 前 materialize `TEST_INFRASTRUCTURE_DRY_RUN.json`，并只允许使用隔离 worktree root POM。
        5. `PLAN_RESULT.json.test_infrastructure_check.compilation_dry_run_evidence_file` 必须引用该 replay-root 内证据文件；不得要求 Plan agent 自行运行 Maven 或写 stdout/stderr 摘要。所选 `<test-module>` 必须存在 `src/test` 且已有测试源；无测试依赖的生产模块不能作为测试 harness。
@@ -535,6 +535,7 @@ pattern_evidence_source: <rg command + file path>
 - implementation_model_recommendation: gpt-5.3-codex
 - required_files:
 - oracle_production_file_overlap:
+- first_slice_oracle_overlap_percent:
 - oracle_high_weight_coverage:
 - oracle_missing_high_weight_files:
 - oracle_expansion_plan:

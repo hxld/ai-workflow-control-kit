@@ -830,6 +830,40 @@ function Test-PolicyRebuildPlanText {
     return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)
 }
 
+function Test-ReplayRootHasStaticTestHarnessEvidence {
+    param(
+        [string]$ReplayRoot,
+        [string]$ModuleName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot) -or [string]::IsNullOrWhiteSpace($ModuleName)) {
+        return $false
+    }
+
+    $worktree = Join-Path $ReplayRoot 'worktree'
+    $moduleRoot = Join-Path $worktree $ModuleName
+    $modulePom = Join-Path $moduleRoot 'pom.xml'
+    if (-not (Test-Path -LiteralPath $modulePom -PathType Leaf)) {
+        return $false
+    }
+
+    $testRoot = Join-Path $moduleRoot 'src\test'
+    if (-not (Test-Path -LiteralPath $testRoot -PathType Container)) {
+        return $false
+    }
+    $testFiles = @(Get-ChildItem -LiteralPath $testRoot -Recurse -File -Include *.java -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($testFiles.Count -eq 0) {
+        return $false
+    }
+
+    $pomText = Get-Content -LiteralPath $modulePom -Raw -Encoding UTF8
+    if ($pomText -match '(?is)<artifactId>\s*(junit|testng|spring-test|spring-boot-starter-test|mockito-core|mockito-all)\s*</artifactId>') {
+        return $true
+    }
+
+    return $false
+}
+
 function Write-PlanTestCompileEvidencePolicyGate {
     param(
         [string]$ReplayRoot,
@@ -2170,6 +2204,63 @@ function Get-FirstText {
         if ($m.Success) { return $m.Groups[1].Value.Trim() }
     }
     return $null
+}
+
+function Test-ValidPlanInfrastructureBlocker {
+    param([string]$ReplayRoot)
+
+    $plan = Read-JsonIfExists (Join-Path $ReplayRoot 'PLAN_RESULT.json')
+    $schema = Read-JsonIfExists (Join-Path $ReplayRoot 'PLAN_SCHEMA_FAILFAST.json')
+    if ($null -eq $plan -or $null -eq $schema) { return $false }
+
+    $planStatus = if ($plan.PSObject.Properties.Name -contains 'plan_status') { ([string]$plan.plan_status).Trim().ToUpperInvariant() } else { '' }
+    $blocker = if ($plan.PSObject.Properties.Name -contains 'blocker') { ([string]$plan.blocker).Trim() } else { '' }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') { return $false }
+
+    $schemaStatus = if ($schema.PSObject.Properties.Name -contains 'status') { ([string]$schema.status).Trim().ToUpperInvariant() } else { '' }
+    $schemaCanProceed = if ($schema.PSObject.Properties.Name -contains 'can_proceed') { [bool]$schema.can_proceed } else { $false }
+    $schemaIssues = if ($schema.PSObject.Properties.Name -contains 'issues') { @($schema.issues) } else { @() }
+    if ($schemaStatus -ne 'PASS' -or -not $schemaCanProceed -or $schemaIssues.Count -gt 0) { return $false }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) { return $false }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+
+    $hasDependencies = if ($infra.PSObject.Properties.Name -contains 'test_module_has_dependencies') { [bool]$infra.test_module_has_dependencies } else { $true }
+    $harnessAvailable = if ($infra.PSObject.Properties.Name -contains 'test_harness_available') { [bool]$infra.test_harness_available } else { $true }
+    $canImportProduction = if ($infra.PSObject.Properties.Name -contains 'can_import_production_classes') { [bool]$infra.can_import_production_classes } else { $false }
+    $dryRunExit = if ($infra.PSObject.Properties.Name -contains 'compilation_dry_run_exit_code') { [int]$infra.compilation_dry_run_exit_code } else { 0 }
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+
+    if (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-ReplayRootHasStaticTestHarnessEvidence -ReplayRoot $ReplayRoot -ModuleName $moduleName)) {
+        return $false
+    }
+
+    return ((-not $hasDependencies -or -not $harnessAvailable -or $dryRunExit -ne 0) -and
+        $canImportProduction -and
+        $reasonText -match '(?i)(dependency|mockito|junit|test harness|pom\.xml edits?|forbid|not found)')
+}
+
+function Test-ResolvablePlanInfrastructureBlocker {
+    param([string]$ReplayRoot)
+
+    $plan = Read-JsonIfExists (Join-Path $ReplayRoot 'PLAN_RESULT.json')
+    if ($null -eq $plan) { return $false }
+
+    $planStatus = if ($plan.PSObject.Properties.Name -contains 'plan_status') { ([string]$plan.plan_status).Trim().ToUpperInvariant() } else { '' }
+    $blocker = if ($plan.PSObject.Properties.Name -contains 'blocker') { ([string]$plan.blocker).Trim() } else { '' }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') { return $false }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) { return $false }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+    return (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-ReplayRootHasStaticTestHarnessEvidence -ReplayRoot $ReplayRoot -ModuleName $moduleName))
 }
 
 function Normalize-Phase0Status {
@@ -4992,6 +5083,24 @@ $planText
 "@
         Set-Content -LiteralPath $summaryPath -Value $summary -Encoding UTF8
 
+        $validPlanInfrastructureBlocker = Test-ValidPlanInfrastructureBlocker -ReplayRoot $replayRoot
+        $resolvablePlanInfrastructureBlocker = Test-ResolvablePlanInfrastructureBlocker -ReplayRoot $replayRoot
+        $proposalShouldEvolve = if ($validPlanInfrastructureBlocker) { 'False' } else { 'True' }
+        $proposalReason = if ($resolvablePlanInfrastructureBlocker) {
+            'Planning blocked on missing direct Mockito even though the selected test module has existing test sources and static test-harness dependencies. Evolve the plan prompt/runner gate so this proceeds to runner-materialized test-compile evidence instead of terminally blocking.'
+        } elseif ($validPlanInfrastructureBlocker) {
+            'Planning stopped at a valid terminal test-infrastructure blocker: PLAN_SCHEMA_FAILFAST passed, the isolated test harness cannot satisfy existing dependencies, and dependency edits are forbidden. Do not run tooling evolution or advance knowledge version without a separate transferable gate failure.'
+        } else {
+            'Planning stage rejected or blocked implementation before code execution. Inspect whether the gap is missing planning gate enforcement or a valid early stop.'
+        }
+        $proposalNextAction = if ($resolvablePlanInfrastructureBlocker) {
+            'Run tooling evolution for plan_transitive_test_harness_false_blocker; do not accept this as a real coverage blocker.'
+        } elseif ($validPlanInfrastructureBlocker) {
+            'Write NO_VERSION_ADVANCE_REASON.md / EVOLUTION_RESULT.md for the replay root, keep actual knowledge version unchanged, and stop until an allowed test harness or explicit dependency-change authorization exists.'
+        } else {
+            'Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If rejection is valid, adjust the planning prompt or workflow gate before running Phase 1.'
+        }
+
         $proposal = @"
 # Replay Evolution Proposal
 
@@ -4999,12 +5108,12 @@ $planText
 - PLAN_RESULT: $planResultPath
 - phase0_status: $phase0Status
 - plan_status: $planStatus
-- should_evolve: True
-- reason: Planning stage rejected or blocked implementation before code execution. Inspect whether the gap is missing planning gate enforcement or a valid early stop.
+- should_evolve: $proposalShouldEvolve
+- reason: $proposalReason
 
 ## Suggested Next Action
 
-Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If rejection is valid, adjust the planning prompt or workflow gate before running Phase 1.
+$proposalNextAction
 "@
         Set-Content -LiteralPath $proposalPath -Value $proposal -Encoding UTF8
 
@@ -5042,7 +5151,7 @@ Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If reject
         )
         Set-Content -LiteralPath $decisionPath -Value ($decisionLines -join "`n") -Encoding UTF8
         Write-Host "Plan stage stopped replay early: $planStatus"
-        if ($runEvolutionActual) {
+        if ($runEvolutionActual -and -not $validPlanInfrastructureBlocker) {
             $evolutionResultPath = Join-Path $replayRoot 'EVOLUTION_RESULT.md'
             if (Test-Path -LiteralPath $evolutionResultPath) {
                 Remove-Item -LiteralPath $evolutionResultPath -Force
@@ -5381,10 +5490,13 @@ Do not create new production files, test files, or worktree changes.
                                 $localProdFiles = @($localOracle.files | Where-Object { [bool]$_.is_production })
                                 $oracleGateTotalProd = $localProdFiles.Count
                             } catch { }
-                        }
-                    }
-                    break
-                }
+            }
+        }
+        elseif ($runEvolutionActual -and $validPlanInfrastructureBlocker) {
+            Write-Host "Plan stage valid infrastructure blocker; skipping evolution and knowledge version advance."
+        }
+        break
+    }
             }
         } catch { }
         if ($null -ne $oracleGateReasonCode) {

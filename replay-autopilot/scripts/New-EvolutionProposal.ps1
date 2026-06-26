@@ -49,6 +49,134 @@ function Get-SummaryFlagCount {
     return $null
 }
 
+function Get-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    return $text | ConvertFrom-Json
+}
+
+function Test-RootHasStaticTestHarnessEvidence {
+    param(
+        [string]$Root,
+        [string]$ModuleName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or [string]::IsNullOrWhiteSpace($ModuleName)) {
+        return $false
+    }
+
+    $moduleRoot = Join-Path (Join-Path $Root 'worktree') $ModuleName
+    $modulePom = Join-Path $moduleRoot 'pom.xml'
+    if (-not (Test-Path -LiteralPath $modulePom -PathType Leaf)) {
+        return $false
+    }
+
+    $testRoot = Join-Path $moduleRoot 'src\test'
+    if (-not (Test-Path -LiteralPath $testRoot -PathType Container)) {
+        return $false
+    }
+    $testFiles = @(Get-ChildItem -LiteralPath $testRoot -Recurse -File -Include *.java -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($testFiles.Count -eq 0) {
+        return $false
+    }
+
+    $pomText = Get-Content -LiteralPath $modulePom -Raw -Encoding UTF8
+    if ($pomText -match '(?is)<artifactId>\s*(junit|testng|spring-test|spring-boot-starter-test|mockito-core|mockito-all)\s*</artifactId>') {
+        return $true
+    }
+
+    return $false
+}
+
+function Test-ValidPlanInfrastructureBlocker {
+    param([string]$Root)
+
+    $plan = Get-JsonIfExists (Join-Path $Root 'PLAN_RESULT.json')
+    $schema = Get-JsonIfExists (Join-Path $Root 'PLAN_SCHEMA_FAILFAST.json')
+    if ($null -eq $plan -or $null -eq $schema) { return $false }
+
+    $planStatus = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    $blocker = ''
+    if ($plan.PSObject.Properties.Name -contains 'blocker') {
+        $blocker = ([string]$plan.blocker).Trim()
+    }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') {
+        return $false
+    }
+
+    $schemaStatus = ''
+    if ($schema.PSObject.Properties.Name -contains 'status') {
+        $schemaStatus = ([string]$schema.status).Trim().ToUpperInvariant()
+    }
+    $schemaCanProceed = $false
+    if ($schema.PSObject.Properties.Name -contains 'can_proceed') {
+        $schemaCanProceed = [bool]$schema.can_proceed
+    }
+    $schemaIssues = @()
+    if ($schema.PSObject.Properties.Name -contains 'issues') {
+        $schemaIssues = @($schema.issues)
+    }
+    if ($schemaStatus -ne 'PASS' -or -not $schemaCanProceed -or $schemaIssues.Count -gt 0) {
+        return $false
+    }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) {
+        return $false
+    }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+    $hasDependencies = if ($infra.PSObject.Properties.Name -contains 'test_module_has_dependencies') { [bool]$infra.test_module_has_dependencies } else { $true }
+    $harnessAvailable = if ($infra.PSObject.Properties.Name -contains 'test_harness_available') { [bool]$infra.test_harness_available } else { $true }
+    $canImportProduction = if ($infra.PSObject.Properties.Name -contains 'can_import_production_classes') { [bool]$infra.can_import_production_classes } else { $false }
+    $dryRunExit = if ($infra.PSObject.Properties.Name -contains 'compilation_dry_run_exit_code') { [int]$infra.compilation_dry_run_exit_code } else { 0 }
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+
+    if (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-RootHasStaticTestHarnessEvidence -Root $Root -ModuleName $moduleName)) {
+        return $false
+    }
+
+    return ((-not $hasDependencies -or -not $harnessAvailable -or $dryRunExit -ne 0) -and
+        $canImportProduction -and
+        $reasonText -match '(?i)(dependency|mockito|junit|test harness|pom\.xml edits?|forbid|not found)')
+}
+
+function Test-ResolvablePlanInfrastructureBlocker {
+    param([string]$Root)
+
+    $plan = Get-JsonIfExists (Join-Path $Root 'PLAN_RESULT.json')
+    if ($null -eq $plan) { return $false }
+
+    $planStatus = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    $blocker = ''
+    if ($plan.PSObject.Properties.Name -contains 'blocker') {
+        $blocker = ([string]$plan.blocker).Trim()
+    }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') {
+        return $false
+    }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) {
+        return $false
+    }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+    return (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-RootHasStaticTestHarnessEvidence -Root $Root -ModuleName $moduleName))
+}
+
 function New-VerifiableRuleItem {
     param(
         [string]$Id,
@@ -142,6 +270,9 @@ $roundText = Read-TextIfExists $roundResultPath
 $finalText = Read-TextIfExists $finalReportPath
 $summaryText = Read-TextIfExists $summaryPath
 $combined = "$phase0Text`n$roundText`n$finalText`n$summaryText"
+
+$validPlanInfrastructureBlocker = Test-ValidPlanInfrastructureBlocker -Root $root
+$resolvablePlanInfrastructureBlocker = Test-ResolvablePlanInfrastructureBlocker -Root $root
 
 $blind = Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind coverage')
 $capped = Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage')
@@ -254,8 +385,26 @@ $detected = @(foreach ($key in $flagMap.Keys) {
     }
 })
 
-$planContractVerifyPath = Join-Path $root 'PLAN_CONTRACT_VERIFY.json'
 $verifiableRules = New-Object System.Collections.Generic.List[object]
+if ($resolvablePlanInfrastructureBlocker) {
+    $detected += [pscustomobject]@{
+        Gate = 'Core-First Budget Gate'
+        Flag = 'plan_transitive_test_harness_false_blocker'
+        Count = 1
+        Recommendation = 'Plan blocked on missing direct Mockito even though the selected test module has existing test sources and static test-harness dependencies such as spring-boot-starter-test, spring-test, junit, testng, or mockito. Prompt/runner gates must require intended test-compile materialization before terminally blocking.'
+        ActionClass = 'tooling-evolution-needed'
+    }
+    $verifiableRules.Add((New-VerifiableRuleItem `
+        -Id 'rule_plan_transitive_test_harness_false_blocker' `
+        -Fingerprint 'plan_transitive_test_harness_false_blocker' `
+        -MachineGate 'plan_transitive_test_harness_false_blocker' `
+        -PreventionGate 'Core-First Budget Gate' `
+        -RequiredFix 'Do not accept a PLAN_BLOCKED_TEST_INFRASTRUCTURE result based only on missing direct Mockito text when the chosen module already has test sources and static test-harness dependencies. Require Plan to proceed to runner materialized test-compile evidence or emit a specific non-harness blocker.' `
+        -RegressionTest 'scripts\tests\Test-v677-TransitiveMockitoPlanBlockerGuard.ps1' `
+        -NextValidation 'scripts\Run-ReplayLoop.ps1')) | Out-Null
+}
+
+$planContractVerifyPath = Join-Path $root 'PLAN_CONTRACT_VERIFY.json'
 if (Test-Path -LiteralPath $planContractVerifyPath) {
     try {
         $planContract = Get-Content -LiteralPath $planContractVerifyPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -349,6 +498,13 @@ $oracleGapDetected = $detected | Where-Object { $_.Flag -in @('plan_oracle_overl
 if (-not $shouldEvolve -and $oracleGapDetected) {
     $shouldEvolve = $true
     $reason = 'plan oracle overlap gap detected from PLAN_CONTRACT_VERIFY.json'
+}
+
+if ($validPlanInfrastructureBlocker -and @($verifiableRules.ToArray()).Count -eq 0) {
+    $detected = @()
+    $enforcementNeeded = @()
+    $shouldEvolve = $false
+    $reason = 'plan_status=BLOCKED is a valid terminal test-infrastructure blocker: the plan schema passed, the isolated harness cannot satisfy existing test dependencies, and dependency edits are forbidden. No transferable tooling gap was detected.'
 }
 
 $enforcementNeeded = @($detected | Where-Object { $_.ActionClass -in @('workflow-gate-needs-evolution', 'already-covered-but-not-enforced', 'tooling-evolution-needed') })

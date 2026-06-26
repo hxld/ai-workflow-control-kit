@@ -42,6 +42,21 @@ function Get-ArrayCount {
     return 0
 }
 
+function Get-BooleanValue {
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return $false }
+    foreach ($name in $Names) {
+        if ($Object.PSObject.Properties[$name]) {
+            $value = $Object.$name
+            if ($value -is [bool]) { return [bool]$value }
+            if (-not [string]::IsNullOrWhiteSpace([string]$value)) {
+                return @('1', 'true', 'yes', 'y', 'authorized', 'pass') -contains ([string]$value).Trim().ToLowerInvariant()
+            }
+        }
+    }
+    return $false
+}
+
 function Test-UsesPom {
     param([string]$Command, [string]$PomPath)
     if ([string]::IsNullOrWhiteSpace($Command) -or [string]::IsNullOrWhiteSpace($PomPath)) { return $false }
@@ -100,13 +115,20 @@ if ($null -eq $contractObject) {
 } else {
     $requiredScalarFields = [ordered]@{
         family_id = @('family_id')
+        existing_test_harness_module = @('existing_test_harness_module', 'test_harness_module')
+        isolated_pom_maven_command = @('isolated_pom_maven_command', 'maven_test_command_template', 'green_command')
         carrier_fqn = @('carrier_fqn', 'real_entry_fqn', 'production_entry_qn')
+        real_entry_signature = @('real_entry_signature', 'real_entry_fqn', 'production_entry_qn')
         test_harness_module = @('test_harness_module')
         test_class = @('test_class')
+        test_method = @('test_method')
         red_command = @('red_command')
         green_command = @('green_command')
         expected_red_failure = @('expected_red_failure', 'business_red_assertion', 'red_assertion')
         expected_green_assertion = @('expected_green_assertion', 'green_business_assertion')
+        trigger_positive_assertion = @('trigger_positive_assertion', 'green_business_assertion', 'expected_green_assertion')
+        trigger_negative_assertion = @('trigger_negative_assertion', 'negative_guard_assertion', 'must_not_assertion')
+        side_effect_proof_method = @('side_effect_proof_method', 'entry_invocation_method', 'side_effect_or_output_probe')
         isolated_pom = @('isolated_pom', 'isolated_pom_path')
         maven_settings_arg = @('maven_settings_arg', 'maven_settings')
     }
@@ -119,10 +141,19 @@ if ($null -eq $contractObject) {
     foreach ($entry in @{
         required_side_effects = @('required_side_effects', 'side_effect_or_output_probe')
         negative_probe = @('negative_probe', 'negative_guard_assertion', 'must_not_assertion')
+        forbidden_substitute_carriers = @('forbidden_substitute_carriers', 'forbidden_substitute_surfaces', 'forbidden_test_surfaces')
     }.GetEnumerator()) {
         if ((Get-ArrayCount -Object $contractObject -Names $entry.Value) -eq 0 -and [string]::IsNullOrWhiteSpace((Get-StringValue -Object $contractObject -Names $entry.Value))) {
             $issues.Add("missing_$($entry.Key)") | Out-Null
         }
+    }
+
+    if (-not (Get-BooleanValue -Object $contractObject -Names @('uses_isolated_replay_pom'))) {
+        $issues.Add('uses_isolated_replay_pom_not_true') | Out-Null
+    }
+    $contractStatus = Get-StringValue -Object $contractObject -Names @('contract_status', 'authorization', 'status')
+    if (-not [string]::IsNullOrWhiteSpace($contractStatus) -and $contractStatus -notmatch '^(?i)(AUTHORIZED|ALLOW|PASS)$') {
+        $issues.Add("contract_status_not_authorized:$contractStatus") | Out-Null
     }
 
     foreach ($commandField in @('red_command', 'green_command')) {

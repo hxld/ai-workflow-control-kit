@@ -4975,14 +4975,14 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
                 $hasExistingResult = $true
             }
             if (-not $blockedBeforeExecutor) {
-                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'validate-first-slice-contract.ps1') `
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'validate-first-slice-executable-contract.ps1') `
                     -ReplayRoot $replayRootFull `
                     -Worktree $worktreeFull `
                     -Slice $i `
                     -MavenSettings $MavenSettings | Out-Null
                 if ($LASTEXITCODE -ne 0) {
-                    Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "first-slice contract validation stopped before executor"
-                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} first-slice contract validation stop | {1} | {2} | first_slice_contract_validation | exit_code={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('FIRST_SLICE_CONTRACT_VALIDATE_{0:D2}.json' -f $i)))
+                    Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "first-slice executable contract validation stopped before executor"
+                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} first-slice executable contract validation stop | {1} | {2} | first_slice_executable_contract_validation | exit_code={3}; script=validate-first-slice-executable-contract.ps1; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $LASTEXITCODE, (Join-Path $replayRootFull ('FIRST_SLICE_CONTRACT_VALIDATE_{0:D2}.json' -f $i)))
                     $blockedBeforeExecutor = $true
                     $hasExistingResult = $true
                 }
@@ -5578,6 +5578,10 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
 }
 
 Write-FamilyCapReport -LedgerPath $familyLedgerPath -OutPath $familyCapPath
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-family-ledger-from-slice-verify.ps1') -ReplayRoot $replayRootFull -Ledger $familyLedgerPath | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Family ledger verifier-closure validation failed. Inspect $(Join-Path $replayRootFull 'FAMILY_LEDGER_FROM_SLICE_VERIFY.json'); ledger CLOSED families must come from SLICE_VERIFY closed_requirement_families."
+}
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'FamilyRouterAndCap.ps1') -ReplayRoot $replayRootFull -Ledger $familyLedgerPath -ValidateOnly | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Family router/cap validation failed. Inspect $(Join-Path $replayRootFull 'FAMILY_ROUTER_AND_CAP.json'); coverage_cap_from_ledger must forbid PASS while required families remain OPEN/PARTIAL."

@@ -1048,8 +1048,9 @@ if (Test-Path -LiteralPath $firstExecutableContractPath -PathType Leaf) {
         $planBlockers.Add('pre_slice_authorization_gate_failed') | Out-Null
     }
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'proof_type_policy_gate.ps1') `
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-proof-type-policy.ps1') `
         -ReplayRoot $replayRootFull `
+        -Slice $SliceIndex `
         -TestCharter $testCharterContractPath `
         -FamilyLedger (Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json') `
         -Contract $firstExecutableContractPath `

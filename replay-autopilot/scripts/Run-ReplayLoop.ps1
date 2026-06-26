@@ -878,6 +878,79 @@ function Get-ObjectPropertyString {
     return ''
 }
 
+function Get-PlanResultString {
+    param(
+        $Plan,
+        [string]$Name
+    )
+
+    return Get-ObjectPropertyString -Object $Plan -Name $Name
+}
+
+function Get-PlanResultArrayText {
+    param(
+        $Plan,
+        [string]$Name
+    )
+
+    if ($null -eq $Plan) { return '' }
+    if ($Plan.PSObject.Properties.Name -notcontains $Name) { return '' }
+    $value = $Plan.$Name
+    if ($null -eq $value) { return '' }
+    if ($value -is [System.Array]) {
+        return (($value | ForEach-Object { [string]$_ }) -join '; ')
+    }
+    return [string]$value
+}
+
+function Invoke-PythonWithJsonStdin {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PythonScript,
+        [Parameter(Mandatory = $true)]
+        [string]$JsonInput,
+        [Parameter(Mandatory = $true)]
+        [string]$StdoutPath,
+        [Parameter(Mandatory = $true)]
+        [string]$StderrPath
+    )
+
+    $pythonExe = 'python3'
+    if ($null -eq (Get-Command $pythonExe -ErrorAction SilentlyContinue)) {
+        $pythonExe = 'python'
+    }
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $process.StartInfo.FileName = $pythonExe
+    $process.StartInfo.Arguments = '"' + $PythonScript.Replace('"', '\"') + '"'
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.RedirectStandardInput = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    $process.StartInfo.CreateNoWindow = $true
+
+    try {
+        [void]$process.Start()
+        $process.StandardInput.Write($JsonInput)
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        Set-Content -LiteralPath $StdoutPath -Value $stdout -Encoding UTF8
+        Set-Content -LiteralPath $StderrPath -Value $stderr -Encoding UTF8
+        return [int]$process.ExitCode
+    } catch {
+        Set-Content -LiteralPath $StdoutPath -Value '' -Encoding UTF8
+        Set-Content -LiteralPath $StderrPath -Value ([string]$_.Exception.Message) -Encoding UTF8
+        return 1
+    } finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+    }
+}
+
 function Resolve-PlanArtifactWorktreeLeak {
     param(
         [Parameter(Mandatory = $true)]
@@ -2161,8 +2234,12 @@ function Invoke-V348PreS1CarrierVerification {
     $signatureStderrPath = Join-Path $ReplayRoot 'PRE_S1_CARRIER_SIGNATURE_AUTHORIZATION.stderr.log'
     $proofText = Read-TextIfExists (Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md')
     $planText = Read-TextIfExists (Join-Path $ReplayRoot 'PLAN_RESULT.md')
+    $planJson = Read-JsonIfExists (Join-Path $ReplayRoot 'PLAN_RESULT.json')
     $requirementText = Read-TextIfExists $RequirementSource
     $selectedRealEntry = Get-PlanProofField -Text $proofText -Name 'selected_real_entry'
+    if ([string]::IsNullOrWhiteSpace($selectedRealEntry)) {
+        $selectedRealEntry = Get-PlanResultString -Plan $planJson -Name 'selected_real_entry'
+    }
     $selectedCarrier = Get-PlanProofField -Text $proofText -Name 'selected_carrier'
     if ([string]::IsNullOrWhiteSpace($selectedCarrier)) {
         $selectedCarrier = Get-PlanProofField -Text $proofText -Name 'target_subsurface_or_carrier'
@@ -2171,9 +2248,38 @@ function Invoke-V348PreS1CarrierVerification {
     if ([string]::IsNullOrWhiteSpace($testInvocationPath)) {
         $testInvocationPath = Get-PlanProofField -Text $proofText -Name 'test_surface'
     }
+    if ([string]::IsNullOrWhiteSpace($testInvocationPath)) {
+        $expectedClass = Get-PlanProofField -Text $proofText -Name 'expected_test_class'
+        $expectedMethod = Get-PlanProofField -Text $proofText -Name 'expected_test_method'
+        if (-not [string]::IsNullOrWhiteSpace($expectedClass) -and -not [string]::IsNullOrWhiteSpace($expectedMethod)) {
+            $testInvocationPath = "$expectedClass#$expectedMethod"
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($testInvocationPath)) {
+        $testInvocationPath = Get-PlanProofField -Text $proofText -Name 'first_red_test'
+    }
+    if ([string]::IsNullOrWhiteSpace($testInvocationPath)) {
+        $expectedClass = Get-PlanResultString -Plan $planJson -Name 'expected_test_class'
+        $expectedMethod = Get-PlanResultString -Plan $planJson -Name 'expected_test_method'
+        if (-not [string]::IsNullOrWhiteSpace($expectedClass) -and -not [string]::IsNullOrWhiteSpace($expectedMethod)) {
+            $testInvocationPath = "$expectedClass#$expectedMethod"
+        }
+    }
     $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'proof_observation_point'
     if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
         $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'observed_output_or_side_effect'
+    }
+    if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
+        $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'minimum_side_effect_or_blocker'
+    }
+    if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
+        $proofObservationPoint = Get-PlanProofField -Text $proofText -Name 'expected_side_effects'
+    }
+    if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
+        $proofObservationPoint = Get-PlanResultArrayText -Plan $planJson -Name 'expected_side_effects'
+    }
+    if ([string]::IsNullOrWhiteSpace($proofObservationPoint)) {
+        $proofObservationPoint = Get-PlanResultArrayText -Plan $planJson -Name 'side_effects'
     }
     if ([string]::IsNullOrWhiteSpace($selectedCarrier)) {
         $selectedCarrier = Get-FirstText $planText @(
@@ -2193,6 +2299,9 @@ function Invoke-V348PreS1CarrierVerification {
         stdout_log = $stdoutPath
         stderr_log = $stderrPath
         signature_authorization = $signaturePath
+        selected_real_entry = $selectedRealEntry
+        test_invocation_path = $testInvocationPath
+        proof_observation_point = $proofObservationPoint
     }
 
     if (-not (Test-Path -LiteralPath $script)) {
@@ -2225,8 +2334,7 @@ function Invoke-V348PreS1CarrierVerification {
             test_invocation_path = $testInvocationPath
             proof_observation_point = $proofObservationPoint
         } | ConvertTo-Json -Compress
-        $signatureInput | python $signatureScript > $signatureStdoutPath 2> $signatureStderrPath
-        $signatureExitCode = $LASTEXITCODE
+        $signatureExitCode = Invoke-PythonWithJsonStdin -PythonScript $signatureScript -JsonInput $signatureInput -StdoutPath $signatureStdoutPath -StderrPath $signatureStderrPath
         $signatureText = Read-TextIfExists $signatureStdoutPath
         $signatureJson = $null
         if (-not [string]::IsNullOrWhiteSpace($signatureText)) {

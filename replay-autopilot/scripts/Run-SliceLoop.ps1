@@ -360,6 +360,15 @@ function Get-PlanField {
     return ''
 }
 
+function Get-FirstNonEmptyText {
+    param([object[]]$Values)
+    foreach ($value in $Values) {
+        $text = [string]$value
+        if (-not [string]::IsNullOrWhiteSpace($text)) { return $text.Trim() }
+    }
+    return ''
+}
+
 function Get-SafeInt {
     param(
         [AllowNull()]
@@ -3008,7 +3017,7 @@ function Get-SliceTypeForSurface {
 }
 
 function Get-ForcedFamilyDecision {
-    param($Ledger, [int]$SliceIndex, $CarrierRank = $null)
+    param($Ledger, [int]$SliceIndex, $CarrierRank = $null, [string]$ReplayRoot = '')
 
     $empty = [ordered]@{
         family_id = ''
@@ -3025,6 +3034,28 @@ function Get-ForcedFamilyDecision {
 
     $empty.open_families = (($open | ForEach-Object { "$($_.id):$($_.status):touch=$($_.touched_count)" }) -join ', ')
     if ($open.Count -eq 0) { return $empty }
+
+    if ($SliceIndex -eq 1 -and -not [string]::IsNullOrWhiteSpace($ReplayRoot)) {
+        $firstSlicePlanText = Read-TextIfExists -Path (Join-Path $ReplayRoot 'FIRST_SLICE_PROOF_PLAN.md')
+        $plannedFamily = Get-FirstNonEmptyText @(
+            (Get-PlanField -Text $firstSlicePlanText -Name 'first_slice_family'),
+            (Get-PlanField -Text $firstSlicePlanText -Name 'highest_weight_open_gate'),
+            (Get-PlanField -Text $firstSlicePlanText -Name 'target_family'),
+            (Get-PlanField -Text $firstSlicePlanText -Name 'family_id')
+        )
+        if (-not [string]::IsNullOrWhiteSpace($plannedFamily)) {
+            $candidate = @($open | Where-Object { [string]$_.id -eq $plannedFamily } | Select-Object -First 1)
+            if ($candidate.Count -gt 0) {
+                return [ordered]@{
+                    family_id = $candidate[0].id
+                    slice_type = $candidate[0].recommended_slice_type
+                    target_sibling_surface = (Get-FamilyTargetSiblingSurface -Family $candidate[0])
+                    reason = "FIRST_SLICE_PROOF_PLAN.md selected $plannedFamily for S1; runner must preserve the planner's concrete first-slice family instead of forcing core_entry."
+                    open_families = $empty.open_families
+                }
+            }
+        }
+    }
 
     $deploySiblingPressure = @($open | Where-Object {
         $siblingCount = if ($null -ne $_.open_sibling_count) { [int]$_.open_sibling_count } else { 0 }
@@ -3335,7 +3366,8 @@ function Resolve-ForcedFamilyDecisionForSlice {
         [string]$RunnerContractPath
     )
 
-    $forced = Get-ForcedFamilyDecision -Ledger $Ledger -SliceIndex $SliceIndex -CarrierRank $CarrierRank
+    $replayRootForDecision = if ([string]::IsNullOrWhiteSpace($SourceChainContractPath)) { '' } else { [System.IO.Path]::GetDirectoryName($SourceChainContractPath) }
+    $forced = Get-ForcedFamilyDecision -Ledger $Ledger -SliceIndex $SliceIndex -CarrierRank $CarrierRank -ReplayRoot $replayRootForDecision
     if (-not (Test-Path -LiteralPath $SourceChainContractPath)) { return $forced }
 
     try {

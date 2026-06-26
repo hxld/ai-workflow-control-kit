@@ -135,6 +135,18 @@ function Get-CommandMavenSettings {
     return ('-s ' + $ConfiguredValue + ' -Dproject.build.sourceEncoding=UTF-8 -Dfile.encoding=UTF-8')
 }
 
+function Add-MavenStopParsingIfNeeded {
+    param([string]$Command)
+    if ([string]::IsNullOrWhiteSpace($Command)) { return '' }
+    $trimmed = $Command.Trim()
+    if ($trimmed -notmatch '(?i)^mvn(?:\.cmd)?\s+') { return $trimmed }
+    if ($trimmed -match '(?i)^mvn(?:\.cmd)?\s+--%(\s|$)') { return $trimmed }
+    if ($trimmed -match '(?i)(-D(?:it\.)?test\s*=|#|-Dsurefire\.failIfNoSpecifiedTests=false)') {
+        return ($trimmed -replace '^(?i)(mvn(?:\.cmd)?)\s+', '$1 --% ')
+    }
+    return $trimmed
+}
+
 function New-MavenTestCommand {
     param(
         [string]$Worktree,
@@ -147,7 +159,7 @@ function New-MavenTestCommand {
     $pom = [System.IO.Path]::Combine($Worktree, 'pom.xml')
     $selector = $TestClass
     if (-not [string]::IsNullOrWhiteSpace($TestMethod)) { $selector = "$selector#$TestMethod" }
-    return ('mvn ' + (Get-CommandMavenSettings -ConfiguredValue $Settings) + ' -f "' + $pom + '" -pl ' + $Module + ' -am -Dtest=' + $selector + ' -Dsurefire.failIfNoSpecifiedTests=false test')
+    return ('mvn --% ' + (Get-CommandMavenSettings -ConfiguredValue $Settings) + ' -f "' + $pom + '" -pl ' + $Module + ' -am -Dtest=' + $selector + ' -Dsurefire.failIfNoSpecifiedTests=false test')
 }
 
 function Get-ProofTypeForFamily {
@@ -338,7 +350,11 @@ if ([string]::IsNullOrWhiteSpace($validationCommand)) {
 }
 if ([string]::IsNullOrWhiteSpace($redCommand)) { $redCommand = $validationCommand }
 if ([string]::IsNullOrWhiteSpace($greenCommand)) { $greenCommand = $validationCommand }
+$validationCommand = Add-MavenStopParsingIfNeeded -Command $validationCommand
+$redCommand = Add-MavenStopParsingIfNeeded -Command $redCommand
+$greenCommand = Add-MavenStopParsingIfNeeded -Command $greenCommand
 if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand }
+$selectedProofType = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
 
 $runnableIssues = New-Object System.Collections.Generic.List[string]
 $redUsesIsolatedPom = Test-CommandUsesIsolatedPom -Command $redCommand -Worktree $worktreeFull
@@ -574,7 +590,7 @@ $testCharterContract = [ordered]@{
     state_or_output_surface = $downstream
     red_phase_business_failure = $expectedRedFailure
     green_phase_business_success = $expectedGreenAssertion
-    proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
+    proof_type = $selectedProofType
     non_authorizing_evidence = @('helper_only', 'mock_only', 'dto_only', 'static_only', 'wiring_only', 'file_presence_only')
     issues = @($testCharterIssues | Select-Object -Unique)
 }
@@ -751,7 +767,7 @@ if ($SliceIndex -eq 1) {
         must_not_assertion = $mustNotBehavior
         expected_red_failure = $expectedRedFailure
         expected_green_pass = $expectedGreenAssertion
-        required_proof_type = Get-ProofTypeForFamily -FamilyId $ForcedRequirementFamily -PlanText $planText -ForcedSliceType $ForcedSliceType
+        required_proof_type = $selectedProofType
         authorization_source = $firstExecutableContractPath
         issues = @($runCardIssues | Select-Object -Unique)
     }

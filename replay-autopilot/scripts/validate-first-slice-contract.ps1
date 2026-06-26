@@ -4,7 +4,8 @@ param(
     [int]$Slice = 1,
     [string]$Worktree = '',
     [string]$MavenSettings = '',
-    [string]$Contract = ''
+    [string]$Contract = '',
+    [switch]$Regenerate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,17 +67,20 @@ $replayRootFull = [System.IO.Path]::GetFullPath($ReplayRoot)
 $worktreeFull = Resolve-Worktree -ReplayRoot $replayRootFull -Worktree $Worktree
 $isolatedPom = Join-Path $worktreeFull 'pom.xml'
 
-$aggregateArgs = @(
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', (Join-Path $PSScriptRoot 'Invoke-PreSliceExperimentContracts.ps1'),
-    '-ReplayRoot', $replayRootFull,
-    '-Worktree', $worktreeFull,
-    '-SliceIndex', $Slice
-)
-if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) { $aggregateArgs += @('-MavenSettings', $MavenSettings) }
-& powershell @aggregateArgs | Out-Null
-$aggregateExit = $LASTEXITCODE
+$aggregateExit = 0
+if ($Regenerate) {
+    $aggregateArgs = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', (Join-Path $PSScriptRoot 'Invoke-PreSliceExperimentContracts.ps1'),
+        '-ReplayRoot', $replayRootFull,
+        '-Worktree', $worktreeFull,
+        '-SliceIndex', $Slice
+    )
+    if (-not [string]::IsNullOrWhiteSpace($MavenSettings)) { $aggregateArgs += @('-MavenSettings', $MavenSettings) }
+    & powershell @aggregateArgs | Out-Null
+    $aggregateExit = $LASTEXITCODE
+}
 
 if ([string]::IsNullOrWhiteSpace($Contract)) {
     $preferred = Join-Path $replayRootFull 'FIRST_SLICE_CONTRACT.json'

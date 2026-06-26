@@ -61,6 +61,13 @@ function Get-FamilyRequiredProofType {
     return ''
 }
 
+function Get-RequiredProofType {
+    param($Ledger, $Contract, [string]$FamilyId)
+    $ledgerProof = if ($null -ne $Ledger) { Get-FamilyRequiredProofType -Ledger $Ledger -FamilyId $FamilyId } else { '' }
+    if (-not [string]::IsNullOrWhiteSpace($ledgerProof)) { return $ledgerProof }
+    return [string](Get-PropertyValue -Object $Contract -Names @('required_proof_type', 'proof_type'))
+}
+
 function Test-ProofMatchesFamily {
     param([string]$FamilyId, [string]$ProofType, [string]$RequiredProofType)
     if ([string]::IsNullOrWhiteSpace($ProofType)) { return $false }
@@ -117,7 +124,7 @@ $proofType = [string](Get-PropertyValue -Object $testCharterObject -Names @('pro
 if ([string]::IsNullOrWhiteSpace($proofType)) {
     $proofType = [string](Get-PropertyValue -Object $contractObject -Names @('required_proof_type', 'proof_type'))
 }
-$requiredProofType = if ($null -ne $familyLedgerObject) { Get-FamilyRequiredProofType -Ledger $familyLedgerObject -FamilyId $familyId } else { '' }
+$requiredProofType = Get-RequiredProofType -Ledger $familyLedgerObject -Contract $contractObject -FamilyId $familyId
 $productionEntry = [string](Get-PropertyValue -Object $testCharterObject -Names @('production_entry', 'production_entry_qn', 'real_entry_invoked', 'entry_point'))
 $businessAssertion = [string](Get-PropertyValue -Object $testCharterObject -Names @('business_assertion', 'red_phase_business_failure', 'green_phase_business_success', 'must_fail_before_change'))
 $stateOrOutput = Get-PropertyValue -Object $testCharterObject -Names @('state_or_output_surface', 'side_effect_target', 'state_or_output', 'side_effect_or_output')

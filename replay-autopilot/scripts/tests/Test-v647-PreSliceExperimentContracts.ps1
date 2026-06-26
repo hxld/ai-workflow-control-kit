@@ -40,6 +40,8 @@ public class RealEntry {
 
     $passRoot = Join-Path $tempRoot 'pass'
     New-Item -ItemType Directory -Force -Path $passRoot | Out-Null
+    Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'demo-harness') | Out-Null
     @{
         schema_version = 1
         slice_index = 1
@@ -72,7 +74,23 @@ public class RealEntry {
         issues = @()
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $passRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.json') -Encoding UTF8
     @{
+        families = @(@{
+            id = 'core_entry'
+            required = $true
+            status = 'OPEN'
+            weight = 100
+            required_proof_type = 'real_entry_behavior'
+            coverage_cap_if_open = 60
+        })
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $passRoot 'REQUIREMENT_FAMILY_LEDGER.json') -Encoding UTF8
+    @{
         freshness_metadata = @{ initial_after_start_replay_round = 'abc1234' }
+        callable_carriers = @(@{ signature = 'demo.RealEntry.handle(String): String' })
+        failed_carrier_authorizations = @(@{ signature = 'helper_only'; reason = 'synthetic_carrier' })
+        test_harness_modules = @('demo-harness')
+        valid_maven_command_templates = @(@{ module = 'demo-harness'; command = "mvn --% -f $(Join-Path $worktree 'pom.xml') -pl demo-harness -am -Dtest=RealEntryContractTest#returnsMappedPayload -Dsurefire.failIfNoSpecifiedTests=false test" })
+        forbidden_proof_types_by_family = @{ core_entry = @('helper_only', 'mock_only', 'static_only') }
+        side_effect_probe_examples = @(@{ family = 'core_entry'; probe = 'returned payload value' })
         carrier_candidates = @(@{ signature = 'demo.RealEntry.handle(String): String'; family_id = 'core_entry'; callable_status = 'callable' })
         families = @(@{ id = 'core_entry'; weight = 100 })
         callable_status = @{ 'demo.RealEntry.handle(String): String' = 'callable' }

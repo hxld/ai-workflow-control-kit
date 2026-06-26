@@ -183,6 +183,19 @@ def parse_carrier_string(carrier_str: str) -> Optional[MethodSignature]:
     return MethodSignature(class_name, method_name, parameters, return_type)
 
 
+def carrier_is_class_only(carrier_str: str) -> bool:
+    """Return true when carrier text names only a Java class, not a method."""
+    normalized = normalize_carrier_string(carrier_str)
+    if not normalized:
+        return False
+    if "(" in normalized or ")" in normalized:
+        return False
+    if ":" in normalized:
+        return False
+    leaf = normalized.rsplit(".", 1)[-1]
+    return bool(leaf and leaf[0].isupper())
+
+
 def extract_method_signature_from_source(source: str, class_name: str, method_name: str) -> Optional[MethodSignature]:
     """
     Extract method signature from Java source code.
@@ -530,13 +543,47 @@ def verify_pre_red_authorization(input_data: Dict) -> Dict:
             blockers.append(f"selected_real_entry_{entry_result.get('error', 'invalid')}")
 
     if worktree_path and selected_carrier and not has_blocking_placeholder(selected_carrier):
-        carrier_result = verify_carrier_signature(
-            selected_carrier,
-            worktree_path,
-            selected_real_entry=selected_real_entry,
-            test_invocation_path=invocation_path,
-            proof_observation_point=observation_point,
-        )
+        if carrier_is_class_only(selected_carrier) and entry_result and entry_result.get("status") == "PASS":
+            entry_sig = entry_result.get("planned_signature", {}) or {}
+            carrier_class_name = normalize_carrier_string(selected_carrier)
+            same_entry_class = simple_java_name(entry_sig.get("class_name", "")) == simple_java_name(carrier_class_name)
+            if same_entry_class:
+                carrier_result = {
+                    "status": "PASS",
+                    "authorized": True,
+                    "blockers": [],
+                    "planned_signature": {
+                        "class_name": carrier_class_name,
+                        "method_name": entry_sig.get("method_name", ""),
+                        "parameters": entry_sig.get("parameters", []),
+                        "return_type": entry_sig.get("return_type", "void"),
+                        "visibility": entry_sig.get("visibility", "package"),
+                        "formatted": entry_result.get("resolved_signature", {}).get("formatted", ""),
+                    },
+                    "implemented_signature": entry_result.get("implemented_signature") or entry_result.get("resolved_signature"),
+                    "resolved_signature": entry_result.get("resolved_signature"),
+                    "normalized_carrier": selected_carrier,
+                    "exact_signature_required": False,
+                    "file_path": entry_result.get("file_path"),
+                    "class_only_carrier_resolved_via_entry": True,
+                }
+            else:
+                carrier_result = {
+                    "status": "FAIL",
+                    "authorized": False,
+                    "blockers": ["class_carrier_entry_mismatch"],
+                    "error": "class_carrier_entry_mismatch",
+                    "normalized_carrier": carrier_class_name,
+                    "exact_signature_required": False,
+                }
+        else:
+            carrier_result = verify_carrier_signature(
+                selected_carrier,
+                worktree_path,
+                selected_real_entry=selected_real_entry,
+                test_invocation_path=invocation_path,
+                proof_observation_point=observation_point,
+            )
         if carrier_result.get("status") == "FAIL":
             for blocker in carrier_result.get("blockers", []) or []:
                 blockers.append(str(blocker))

@@ -138,6 +138,11 @@ try {
     $runSliceText = Get-Content -LiteralPath (Join-Path $scriptsRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8
     $promptText = Get-Content -LiteralPath (Join-Path $autopilotRoot 'prompts\phase1-slice-executor.prompt.md') -Raw -Encoding UTF8
     Assert-True ($runSliceText -match 'Invoke-PreSliceToolAvailabilityGate\.ps1') 'Run-SliceLoop.ps1 must invoke pre-slice tool availability gate'
+    $toolGateCallIndex = $runSliceText.IndexOf("Join-Path `$PSScriptRoot 'Invoke-PreSliceToolAvailabilityGate.ps1'")
+    $callableGateCallIndex = $runSliceText.IndexOf('$callableCarrierGate = Invoke-CallableCarrierAuthorizationGate')
+    Assert-True ($toolGateCallIndex -ge 0) 'Run-SliceLoop.ps1 must contain the concrete pre-slice tool availability gate invocation'
+    Assert-True ($callableGateCallIndex -ge 0) 'Run-SliceLoop.ps1 must contain the concrete callable-carrier authorization invocation'
+    Assert-True ($toolGateCallIndex -lt $callableGateCallIndex) 'Run-SliceLoop.ps1 must write PRE_SLICE_TOOL_AVAILABILITY before callable-carrier authorization can stop the slice'
     Assert-True ($runSliceText -match 'tooling_preflight_blocker') 'Run-SliceLoop.ps1 must classify availability failures as tooling_preflight_blocker'
     Assert-True ($promptText -match 'PRE_SLICE_TOOL_AVAILABILITY\.json') 'Phase1 prompt must require PRE_SLICE_TOOL_AVAILABILITY.json'
     Assert-True ($promptText -match 'red_exit_code') 'Phase1 prompt must require machine-readable RED/GREEN side-effect schema fields'

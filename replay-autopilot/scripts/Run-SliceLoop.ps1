@@ -4846,16 +4846,6 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     }
 
     if (-not $blockedBeforeExecutor) {
-        $callableCarrierGate = Invoke-CallableCarrierAuthorizationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$callableCarrierGate.CanProceed) {
-            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode 0 -Reason "callable carrier authorization stopped before implementation: $($callableCarrierGate.Blocker)"
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization pre-executor stop | {1} | {2} | callable_carrier_authorization_failed | blocker={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $callableCarrierGate.Blocker, $callableCarrierGate.ResultPath)
-            $blockedBeforeExecutor = $true
-            $hasExistingResult = $true
-        }
-    }
-
-    if (-not $blockedBeforeExecutor) {
         $preSliceToolGatePath = Join-Path $replayRootFull 'PRE_SLICE_TOOL_AVAILABILITY.json'
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-PreSliceToolAvailabilityGate.ps1') `
             -ReplayRoot $replayRootFull `
@@ -4863,6 +4853,16 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         if ($LASTEXITCODE -ne 0) {
             Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode $LASTEXITCODE -Reason "pre-slice tool availability gate blocked before executor"
             Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} pre-slice tool availability stop | {1} | {2} | tooling_preflight_blocker | PRE_SLICE_TOOL_AVAILABILITY status=BLOCKED; result={3}. |" -f $i, $forced.family_id, $forced.slice_type, $preSliceToolGatePath)
+            $blockedBeforeExecutor = $true
+            $hasExistingResult = $true
+        }
+    }
+
+    if (-not $blockedBeforeExecutor) {
+        $callableCarrierGate = Invoke-CallableCarrierAuthorizationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
+        if (-not [bool]$callableCarrierGate.CanProceed) {
+            Write-ExecutorBlockedSliceResult -Path $sliceResult -SliceIndex $i -ForcedDecision $forced -SliceLogDir $sliceLogDir -ExitCode 0 -Reason "callable carrier authorization stopped before implementation: $($callableCarrierGate.Blocker)"
+            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} callable-carrier authorization pre-executor stop | {1} | {2} | callable_carrier_authorization_failed | blocker={3}; result={4}. |" -f $i, $forced.family_id, $forced.slice_type, $callableCarrierGate.Blocker, $callableCarrierGate.ResultPath)
             $blockedBeforeExecutor = $true
             $hasExistingResult = $true
         }

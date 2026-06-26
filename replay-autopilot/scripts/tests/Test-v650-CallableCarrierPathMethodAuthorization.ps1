@@ -105,7 +105,26 @@ selected_carrier: app-core/src/main/java/com/example/ExampleFacadeImpl.java#batc
     Assert-True ($gateJson.authorization -eq 'ALLOW') "callable gate should ALLOW, got $($gateJson.authorization)"
     Assert-True ($gateJson.resolved_signature.selected_carrier.method_name -eq 'batchQueryCaseDetail') 'callable gate should expose resolved selected carrier signature'
 
-    Write-Host '[Scenario 3] Explicit wrong params still fail strict signature comparison...'
+    Write-Host '[Scenario 3] Class-only carrier authorizes through selected_real_entry in the same production class...'
+    $classOnlyReplayRoot = Join-Path $tempRoot 'class-only-replay'
+    New-Item -ItemType Directory -Force -Path $classOnlyReplayRoot | Out-Null
+    Write-Utf8 (Join-Path $classOnlyReplayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
+selected_real_entry: com.example.ExampleFacadeImpl.batchQueryCaseDetail
+selected_carrier: com.example.ExampleFacadeImpl
+'@
+    @{
+        real_entry = 'com.example.ExampleFacadeImpl.batchQueryCaseDetail'
+        selected_carrier = 'com.example.ExampleFacadeImpl'
+        downstream_side_effect_or_output = 'assert_result_model_success'
+    } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $classOnlyReplayRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $callableGateScript -ReplayRoot $classOnlyReplayRoot -Worktree $worktree -SliceIndex 1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'callable carrier gate should pass class-only carrier when selected_real_entry is callable in that class'
+    $classOnlyGateJson = Get-Content -LiteralPath (Join-Path $classOnlyReplayRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ($classOnlyGateJson.authorization -eq 'ALLOW') "class-only callable gate should ALLOW, got $($classOnlyGateJson.authorization)"
+    Assert-True ($classOnlyGateJson.resolved_signature.selected_carrier.method_name -eq 'batchQueryCaseDetail') 'class-only carrier should lock to the selected_real_entry method'
+
+    Write-Host '[Scenario 4] Explicit wrong params still fail strict signature comparison...'
     $strictInput = @{
         plan_carrier = 'com.example.ExampleFacadeImpl.batchQueryCaseDetail(String): ResultModel'
         worktree_path = $worktree

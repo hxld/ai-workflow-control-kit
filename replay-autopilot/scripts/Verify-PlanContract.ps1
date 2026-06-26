@@ -1189,6 +1189,20 @@ if ($Stage -eq 'Phase0') {
         $hasCalculateSibling = $sourceAwarePlanText -match '(?i)AiCalculateLossApiTaskProcessor\.rebuildTaskData'
         if (-not ($hasApplySibling -and $hasCalculateSibling)) {
             $issues.Add('policy_rebuild_plan_missing:apply_and_calculate_siblings') | Out-Null
+            $missingSiblingMethods = New-Object System.Collections.Generic.List[string]
+            if (-not $hasApplySibling) {
+                $missingSiblingMethods.Add('AiApplyClaimApiTaskProcessor.rebuildTaskData') | Out-Null
+            }
+            if (-not $hasCalculateSibling) {
+                $missingSiblingMethods.Add('AiCalculateLossApiTaskProcessor.rebuildTaskData') | Out-Null
+            }
+            $issueEvidence.Add([ordered]@{
+                issue = 'policy_rebuild_plan_missing:apply_and_calculate_siblings'
+                artifact = 'plan_artifacts'
+                machine_gate = 'Surface Coverage Gate'
+                pattern = 'both sibling TaskProcessor rebuildTaskData carriers must be planned'
+                snippet = 'Missing sibling carrier(s): ' + (@($missingSiblingMethods.ToArray()) -join '; ')
+            }) | Out-Null
         }
 
         if (-not ($hasPolicyAssignmentDiff -and $hasInsureAssignmentDiff)) {

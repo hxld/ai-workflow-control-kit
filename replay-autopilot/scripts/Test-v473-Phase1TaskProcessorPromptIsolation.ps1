@@ -23,8 +23,8 @@ $cases += (Assert-True -Name 'phase1_overrides_memory_build_profile_root_pom' -C
 $condition = $prompt.Contains('PROJECT_ROOT') -and $prompt.Contains('repo rules') -and $prompt.Contains('{{WORKTREE}}\pom.xml')
 $cases += (Assert-True -Name 'phase1_project_root_reference_only' -Condition $condition)
 
-$condition = $prompt.Contains('TaskProcessor') -and $prompt.Contains('rebuildTaskData') -and $prompt.Contains('Service/TaskProcessor')
-$cases += (Assert-True -Name 'phase1_taskprocessor_service_surface_allowed' -Condition $condition)
+$condition = $prompt.Contains('backend worker') -and $prompt.Contains('rebuild-entry') -and $prompt.Contains('backend-only source-chain') -and $prompt.Contains('Service/worker') -and $prompt.Contains('not merely testing Service/worker when the plan explicitly selected it')
+$cases += (Assert-True -Name 'phase1_backend_worker_service_surface_allowed' -Condition $condition)
 
 $condition = $prompt.Contains('<expected_test_class>') -and $prompt.Contains('PLAN_RESULT.json.expected_test_class')
 $cases += (Assert-True -Name 'phase1_expected_test_class_required' -Condition $condition)
@@ -41,7 +41,7 @@ $cases += (Assert-True -Name 'phase1_no_exact_facade_only_entry_rule' -Condition
 $condition = -not $prompt.Contains('claim-core has no test')
 $cases += (Assert-True -Name 'phase1_no_unconditional_claim_core_test_ban' -Condition $condition)
 
-$condition = $prompt.Contains('测试 harness 模块由当前 worktree 的实际测试依赖') -and $prompt.Contains('候选模块 `pom.xml`') -and $prompt.Contains('-pl <test-module>') -and $prompt.Contains('-am') -and $prompt.Contains('JUnit/Mockito/Spring Test')
+$condition = $prompt.Contains('rg') -and $prompt.Contains('@Test') -and $prompt.Contains('Mockito/JUnit import') -and $prompt.Contains('-pl <test-module>') -and $prompt.Contains('-am') -and $prompt.Contains('JUnit/Mockito/Spring Test') -and $prompt.Contains('cross_module_test_harness_depends_on_production_module')
 $cases += (Assert-True -Name 'phase1_carrier_uses_existing_harness_module' -Condition $condition)
 
 $condition = $prompt.Contains('mvn --% {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am') -and $prompt.Contains('-Dtest=<expected_test_class>#<expected_test_method>') -and $prompt.Contains('-Dsurefire.failIfNoSpecifiedTests=false')
@@ -53,22 +53,22 @@ $cases += (Assert-True -Name 'phase1_requires_compile_and_execution_before_cover
 $condition = $prompt.Contains('`-pl <module>`') -and $prompt.Contains('`-am`') -and $prompt.Contains('SNAPSHOT')
 $cases += (Assert-True -Name 'phase1_requires_also_make_for_project_list' -Condition $condition)
 
-$condition = $prompt.Contains('AbstractTestClass') -and $prompt.Contains('@SpringBootTest') -and $prompt.Contains('@RunWith(SpringJUnit4ClassRunner.class)') -and $prompt.Contains('@Resource') -and $prompt.Contains('no-Spring')
-$cases += (Assert-True -Name 'phase1_forbids_full_spring_context_for_taskprocessor_rebuild' -Condition $condition)
+$condition = $prompt.Contains('Spring ApplicationContext') -and $prompt.Contains('SpringBoot') -and $prompt.Contains('ContextConfiguration') -and $prompt.Contains('Resource') -and $prompt.Contains('no-Spring') -and $prompt.Contains('Mockito')
+$cases += (Assert-True -Name 'phase1_forbids_full_spring_context_for_backend_worker_rebuild' -Condition $condition)
 
-$condition = $prompt.Contains('AiClaimDataAssemblyHelper.buildRequestCommon') -and $prompt.Contains('AiClaimDataAssemblyHelper.RequestBuildFunction') -and $prompt.Contains('RequestBuildContext') -and $prompt.Contains('thenAnswer') -and $prompt.Contains('taskData == null') -and $prompt.Contains('return new AiApplyClaimRequest') -and $prompt.Contains('return new AiCalculateLossRequest')
-$cases += (Assert-True -Name 'phase1_requires_deterministic_request_build_context_red' -Condition $condition)
+$condition = $prompt.Contains('SOURCE_CHAIN_CONTRACT.json.next_required_slice') -and $prompt.Contains('source-chain') -and $prompt.Contains('Spring ApplicationContext') -and $prompt.Contains('terminal DTO') -and $prompt.Contains('invocation.getArguments()')
+$cases += (Assert-True -Name 'phase1_requires_deterministic_source_chain_red' -Condition $condition)
 
-$condition = $prompt.Contains('AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)') -and $prompt.Contains('AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)') -and $prompt.Contains('sibling surface')
-$cases += (Assert-True -Name 'phase1_requires_apply_and_calculate_rebuild_siblings' -Condition $condition)
+$condition = $prompt.Contains('source-chain') -and $prompt.Contains('sibling surface') -and $prompt.Contains('carrier') -and $prompt.Contains('source/buildContext -> request/task/payload')
+$cases += (Assert-True -Name 'phase1_requires_source_chain_sibling_surface_from_contract' -Condition $condition)
 
 $invokePath = Join-Path $repoRoot 'scripts\Invoke-AgentPrompt.ps1'
 $invoke = Get-Content -LiteralPath $invokePath -Raw -Encoding UTF8
 $condition = $invoke.Contains('maven_pl_without_am_forbidden') -and $invoke.Contains('$hasProjectList') -and $invoke.Contains('$hasAlsoMake')
 $cases += (Assert-True -Name 'invoke_agent_prompt_guards_pl_without_am' -Condition $condition)
 
-$condition = $invoke.Contains('AbstractTestClass') -and $invoke.Contains('RequestBuildFunction') -and $invoke.Contains('fixed database caseIds') -and $invoke.Contains('hand-built request from thenAnswer')
-$cases += (Assert-True -Name 'invoke_agent_prompt_injects_no_spring_rebuild_guard' -Condition $condition)
+$condition = $invoke.Contains('TaskProcessor/rebuildTaskData/source-chain tests') -and $invoke.Contains('full Spring context') -and $invoke.Contains('AbstractTestClass') -and $invoke.Contains('fixed database caseIds') -and $invoke.Contains('hand-built request from thenAnswer')
+$cases += (Assert-True -Name 'invoke_agent_prompt_injects_no_spring_source_chain_guard' -Condition $condition)
 
 [ordered]@{
     status = 'PASS'

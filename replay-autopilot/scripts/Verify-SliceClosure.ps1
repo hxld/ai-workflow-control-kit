@@ -247,6 +247,31 @@ function Remove-FeatureExemptedGapFlags {
     return @($kept)
 }
 
+function Test-ExecutableSideEffectVerificationPass {
+    param($SideEffectVerification)
+    if ($null -eq $SideEffectVerification) { return $false }
+    $status = [string](Get-ObjectPropertyValue -Object $SideEffectVerification -Name 'validation_status')
+    $reason = [string](Get-ObjectPropertyValue -Object $SideEffectVerification -Name 'reason')
+    $source = [string](Get-ObjectPropertyValue -Object $SideEffectVerification -Name 'verification_source')
+    $canProceed = $false
+    $hasVerification = $false
+    if ($SideEffectVerification.PSObject.Properties.Name -contains 'can_proceed') {
+        $canProceed = [bool]$SideEffectVerification.can_proceed
+    }
+    if ($SideEffectVerification.PSObject.Properties.Name -contains 'has_verification') {
+        $hasVerification = [bool]$SideEffectVerification.has_verification
+    }
+    $evidenceFiles = @(Get-StringArray (Get-ObjectPropertyValue -Object $SideEffectVerification -Name 'evidence_files'))
+    return (
+        $status -eq 'PASS' -and
+        $canProceed -and
+        $hasVerification -and
+        $reason -eq 'executable_side_effect_evidence_verified' -and
+        $source -eq 'SLICE_RESULT_and_test_source' -and
+        $evidenceFiles.Count -gt 0
+    )
+}
+
 function Test-PublicEntryText {
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
@@ -737,6 +762,7 @@ $familyContracts = Read-FamilyContract -Path $familyContractPath
 $carrierAuthorization = $null
 $exactContractMatrix = $null
 $sideEffectEvidenceFile = $null
+$sideEffectVerification = $null
 $sourceChainContract = $null
 $carrierLock = $null
 
@@ -754,6 +780,10 @@ if (Test-Path -LiteralPath $sideEffectEvidencePath) {
     try { $sideEffectEvidenceFile = Read-JsonObject -Path $sideEffectEvidencePath } catch { $warnings.Add("side_effect_evidence_json_invalid") }
 } elseif (Test-Path -LiteralPath (Join-Path $replayRootFull 'SIDE_EFFECT_EVIDENCE.json')) {
     try { $sideEffectEvidenceFile = Read-JsonObject -Path (Join-Path $replayRootFull 'SIDE_EFFECT_EVIDENCE.json') } catch { $warnings.Add("side_effect_evidence_json_invalid") }
+}
+$sideEffectVerificationPath = Join-Path $replayRootFull 'SIDE_EFFECT_VERIFICATION_RESULT.json'
+if (Test-Path -LiteralPath $sideEffectVerificationPath) {
+    try { $sideEffectVerification = Read-JsonObject -Path $sideEffectVerificationPath } catch { $warnings.Add("side_effect_verification_json_invalid") }
 }
 if (Test-Path -LiteralPath $sourceChainContractPath) {
     try { $sourceChainContract = Read-JsonObject -Path $sourceChainContractPath } catch { $warnings.Add("source_chain_contract_json_invalid") }
@@ -795,6 +825,7 @@ $targetSubsurface = ''
 $productionBoundary = ''
 $proofKind = ''
 $redExpectation = ''
+$authorizingResultEvidenceText = ''
 $touchedFamilies = @()
 $closedFamilies = @()
 $resultEvidenceText = ''
@@ -828,6 +859,15 @@ if ($null -ne $result) {
     $proofKind = [string]$result.proof_kind
     $redExpectation = [string]$result.red_expectation
     $resultEvidenceText = ($result | ConvertTo-Json -Depth 12)
+    $authorizingResultEvidenceText = @(
+        $targetSubsurface,
+        $productionBoundary,
+        $proofKind,
+        $redExpectation,
+        ((Get-StringArray $result.side_effect_assertions) -join ' '),
+        ((Get-StringArray $result.exact_output_assertions) -join ' '),
+        ((Get-StringArray $result.closed_assertions) -join ' ')
+    ) -join "`n"
     if ($null -ne $result.coverage_delta -and "$($result.coverage_delta)" -match '^[0-9]+$') {
         $coverageDelta = [int]$result.coverage_delta
     }
@@ -1469,7 +1509,7 @@ if ([string]::IsNullOrWhiteSpace($primaryCarrierClass)) {
     $primaryCarrierClass = Get-PrimaryCarrierClassName -Text $plannedSelectedCarrier
 }
 $subclassedClassNames = @(Get-SubclassedClassNames -Text $testImplementedText)
-$counterProofText = @($testImplementedText, $resultEvidenceText) -join "`n"
+$counterProofText = @($testImplementedText, $authorizingResultEvidenceText) -join "`n"
 $hasCounterProofSignal = $counterProofText -match '(?i)(invokeCount|autoFlowInvokeCount|counter|get\w*Count|assertEquals\s*\(\s*\d+\s*,\s*\w+\.get\w*Count)'
 $subclassesPrimaryCarrier = -not [string]::IsNullOrWhiteSpace($primaryCarrierClass) -and (@($subclassedClassNames | Where-Object { [string]$_ -eq $primaryCarrierClass }).Count -gt 0)
 $hasSubclassCounterProof = $highWeightCarrierTouched.Count -gt 0 -and (
@@ -1478,7 +1518,7 @@ $hasSubclassCounterProof = $highWeightCarrierTouched.Count -gt 0 -and (
         $testImplementedText -match '(?s)@Override' -and
         $hasCounterProofSignal
     ) -or
-    $resultEvidenceText -match '(?i)(subclass\s+counter|override\s+count|testable\s+subclass|subclass-only)'
+    $authorizingResultEvidenceText -match '(?i)(subclass\s+counter|override\s+count|testable\s+subclass|subclass-only)'
 )
 $hasDependencySpyCounterProof = $highWeightCarrierTouched.Count -gt 0 -and -not $hasSubclassCounterProof -and
     $subclassedClassNames.Count -gt 0 -and $testImplementedText -match '(?s)@Override' -and $hasCounterProofSignal
@@ -1900,6 +1940,48 @@ if ($sideEffectEvidenceRequired -and -not $sideEvidenceComplete) {
         if ($gapFlags -notcontains $flag) { $gapFlags += $flag }
     }
     $hasBehaviorEvidence = $false
+}
+$sideEffectVerificationPass = Test-ExecutableSideEffectVerificationPass -SideEffectVerification $sideEffectVerification
+if ($sideEffectEvidenceRequired -and $sideEffectVerificationPass) {
+    $warnings.Add('side_effect_ledger_executable_evidence_verified') | Out-Null
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('side_effect_evidence_missing', 'side_effect_red_not_business_assertion', 'side_effect_ledger_gap', 'wrong_test_surface') `
+        -ExemptedFlags $featureExemptedGapFlags)
+    $remainingFailClosedFlagsForTooling = @(
+        'wrong_test_surface',
+        'shallow_module',
+        'synthetic_carrier_gap',
+        'mock_behavior_gap',
+        'tdd_red_not_replayed',
+        'no_progress_slice',
+        'carrier_authorization_missing',
+        'carrier_authorization_stop',
+        'exact_contract_assertion_missing',
+        'exact_contract_boundary_proof_stop',
+        'side_effect_evidence_missing',
+        'side_effect_red_not_business_assertion',
+        'side_effect_ledger_gap',
+        'behavior_carrier_gap',
+        'facade_direction_gap',
+        'test_contract_mismatch',
+        'return_value_vs_exception_mismatch',
+        'assertion_surface_mismatch',
+        'behavior_test_charter_gap',
+        'test_compilation_failed',
+        'test_compilation_evidence_missing',
+        'test_execution_failed',
+        'no_test_execution_evidence'
+    ) | Where-Object { $gapFlags -contains $_ }
+    if ($remainingFailClosedFlagsForTooling.Count -eq 0) {
+        $gapFlags = @(Remove-FeatureExemptedGapFlags `
+            -GapFlags $gapFlags `
+            -Exemptions @('tooling_enforcement_stop') `
+            -ExemptedFlags $featureExemptedGapFlags)
+    }
+    if ($testCommands.Count -gt 0 -and -not $isExecutorBlockedSlice) {
+        $hasBehaviorEvidence = $true
+    }
 }
 
 $mustNotWrites = if ($null -ne $sideEvidenceObject) { @(Get-StringArray $sideEvidenceObject.must_not_writes) } else { @() }

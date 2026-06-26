@@ -2328,6 +2328,30 @@ function Invoke-SideEffectLedgerGate {
     return [pscustomobject]@{ CanProceed = $result.can_proceed; ResultPath = $jsonResultPath; Blocker = 'side_effect_ledger_failed' }
 }
 
+function Invoke-SliceVerifierRefresh {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [string]$SliceResultPath,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [Parameter(Mandatory = $true)]
+        [string]$RunnerContractPath,
+        [string]$Reason = 'post_gate_refresh'
+    )
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceResult $SliceResultPath -SliceIndex $SliceIndex | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} verifier refresh failed | verifier_refresh | {1} | tooling_enforcement_stop | SliceVerifier exit_code={2}; authorization was not refreshed after downstream gate evidence. |" -f $SliceIndex, $Reason, $LASTEXITCODE)
+        return $false
+    }
+    Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} verifier refreshed | verifier_refresh | {1} | refreshed_authorization | SliceVerifier regenerated after downstream gate evidence. |" -f $SliceIndex, $Reason)
+    return $true
+}
+
 function Invoke-FamilyProofLedgerGate {
     param(
         [Parameter(Mandatory = $true)]
@@ -4732,6 +4756,10 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger: $($sideEffectGate.Blocker)"
             break
         }
+        if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath -Reason 'side_effect_ledger_existing_artifact')) {
+            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_verifier_refresh_after_side_effect_ledger"
+            break
+        }
         # v378: TODO detector gate after GREEN phase
         $todoGate = Invoke-TodoDetectorGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
         if (-not [bool]$todoGate.CanProceed) {
@@ -5313,6 +5341,10 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger: $($sideEffectGate.Blocker)"
         break
     }
+    if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath -Reason 'side_effect_ledger')) {
+        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_verifier_refresh_after_side_effect_ledger"
+        break
+    }
     $familyProofLedgerGate = Invoke-FamilyProofLedgerGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
     if (-not [bool]$familyProofLedgerGate.CanProceed) {
         Write-Host "Family proof ledger gate failed for slice ${i}: $($familyProofLedgerGate.Blocker)"
@@ -5501,6 +5533,10 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
         if (-not [bool]$sideEffectGate.CanProceed) {
             Write-Host "Side effect ledger gate failed for repaired slice ${i}: $($sideEffectGate.Blocker)"
             Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger_after_repair: $($sideEffectGate.Blocker)"
+            break
+        }
+        if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath -Reason 'side_effect_ledger_after_repair')) {
+            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_verifier_refresh_after_side_effect_ledger_repair"
             break
         }
         # v378: TODO detector gate after GREEN phase

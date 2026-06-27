@@ -4317,6 +4317,180 @@ function Copy-SliceResultFromWorktree {
     return $false
 }
 
+<#
+.SYNOPSIS
+Invoke-AllSliceGates (S0 meta-logic de-bloat)
+
+.DESCRIPTION
+Runs the canonical ordered sequence of post-execution slice gates that
+Run-SliceLoop.ps1 previously copy-pasted three times (fresh / reuse-existing /
+after-forced-family-repair). This single helper is the one source of truth for
+that sequence; each call site now routes through here with a phase-specific
+stop-reason suffix, so the stop-reason strings tests rely on (e.g.
+`side_effect_ledger_existing_artifact`, `side_effect_ledger_after_repair`) are
+preserved verbatim.
+
+Returns $false (and marks progress stopped) when any gate fails so the caller
+can `break` the slice loop. Returns $true when every gate passed.
+
+This helper intentionally does NOT own: SliceVerifier invocation (callers
+re-run it before this helper), the v281 ExecutableEvidenceGate recovery router,
+behavior-proof schema validation, forced-family repair, or the family-ledger
+authorization/should_continue checks. Those have phase-specific differences and
+stay at the call sites. Only the uniform gate ladder is centralized.
+#>
+function Invoke-AllSliceGates {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ReplayRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$Worktree,
+        [Parameter(Mandatory = $true)]
+        [int]$SliceIndex,
+        [Parameter(Mandatory = $true)]
+        [int]$MaxSlices,
+        [Parameter(Mandatory = $true)]
+        [string]$ProgressPath,
+        [Parameter(Mandatory = $true)]
+        [string]$RunnerContractPath,
+        [Parameter(Mandatory = $true)]
+        [string]$SliceResultPath,
+        [Parameter(Mandatory = $true)]
+        [string]$SliceVerifyPath,
+        [Parameter(Mandatory = $true)]
+        [string]$MavenSettings,
+        [Parameter(Mandatory = $true)]
+        [string]$PhaseSuffix,
+        [switch]$SkipTestCharterRepair
+    )
+
+    $stopSuffix = if ([string]::IsNullOrWhiteSpace($PhaseSuffix)) { '' } else { "_$PhaseSuffix" }
+    $gatePrefix = if ([string]::IsNullOrWhiteSpace($PhaseSuffix)) { '' } else { "$PhaseSuffix`_" }
+    $isAfterRepair = $PhaseSuffix -eq 'after_repair'
+    $discoveryMode = ($SliceIndex -eq 1)
+
+    $gate = Invoke-V348SliceQualityGates -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceResultPath $SliceResultPath -SliceVerifyPath $SliceVerifyPath -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$gate.CanProceed) {
+        Write-Host "v348 slice quality gate failed for slice ${SliceIndex}: $($gate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "v348_slice_quality_gate${stopSuffix}: $($gate.Blocker)"
+        return $false
+    }
+
+    $layerGate = Invoke-LayerValidationGate -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$layerGate.CanProceed) {
+        Write-Host "Layer validation gate failed for slice ${SliceIndex}: $($layerGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "layer_validation${stopSuffix}: $($layerGate.Blocker)"
+        return $false
+    }
+
+    $layerCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath -CheckpointId 'CP2_LAYER_VALIDATION' -DiscoveryMode $discoveryMode
+    if (-not [bool]$layerCheckpoint.CanProceed) {
+        Write-Host "Layer validation checkpoint failed for slice ${SliceIndex}: $($layerCheckpoint.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "layer_checkpoint${stopSuffix}: $($layerCheckpoint.Blocker)"
+        return $false
+    }
+
+    $testCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$testCharterGate.CanProceed) {
+        if ($isAfterRepair) {
+            Write-Host "Test charter prevalidation failed after forced-family repair for slice ${SliceIndex}. Starting test charter repair pass."
+            $testCharterGate = Invoke-TestCharterRepairGate `
+                -ReplayRoot $ReplayRoot `
+                -Worktree $Worktree `
+                -SliceIndex $SliceIndex `
+                -RunnerContractPath $RunnerContractPath `
+                -FailedGate $testCharterGate `
+                -Executor $Executor `
+                -Sandbox $Sandbox `
+                -Approval $Approval `
+                -TimeoutMinutes $sliceTimeoutMinutes `
+                -Model $Model `
+                -ReasoningEffort $ReasoningEffort
+        }
+        if (-not [bool]$testCharterGate.CanProceed) {
+            Write-Host "Test charter prevalidation gate failed for slice ${SliceIndex}: $($testCharterGate.Blocker)"
+            Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "test_charter_prevalidation${stopSuffix}: $($testCharterGate.Blocker)"
+            return $false
+        }
+    }
+
+    $testCharterCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath -CheckpointId 'CP4_TEST_CHARTER' -DiscoveryMode $discoveryMode
+    if (-not [bool]$testCharterCheckpoint.CanProceed) {
+        Write-Host "Test charter checkpoint failed for slice ${SliceIndex}: $($testCharterCheckpoint.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "test_charter_checkpoint${stopSuffix}: $($testCharterCheckpoint.Blocker)"
+        return $false
+    }
+
+    $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath -MavenSettings $MavenSettings
+    if (-not [bool]$phase0Precheck.CanProceed) {
+        Write-Host "Phase0 precheck gate failed for slice ${SliceIndex}: $($phase0Precheck.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "phase0_precheck${stopSuffix}: $($phase0Precheck.Blocker)"
+        return $false
+    }
+
+    $contractGate = Invoke-ContractVerificationGate -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$contractGate.CanProceed) {
+        Write-Host "Contract verification gate failed for slice ${SliceIndex}: $($contractGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "contract_verification${stopSuffix}: $($contractGate.Blocker)"
+        return $false
+    }
+
+    $implementationCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath -CheckpointId 'CP5_IMPLEMENTATION' -DiscoveryMode $false
+    if (-not [bool]$implementationCheckpoint.CanProceed) {
+        Write-Host "Implementation checkpoint failed for slice ${SliceIndex}: $($implementationCheckpoint.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "implementation_checkpoint${stopSuffix}: $($implementationCheckpoint.Blocker)"
+        return $false
+    }
+
+    $redGate = Invoke-RedPhaseHardGate -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$redGate.CanProceed) {
+        Write-Host "RED phase hard gate failed for slice ${SliceIndex}: $($redGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "red_phase_hard_gate${stopSuffix}: $($redGate.Blocker)"
+        return $false
+    }
+
+    $redIncrementalGate = Invoke-IncrementalVerificationGate -Phase 'RED' -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$redIncrementalGate.CanProceed) {
+        Write-Host "RED incremental verification gate failed for slice ${SliceIndex}: $($redIncrementalGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "red_incremental_verification${stopSuffix}: $($redIncrementalGate.Blocker)"
+        return $false
+    }
+
+    $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceResultPath $SliceResultPath -SliceVerifyPath $SliceVerifyPath -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    Move-ReplayScratchArtifacts -ReplayRoot $ReplayRoot
+    Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex
+
+    $sideEffectGate = Invoke-SideEffectLedgerGate -ReplayRoot $ReplayRoot -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$sideEffectGate.CanProceed) {
+        Write-Host "Side effect ledger gate failed for slice ${SliceIndex}: $($sideEffectGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "side_effect_ledger${stopSuffix}: $($sideEffectGate.Blocker)"
+        return $false
+    }
+
+    $verifierRefreshReason = if ($isAfterRepair) { 'side_effect_ledger_after_repair' } else { 'side_effect_ledger_existing_artifact' }
+    if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceResultPath $SliceResultPath -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath -Reason $verifierRefreshReason)) {
+        $refreshStopReason = if ($isAfterRepair) { 'slice_verifier_refresh_after_side_effect_ledger_repair' } else { 'slice_verifier_refresh_after_side_effect_ledger' }
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason $refreshStopReason
+        return $false
+    }
+
+    $todoGate = Invoke-TodoDetectorGate -ReplayRoot $ReplayRoot -Worktree $Worktree -SliceIndex $SliceIndex -RunnerContractPath $RunnerContractPath
+    if (-not [bool]$todoGate.CanProceed) {
+        Write-Host "TODO detector gate failed for slice ${SliceIndex}: $($todoGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "todo_detector${stopSuffix}: $($todoGate.Blocker)"
+        return $false
+    }
+
+    if (-not [bool]$greenGate.CanProceed) {
+        $greenStopReason = if ($isAfterRepair) { 'green_phase_no_mock_gate_after_forced_family_repair' } else { 'green_phase_no_mock_gate' }
+        Write-Host "GREEN phase no-mock gate failed for slice ${SliceIndex}: $($greenGate.Blocker)"
+        Normalize-SliceProgress -Path $ProgressPath -ReplayRoot $ReplayRoot -MaxSlices $MaxSlices -SliceIndex $SliceIndex -MarkStopped -StopReason "${greenStopReason}: $($greenGate.Blocker)"
+        return $false
+    }
+
+    return $true
+}
+
 function Invoke-ForcedFamilyRepair {
     param(
         [string]$ReplayRoot,
@@ -4675,100 +4849,25 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     if ($hasExistingResult -and $hasExistingVerify) {
         Write-Host "Reusing existing Phase 1 $sliceId result; regenerating authoritative verification."
         Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
+        # S3: Schema fail-fast before costly verifier
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-SliceSchemaFailFast.ps1') -ReplayRoot $replayRootFull -SliceIndex $i | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Schema fail-fast rejected slice ${i} result (reuse path)."
+            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_schema_fail_fast"
+            break
+        }
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
-        $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$v348Gate.CanProceed) {
-            Write-Host "v348 slice quality gate failed for slice ${i}: $($v348Gate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "v348_slice_quality_gate: $($v348Gate.Blocker)"
-            break
-        }
-        # v431: Layer validation gate (pre-flight check)
-        $layerGate = Invoke-LayerValidationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$layerGate.CanProceed) {
-            Write-Host "Layer validation gate failed for slice ${i}: $($layerGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "layer_validation: $($layerGate.Blocker)"
-            break
-        }
-        # v454: Economy checkpoint - CP2_LAYER_VALIDATION (after layer validation)
-        $discoveryMode = ($i -eq 1)  # Discovery mode only for S1
-        $layerCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath -CheckpointId 'CP2_LAYER_VALIDATION' -DiscoveryMode $discoveryMode
-        if (-not [bool]$layerCheckpoint.CanProceed) {
-            Write-Host "Layer validation checkpoint failed for slice ${i}: $($layerCheckpoint.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "layer_checkpoint: $($layerCheckpoint.Blocker)"
-            break
-        }
-        # v379: Test charter pre-validation gate
-        $testCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$testCharterGate.CanProceed) {
-            Write-Host "Test charter prevalidation gate failed for slice ${i}: $($testCharterGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "test_charter_prevalidation: $($testCharterGate.Blocker)"
-            break
-        }
-        # v454: Economy checkpoint - CP4_TEST_CHARTER (after test charter)
-        $testCharterCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath -CheckpointId 'CP4_TEST_CHARTER' -DiscoveryMode $discoveryMode
-        if (-not [bool]$testCharterCheckpoint.CanProceed) {
-            Write-Host "Test charter checkpoint failed for slice ${i}: $($testCharterCheckpoint.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "test_charter_checkpoint: $($testCharterCheckpoint.Blocker)"
-            break
-        }
-        # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
-        if (-not [bool]$phase0Precheck.CanProceed) {
-            Write-Host "Phase0 precheck gate failed for slice ${i}: $($phase0Precheck.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck: $($phase0Precheck.Blocker)"
-            break
-        }
-        # v378: Pre-implementation contract verification gate
-        $contractGate = Invoke-ContractVerificationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$contractGate.CanProceed) {
-            Write-Host "Contract verification gate failed for slice ${i}: $($contractGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "contract_verification: $($contractGate.Blocker)"
-            break
-        }
-        # v454: Economy checkpoint - CP5_IMPLEMENTATION (before RED phase)
-        $implementationCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath -CheckpointId 'CP5_IMPLEMENTATION' -DiscoveryMode $false
-        if (-not [bool]$implementationCheckpoint.CanProceed) {
-            Write-Host "Implementation checkpoint failed for slice ${i}: $($implementationCheckpoint.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "implementation_checkpoint: $($implementationCheckpoint.Blocker)"
-            break
-        }
-        $redGate = Invoke-RedPhaseHardGate -ReplayRoot $replayRootFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$redGate.CanProceed) {
-            Write-Host "RED phase hard gate failed for slice ${i}: $($redGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_phase_hard_gate: $($redGate.Blocker)"
-            break
-        }
-        # v378: RED phase incremental verification
-        $redIncrementalGate = Invoke-IncrementalVerificationGate -Phase 'RED' -ReplayRoot $replayRootFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$redIncrementalGate.CanProceed) {
-            Write-Host "RED incremental verification gate failed for slice ${i}: $($redIncrementalGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification: $($redIncrementalGate.Blocker)"
-            break
-        }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
-        Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
-        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
-        $verify = Read-JsonObject -Path $sliceVerify
-        # v431: Side effect ledger gate (verify after GREEN phase)
-        $sideEffectGate = Invoke-SideEffectLedgerGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$sideEffectGate.CanProceed) {
-            Write-Host "Side effect ledger gate failed for slice ${i}: $($sideEffectGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger: $($sideEffectGate.Blocker)"
-            break
-        }
-        if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath -Reason 'side_effect_ledger_existing_artifact')) {
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_verifier_refresh_after_side_effect_ledger"
-            break
-        }
-        # v378: TODO detector gate after GREEN phase
-        $todoGate = Invoke-TodoDetectorGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$todoGate.CanProceed) {
-            Write-Host "TODO detector gate failed for slice ${i}: $($todoGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "todo_detector: $($todoGate.Blocker)"
-            break
-        }
-        if (-not [bool]$greenGate.CanProceed) {
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "green_phase_no_mock_gate: $($greenGate.Blocker)"
+        if (-not (Invoke-AllSliceGates `
+            -ReplayRoot $replayRootFull `
+            -Worktree $worktreeFull `
+            -SliceIndex $i `
+            -MaxSlices $MaxSlices `
+            -ProgressPath $progressPath `
+            -RunnerContractPath $runnerContractPath `
+            -SliceResultPath $sliceResult `
+            -SliceVerifyPath $sliceVerify `
+            -MavenSettings $MavenSettings `
+            -PhaseSuffix '')) {
             break
         }
         Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
@@ -5273,6 +5372,14 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
 
     Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
 
+    # S3: Schema fail-fast before costly verifier
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-SliceSchemaFailFast.ps1') -ReplayRoot $replayRootFull -SliceIndex $i | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Schema fail-fast rejected slice ${i} result (fresh path)."
+        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_schema_fail_fast"
+        break
+    }
+
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
     $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
     if (-not [bool]$v348Gate.CanProceed) {
@@ -5454,101 +5561,35 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             Remove-Item -LiteralPath $repairEvidenceGate -Force -ErrorAction SilentlyContinue
         }
         Invoke-EvidenceCaptureRepair -SliceResultPath $sliceResult -SliceLogDir $sliceLogDir -ReplayRoot $replayRootFull
+        # S3: Schema fail-fast before costly verifier
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Invoke-SliceSchemaFailFast.ps1') -ReplayRoot $replayRootFull -SliceIndex $i | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Schema fail-fast rejected slice ${i} result (after-repair path)."
+            $result = Read-JsonObject -Path $sliceResult
+            $touchedFamilies = @(Get-StringArray $result.touched_requirement_families)
+            if ($null -ne $result -and @('BLOCKED', 'INVALID_REPLAY') -contains [string]$result.slice_status) {
+                Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
+            }
+            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_schema_fail_fast"
+            break
+        }
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'SliceVerifier.ps1') -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResult $sliceResult -SliceIndex $i | Out-Null
-        $v348Gate = Invoke-V348SliceQualityGates -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$v348Gate.CanProceed) {
-            Write-Host "v348 slice quality gate failed for repaired slice ${i}: $($v348Gate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "v348_slice_quality_gate_after_forced_family_repair: $($v348Gate.Blocker)"
-            break
-        }
-        # v431: Layer validation gate (pre-flight check)
-        $layerGate = Invoke-LayerValidationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$layerGate.CanProceed) {
-            Write-Host "Layer validation gate failed for repaired slice ${i}: $($layerGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "layer_validation_after_repair: $($layerGate.Blocker)"
-            break
-        }
-        # v379: Test charter pre-validation gate
-        $testCharterGate = Invoke-TestCharterPrevalidatorGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$testCharterGate.CanProceed) {
-            Write-Host "Test charter prevalidation failed after forced-family repair for slice ${i}. Starting test charter repair pass."
-            $testCharterGate = Invoke-TestCharterRepairGate `
-                -ReplayRoot $replayRootFull `
-                -Worktree $worktreeFull `
-                -SliceIndex $i `
-                -RunnerContractPath $runnerContractPath `
-                -ForcedDecision $forced `
-                -FailedGate $testCharterGate `
-                -Executor $Executor `
-                -Sandbox $Sandbox `
-                -Approval $Approval `
-                -TimeoutMinutes $sliceTimeoutMinutes `
-                -Model $Model `
-                -ReasoningEffort $ReasoningEffort
-        }
-        if (-not [bool]$testCharterGate.CanProceed) {
-            Write-Host "Test charter prevalidation gate failed for slice ${i}: $($testCharterGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "test_charter_prevalidation: $($testCharterGate.Blocker)"
-            break
-        }
-        # v454: Economy checkpoint - CP4_TEST_CHARTER (after test charter)
-        $testCharterCheckpoint = Invoke-EconomyCheckpointGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath -CheckpointId 'CP4_TEST_CHARTER' -DiscoveryMode $discoveryMode
-        if (-not [bool]$testCharterCheckpoint.CanProceed) {
-            Write-Host "Test charter checkpoint failed for slice ${i}: $($testCharterCheckpoint.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "test_charter_checkpoint: $($testCharterCheckpoint.Blocker)"
-            break
-        }
-        # v431: Phase0 precheck gate (test framework validation)
-        $phase0Precheck = Invoke-Phase0PrecheckGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath -MavenSettings $MavenSettings
-        if (-not [bool]$phase0Precheck.CanProceed) {
-            Write-Host "Phase0 precheck gate failed for repaired slice ${i}: $($phase0Precheck.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "phase0_precheck_after_repair: $($phase0Precheck.Blocker)"
-            break
-        }
-        # v378: Pre-implementation contract verification gate
-        $contractGate = Invoke-ContractVerificationGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$contractGate.CanProceed) {
-            Write-Host "Contract verification gate failed for repaired slice ${i}: $($contractGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "contract_verification_after_repair: $($contractGate.Blocker)"
-            break
-        }
-        $redGate = Invoke-RedPhaseHardGate -ReplayRoot $replayRootFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$redGate.CanProceed) {
-            Write-Host "RED phase hard gate failed for repaired slice ${i}: $($redGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_phase_hard_gate_after_forced_family_repair: $($redGate.Blocker)"
-            break
-        }
-        # v378: RED phase incremental verification
-        $redIncrementalGate = Invoke-IncrementalVerificationGate -Phase 'RED' -ReplayRoot $replayRootFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$redIncrementalGate.CanProceed) {
-            Write-Host "RED incremental verification gate failed for repaired slice ${i}: $($redIncrementalGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "red_incremental_verification_after_repair: $($redIncrementalGate.Blocker)"
-            break
-        }
-        $greenGate = Invoke-GreenPhaseNoMockGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -RunnerContractPath $runnerContractPath
-        Move-ReplayScratchArtifacts -ReplayRoot $replayRootFull
-        Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i
-        # v431: Side effect ledger gate (verify after GREEN phase)
-        $sideEffectGate = Invoke-SideEffectLedgerGate -ReplayRoot $replayRootFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$sideEffectGate.CanProceed) {
-            Write-Host "Side effect ledger gate failed for repaired slice ${i}: $($sideEffectGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "side_effect_ledger_after_repair: $($sideEffectGate.Blocker)"
-            break
-        }
-        if (-not (Invoke-SliceVerifierRefresh -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceResultPath $sliceResult -SliceIndex $i -RunnerContractPath $runnerContractPath -Reason 'side_effect_ledger_after_repair')) {
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "slice_verifier_refresh_after_side_effect_ledger_repair"
-            break
-        }
-        # v378: TODO detector gate after GREEN phase
-        $todoGate = Invoke-TodoDetectorGate -ReplayRoot $replayRootFull -Worktree $worktreeFull -SliceIndex $i -RunnerContractPath $runnerContractPath
-        if (-not [bool]$todoGate.CanProceed) {
-            Write-Host "TODO detector gate failed for repaired slice ${i}: $($todoGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "todo_detector_after_repair: $($todoGate.Blocker)"
-            break
-        }
-        if (-not [bool]$greenGate.CanProceed) {
-            Write-Host "GREEN phase no-mock gate failed for repaired slice ${i}: $($greenGate.Blocker)"
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "green_phase_no_mock_gate_after_forced_family_repair: $($greenGate.Blocker)"
+        if (-not (Invoke-AllSliceGates `
+            -ReplayRoot $replayRootFull `
+            -Worktree $worktreeFull `
+            -SliceIndex $i `
+            -MaxSlices $MaxSlices `
+            -ProgressPath $progressPath `
+            -RunnerContractPath $runnerContractPath `
+            -SliceResultPath $sliceResult `
+            -SliceVerifyPath $sliceVerify `
+            -MavenSettings $MavenSettings `
+            -PhaseSuffix 'after_repair')) {
+            $result = Read-JsonObject -Path $sliceResult
+            $touchedFamilies = @(Get-StringArray $result.touched_requirement_families)
+            if ($null -ne $result -and @('BLOCKED', 'INVALID_REPLAY') -contains [string]$result.slice_status) {
+                Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
+            }
             break
         }
 

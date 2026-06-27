@@ -259,8 +259,15 @@ function Get-TestInfrastructureRealityIssues {
             $issues += "test_infrastructure_check.compilation_dry_run_command must target module $moduleName"
         }
         $normalizedCommand = $commandText.Replace('/', '\')
-        if ($normalizedCommand.Contains('d:\opt\lipei\claim\pom.xml')) {
-            $issues += 'test_infrastructure_check.compilation_dry_run_command must not target protected project root pom'
+        # Detect any pom path that is absolute but outside the isolated worktree.
+        # A pom path like `d:\opt\...\pom.xml` is a protected project root, not the worktree.
+        if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+            $normalizedCommand -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+            $targetPom = $matches[1].Trim('"', "'", '`')
+            $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+            if (-not $targetPom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                $issues += 'test_infrastructure_check.compilation_dry_run_command must target isolated worktree pom'
+            }
         }
         if (-not [string]::IsNullOrWhiteSpace($Worktree)) {
             $worktreePom = ([System.IO.Path]::GetFullPath((Join-Path $Worktree 'pom.xml'))).ToLowerInvariant().Replace('/', '\')
@@ -327,8 +334,13 @@ function Get-TestInfrastructureRealityIssues {
                 if (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile')) {
                     $issues += 'compilation_dry_run_evidence_command_incomplete'
                 }
-                if ($evidenceCommandText.Replace('/', '\').Contains('d:\opt\lipei\claim\pom.xml')) {
-                    $issues += 'compilation_dry_run_evidence_command_must_not_target_protected_root_pom'
+                if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+                    $evidenceCommandText -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+                    $evidencePom = $matches[1].Trim('"', "'", '`')
+                    $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+                    if (-not $evidencePom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                        $issues += 'evidence_command_must_not_target_protected_root_pom'
+                    }
                 }
             }
             if (Test-MavenFailureSignal -Text $evidenceText) {

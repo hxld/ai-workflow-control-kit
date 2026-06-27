@@ -51,9 +51,9 @@ try {
     Assert-True 'repair_prompt_delegates_to_runner_before_schema' ($runLoopText.Contains('The runner materializes that evidence file after this repair returns and before ``Invoke-PlanSchemaFailFast.ps1``'))
     Assert-True 'repair_prompt_blocks_null_line_number' ($runLoopText.Contains('target_carrier_line_number`` MUST be an exact integer line number') -and $runLoopText.Contains('PLAN_BLOCKED_LINE_NUMBER'))
 
-    Assert-True 'schema_rejects_protected_root_compile_command' ($schemaText.Contains('compilation_dry_run_command must not target protected project root pom'))
-    Assert-True 'schema_rejects_non_worktree_compile_command' ($schemaText.Contains('compilation_dry_run_command must target isolated worktree root pom'))
-    Assert-True 'pre_execution_rejects_same_compile_command' ($constraintText.Contains('compilation_dry_run_command must not target protected project root pom') -and $constraintText.Contains('compilation_dry_run_command must target isolated worktree root pom'))
+    Assert-True 'schema_rejects_non_worktree_compile_command' ($schemaText.Contains('compilation_dry_run_command must target isolated worktree pom'))
+    Assert-True 'schema_rejects_non_worktree_compile_command_existing' ($schemaText.Contains('compilation_dry_run_command must target isolated worktree root pom'))
+    Assert-True 'pre_execution_rejects_same_compile_command' ($constraintText.Contains('compilation_dry_run_command must target isolated worktree pom') -and $constraintText.Contains('compilation_dry_run_command must target isolated worktree root pom'))
 
     $badRoot = Join-Path $tempRoot 'bad-protected-root-command'
     $badWorktree = Join-Path $badRoot 'worktree'
@@ -88,13 +88,13 @@ try {
     Assert-True 'schema_fails_protected_root_compile_command' ($LASTEXITCODE -ne 0)
     $badSchema = Get-Content -LiteralPath (Join-Path $badRoot 'PLAN_SCHEMA_FAILFAST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $badIssues = @($badSchema.checks.test_infrastructure_issues) -join ' '
-    Assert-True 'schema_reports_protected_root_compile_command' ($badIssues -match 'protected project root pom')
+    Assert-True 'schema_reports_protected_root_compile_command' ($badIssues -match 'must target isolated worktree pom')
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $constraintCheck -ReplayRoot $badRoot -Worktree $badWorktree -PlanResultPath (Join-Path $badRoot 'PLAN_RESULT.json') -BaselineRoot $badWorktree | Out-Null
     $constraintResult = Get-Content -LiteralPath (Join-Path $badRoot 'PRE_EXECUTION_CONSTRAINT_CHECK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $infraCheck = $constraintResult.checks | Where-Object { $_.name -eq 'test_infrastructure_check' } | Select-Object -First 1
     Assert-True 'pre_execution_fails_protected_root_compile_command' ([string]$infraCheck.status -eq 'FAIL')
-    Assert-True 'pre_execution_reports_protected_root_compile_command' ((@($infraCheck.issues) -join ' ') -match 'protected project root pom')
+    Assert-True 'pre_execution_reports_protected_root_compile_command' ((@($infraCheck.issues) -join ' ') -match 'must target isolated worktree pom')
 
     Write-Host 'PASS: v486 plan dry-run delegated to runner'
 } finally {

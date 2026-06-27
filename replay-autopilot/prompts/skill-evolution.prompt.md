@@ -31,6 +31,18 @@
    - 如果证据不足或不应推进版本，必须在 replay root 写 `NO_VERSION_ADVANCE_REASON.md`，说明为什么不能推进到 `{{EXPECTED_KNOWLEDGE_VERSION}}`。
    - `NO_SOURCE_CHANGE`、`NO_SKILL_SOURCE_CHANGE`、`noop-evolution`、`no-source-change` 不能和 `VALIDATED_TOOLING_EVOLUTION`、`verification_results: PASS`、`actual_knowledge_version_after_push: {{EXPECTED_KNOWLEDGE_VERSION}}` 同时出现。
 
+【门控预算】
+当 STOP_AND_EVOLVE 触发时，进化输出必须优先选择：
+(a) 新增回归测试用例（Test-v*.ps1），或
+(b) 对现有 gate 的合并/删减提案（如合并两个高度重叠的 gate、移除冗余 artifact 文件、收敛重复断言）。
+
+仅在没有任何现有 gate 能覆盖该失败类，且现有 gate 的合并/删减方案无法解决问题时，才允许引入全新的 verify_* 脚本、carrier artifact 或 machine_gate 名称。新增时必须同时提供：
+- 为什么现有 gate 不足以覆盖的正当理由
+- 一个可执行的回归测试
+- 接入现有 runner 调用链的证明（不能是孤立的脚本）
+
+如果决策模糊，优先选 (a)。Stop-and-Evolve 不总需要新脚本，有时一个可复现的测试比新 gate 更有长期价值。
+
 【任务】
 1. 阅读 evolution proposal。
 1.1 如果 `verifiable rules` 文件存在，必须阅读并逐条处理 `must_fix=true` 的 rule；成功结果必须在 `EVOLUTION_RESULT.md` 中明确引用对应 `machine_gate`、回归验证和下一步验证证据。

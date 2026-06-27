@@ -63,3 +63,6 @@ run-logs/
 **/PREFLIGHT_*.log
 replay-autopilot/PREFLIGHT_BLOCKER.md
 replay-autopilot/PREFLIGHT_TEST_COMPILATION.json
+
+replay-autopilot/scripts/.scan-results/
+**/.review-tmp/

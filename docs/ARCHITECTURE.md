@@ -9,7 +9,7 @@
 - `agents/` 是自定义技能、hooks、规则和模板的规范源。
 - `codex/` 和 `claude/` 是宿主适配器，使同一工作流在 Codex 和 Claude Code 中可用。
 - `cc-switch/` 为使用 cc-switch 切换供应商的用户存储可移植的通用配置模板。
-- `replay-autopilot/` 是无人值守评估、证据门禁、覆盖率核算和工作流演进控制平面。
+- `replay-autopilot/` 是无人值守评估、工作流保真校验、证据门禁、覆盖率核算和工作流演进控制平面。
 - `workflow-history/` 是仓库本地的变更日志，用于回放和工作流自动化。
 - `scripts/` 包含 Node 优先的安装、校验、cc-switch 更新和密钥扫描脚本。
 
@@ -369,13 +369,16 @@ node scripts/install-cc-switch-common-config.js
 
 `replay-autopilot/` 是一个控制系统，用于评估工作流是否能通过可重复的门禁驱动 AI 编码任务。它现在的核心不是信任一次模型回答，而是把每个阶段的授权、执行、验证、覆盖率和演进原因写成结构化证据，再由后续门禁读取这些证据做调度和收口。
 
+当前基线把 replay-autopilot 本身作为默认改进目标：`replay-autopilot-goal.md` 描述 90% real coverage 目标，`replay-autopilot/config.yaml` 指向该目标和默认 replay evidence 根目录。这样无人值守控制循环不会再把 `README.md` 或示例 feature 当作真实需求来源。
+
 该目录包含通用的控制平面脚本，以及来自基准测试的配置、需求和 fixture，用作回归测试用例。将这些基准测试文件视为控制平面的评估输入。它们不是已安装的凭证、运行时日志、私有的 oracle diff 或业务源代码，新项目应添加自己的本地配置，而不是将附带的基准测试用例当作默认项目。
 
 ```mermaid
 flowchart TD
     Input["需求、分支、commit 或回放用例"] --> Controller["Run-UnattendedReplayControl.ps1"]
     Controller --> Preflight["前置检查和运行环境探测"]
-    Preflight --> Plan["方案、oracle 对齐和机器契约"]
+    Preflight --> Fidelity["workflow fidelity proof"]
+    Fidelity --> Plan["方案、oracle 对齐和机器契约"]
     Plan --> Family["requirement family ledger 和 carrier lock"]
     Family --> Slice["切片选择、forced family、sibling surface"]
     Slice --> Authorization["pre-slice 可执行授权和 callable carrier 校验"]
@@ -397,7 +400,8 @@ flowchart TD
 | --- | --- | --- |
 | 控制器 | `scripts/Run-UnattendedReplayControl.ps1`、`scripts/Start-UnattendedReplayControl.ps1` | 编排无人值守周期和停止条件。 |
 | 前置检查 | `scripts/Invoke-PreflightComprehensive.ps1`、`scripts/pre_flight_check.py` | 验证环境、项目状态和测试就绪性。 |
-| 方案规划 | `prompts/`、`scripts/generate_plan.ps1`、`scripts/plan_contract_verify.py` | 将回放目标转换为有边界的方案、oracle 对齐证据和机器可检查的契约。 |
+| 工作流保真 | `scripts/Write-WorkflowFidelityProof.ps1`、`scripts/Invoke-PreSliceToolAvailabilityGate.ps1`、`scripts/Invoke-AgentPrompt.ps1` | 在 agent 执行前记录 executor、hook 状态、技能根、运行时技能可见性和 `SKILL.md` hash；关键技能不可见时阻断执行。 |
+| 方案规划 | `prompts/`、`scripts/generate_plan.ps1`、`scripts/Verify-PlanContract.ps1` | 将回放目标转换为有边界的方案、oracle 对齐证据和机器可检查的契约；允许真实的 `replay-autopilot/scripts/*.ps1` 控制面脚本作为 production carrier，同时拒绝 `scripts/tests` 路径。 |
 | 切片控制 | `scripts/Select-NextReplaySlice.ps1`、`scripts/Run-SliceLoop.ps1` | 选择下一个实现切片，处理 resume/reuse，归档 stale slice artifact，并维护 slice progress。 |
 | 可执行授权 | `scripts/Prepare-SliceEvidenceContracts.ps1`、`scripts/Invoke-PreSliceExperimentContracts.ps1`、`scripts/Invoke-CallableCarrierAuthorization.ps1` | 在进入 agent 执行前绑定真实入口、forced family、sibling surface、测试选择器和 callable carrier。 |
 | TDD 门禁 | `replay-tdd-enforcer` 技能、`scripts/enforce_red_phase_gate.py` | 要求有意义的 RED 和 GREEN 阶段。 |
@@ -405,23 +409,27 @@ flowchart TD
 | 载波和 oracle 检查 | `scripts/*Carrier*`、`scripts/*Oracle*` | 将实现绑定到真实入口点、真实方法签名和可信 oracle 证据。 |
 | Slice verifier | `scripts/Verify-SliceClosure.ps1`、`scripts/verify-slice.ps1` | 根据 slice result、测试命令、生产 diff、exact-contract、side-effect 和 blocker/gap flags 判断是否可继续、可综合或必须 fail closed。 |
 | Requirement family ledger | `scripts/Run-SliceLoop.ps1`、`scripts/verify_family_proof_ledger.ps1`、`scripts/verify-family-ledger-from-slice-verify.ps1` | 记录 requirement family 的 open/partial/closed 状态、proof 类型、cap 和可继续的下一切片目标。 |
-| 覆盖率核算 | `scripts/Enforce-RoundCoverageCap.ps1`、`scripts/recompute_round_coverage.py`、control summary 相关脚本 | 从结构化 slice/verifier/ledger 证据恢复真实覆盖率，限制自评膨胀，并在早停时保留已验证进展。 |
+| 覆盖率核算 | `scripts/Get-RoundCoverageSnapshot.ps1`、`scripts/Enforce-RoundCoverageCap.ps1`、`scripts/recompute_round_coverage.py`、control summary 相关脚本 | 从结构化 slice/verifier/ledger 证据恢复真实覆盖率，限制自评膨胀，并在早停时保留已验证进展。 |
 | Stopline 和控制摘要 | `scripts/Invoke-ReplayStoplineGate.ps1`、`scripts/Write-ControlPlaneSummary.ps1` | 判断近期 round 是否真正无进展，避免旧 blocker 或旧 markdown 摘要覆盖后续 slice 证据。 |
-| 演进 | `scripts/New-EvolutionProposal.ps1`、`scripts/Invoke-V419StopAndEvolveExperiments.ps1`、`scripts/Validate-EvolutionResult.ps1` | 将重复失败模式转化为工作流改进，并用 gate budget、实验 ledger 和回归测试证明新增门禁确有必要。 |
+| 演进 | `scripts/New-EvolutionProposal.ps1`、`scripts/Invoke-V419StopAndEvolveExperiments.ps1`、`scripts/Validate-EvolutionResult.ps1` | 将重复失败模式转化为工作流改进，并用 gate budget、实验 ledger、changed-file 校验、知识版本核对和回归测试证明新增门禁确有必要。 |
 | 回归测试 | `scripts/Test-v*.ps1`、`test/`、`tests/` | 跨历史工作流变更验证回放控制行为。 |
 
 关键 artifact 类型：
 
 | Artifact | 作用 |
 | --- | --- |
+| `WORKFLOW_FIDELITY_PROOF.json`、`*.workflow-fidelity.json` | 记录 executor、hook 配置、技能源和运行时技能可见性；运行时缺少必需技能时阻断 agent 执行。 |
 | `PLAN_RESULT.md`、`PLAN_CONTRACT_VERIFY.json` | 记录计划阶段的选择、阻断原因和机器契约验证。 |
 | `SLICE_RESULT_NN.json`、`SLICE_VERIFY_NN.json` | 记录每个切片的执行状态、测试证据、gap flags、授权状态、覆盖率增量和关闭的 requirement family。 |
 | `REQUIREMENT_FAMILY_LEDGER.json` | 记录 requirement family 状态、open sibling surfaces、proof 类型和 coverage cap。 |
 | `CARRIER_LOCK.json`、`RUNNABLE_SLICE_AUTHORIZATION_NN.json`、`PRE_SLICE_AUTHORIZATION_NN.json` | 记录真实 carrier、可执行入口和进入 slice agent 前的授权条件。 |
 | `ROUND_RESULT.md`、`AUTOPILOT_SUMMARY.md`、`AUTOPILOT_DECISION.md` | 汇总 round 结果、覆盖率和下一步控制决策；早停时应优先保留结构化证据中的覆盖率。 |
-| `EVOLUTION_RESULT.md`、`EVOLUTION_RESULT_VERIFY.json`、stop-and-evolve 实验 ledger | 记录演进是否真正通过验证，以及新增门禁是否有预算和必要性。 |
+| `VERIFIABLE_RULES.json`、`VERIFIABLE_RULES.md` | 将 failure audit 或 blocked-plan early stop 转换成必须关闭的机器可检查规则。 |
+| `EVOLUTION_RESULT.md`、`EVOLUTION_RESULT_VERIFY.json`、stop-and-evolve 实验 ledger | 记录演进是否真正通过验证、新增门禁是否有预算和必要性，以及 changed files 是否对应真实 tooling diff。 |
 
-回放目前仍保留许多 PowerShell 控制器脚本。它们不是默认的高频 prompt hook 路径。当可用时，手动回放验证推荐使用 PowerShell 7（`pwsh`）。
+受保护项目根目录默认 fail closed。只有 `evolution` 和 `evolution-repair` 阶段可以在窄 allowlist 内修改 replay tooling、workflow history、技能镜像和知识历史文件；allowlist 区分目录前缀和精确文件路径，例如 `CURRENT_VERSION.md` 是允许的精确根文件，而任意业务项目文件不会被放行。
+
+回放目前仍保留许多 PowerShell 控制器脚本。它们不是默认的高频 prompt hook 路径。当可用时，手动回放验证推荐使用 PowerShell 7（`pwsh`）。Plan contract 校验会把 `replay-autopilot/scripts/*.ps1` 中的真实控制面脚本视作可验证 carrier，但仍拒绝 `replay-autopilot/scripts/tests/*.ps1` 作为生产 carrier。
 
 ## 工作流历史
 
@@ -445,6 +453,8 @@ flowchart LR
 | `workflow-history/changes/*.md` | 具体的变更记录，包含摘要、工件和验证。 |
 
 当可重用的工作流行为发生变化时，三者都需要更新。
+
+`workflow-history/latest.json` 是 replay 控制面发现最新工作流行为的机器入口；`CURRENT_VERSION.md` 记录知识/技能演进版本。二者可能推进节奏不同，文档和控制器应按用途读取，不能用知识版本替代工作流 latest 指针。
 
 ## 安全边界
 

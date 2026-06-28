@@ -356,7 +356,16 @@ function Test-ToolingEvolutionStage {
 function Get-ProtectedRootAllowedMutationPrefixes {
     param([string]$Name)
     if (Test-ToolingEvolutionStage -Name $Name) {
-        return @('replay-autopilot/', 'workflow-history/', 'agents/skills/')
+        return @(
+            'replay-autopilot/',
+            'workflow-history/',
+            'agents/skills/',
+            'custom-skills-history/',
+            'custom-skills-zh/',
+            'guide-sections/',
+            'custom-skills-guide.md',
+            'CURRENT_VERSION.md'
+        )
     }
     return @()
 }

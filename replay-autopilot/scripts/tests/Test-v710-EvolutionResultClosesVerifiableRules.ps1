@@ -74,6 +74,8 @@ function Invoke-Validator {
 $scriptRoot = Split-Path -Parent $PSScriptRoot
 $validator = Join-Path $scriptRoot 'Validate-EvolutionResult.ps1'
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('v710-evolution-rule-closure-' + [guid]::NewGuid().ToString('N'))
+$repoDiffFixture = Join-Path $PSScriptRoot ('_tmp-v710-diff-' + [guid]::NewGuid().ToString('N') + '.ps1')
+$repoDiffFixtureRelative = 'replay-autopilot/scripts/tests/' + (Split-Path -Leaf $repoDiffFixture)
 
 try {
     $missingRoot = New-RuleClosureRoot -Name 'missing-closed-gate' -ClosedMachineGatesLine '- closed_machine_gates: unrelated_gate'
@@ -82,6 +84,10 @@ try {
     Assert-True (@($missing.Verify.issues) -contains 'closed_machine_gate_missing:blocked_plan_status_stops_replay') 'missing required machine gate is reported exactly'
 
     $validRoot = New-RuleClosureRoot -Name 'valid-closed-gate' -ClosedMachineGatesLine '- closed_machine_gates: blocked_plan_status_stops_replay'
+    Write-Utf8 $repoDiffFixture '# temporary git diff fixture for Validate-EvolutionResult regression'
+    $validEvolution = Get-Content -LiteralPath (Join-Path $validRoot 'EVOLUTION_RESULT.md') -Raw -Encoding UTF8
+    $validEvolution = $validEvolution -replace '(?m)^- changed_files: .+$', "- changed_files: $repoDiffFixtureRelative"
+    Write-Utf8 (Join-Path $validRoot 'EVOLUTION_RESULT.md') $validEvolution
     $valid = Invoke-Validator -ReplayRoot $validRoot
     Assert-True ($valid.ExitCode -eq 0) "validator passes when must-fix machine gate is reported closed. Output: $($valid.Output)"
     Assert-True ([string]$valid.Verify.status -eq 'PASS') 'valid fixture writes PASS verification status'
@@ -99,5 +105,8 @@ try {
         if ($resolvedRoot.StartsWith($resolvedTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
             Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
         }
+    }
+    if (Test-Path -LiteralPath $repoDiffFixture) {
+        Remove-Item -LiteralPath $repoDiffFixture -Force
     }
 }

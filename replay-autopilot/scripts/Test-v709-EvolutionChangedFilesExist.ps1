@@ -45,6 +45,8 @@ function Invoke-Validator {
 $scriptRoot = Split-Path -Parent $PSCommandPath
 $validator = Join-Path $scriptRoot 'Validate-EvolutionResult.ps1'
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('v709-evolution-changed-files-exist-' + [guid]::NewGuid().ToString('N'))
+$repoDiffFixture = Join-Path $scriptRoot ('Test-v709-TmpDiff-' + [guid]::NewGuid().ToString('N') + '.ps1')
+$repoDiffFixtureRelative = 'replay-autopilot/scripts/' + (Split-Path -Leaf $repoDiffFixture)
 
 try {
     $missingRoot = New-StopRoot 'missing-file'
@@ -68,7 +70,8 @@ try {
     Assert-True (@($missing.Verify.issues) -contains 'tooling_changed_file_missing:replay-autopilot/scripts/Does-Not-Exist.ps1') 'missing changed file path is reported exactly'
 
     $validRoot = New-StopRoot 'valid-file'
-    Write-Utf8 (Join-Path $validRoot 'EVOLUTION_RESULT.md') @'
+    Write-Utf8 $repoDiffFixture '# temporary git diff fixture for Validate-EvolutionResult regression'
+    Write-Utf8 (Join-Path $validRoot 'EVOLUTION_RESULT.md') @"
 # Evolution Result
 
 - final_status: VALIDATED_TOOLING_EVOLUTION
@@ -77,11 +80,11 @@ try {
 - gate_budget_decision: existing_gate_enforcement
 - new_gate_artifacts: none
 - verification_results: PASS
-- changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1; replay-autopilot/scripts/Test-v709-EvolutionChangedFilesExist.ps1
+- changed_files: $repoDiffFixtureRelative
 - closed_machine_gates: stop_and_evolve_result_contract
 - pushed_commit: 0123456789abcdef
 - actual_knowledge_version_after_push: v709
-'@
+"@
     $valid = Invoke-Validator -ReplayRoot $validRoot
     Assert-True ($valid.ExitCode -eq 0) "validator passes when changed_files names real tooling files. Output: $($valid.Output)"
     Assert-True ([string]$valid.Verify.status -eq 'PASS') 'valid fixture writes PASS verification status'
@@ -99,5 +102,8 @@ try {
         if ($resolvedRoot.StartsWith($resolvedTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
             Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
         }
+    }
+    if (Test-Path -LiteralPath $repoDiffFixture) {
+        Remove-Item -LiteralPath $repoDiffFixture -Force
     }
 }

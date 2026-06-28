@@ -2,6 +2,37 @@
 
 提交前自动检查规则，按严重程度分级。
 
+## Git Boundary / Staging Guard
+
+- 不混合多个任务。
+- 不把功能、重构、测试修复、文档大包混成一个提交。
+- 不把 generated artifacts 和 effective diff 混进同一提交。
+- 如不能频繁提交，输出 atomic commit plan。
+- 用户未要求发布时，不自动 push。
+- 不使用 `git add .` 作为默认动作；只暂存已确认的 effective diff、测试、文档和规格文件。
+- 若用户或仓库要求公司 Git 规范，先完成本技能收口，再路由到对应 Git 规范技能或发布技能。
+
+## Intelligent Staging Gate
+
+提交或发布前按文件角色分类：
+
+| class | examples | action |
+|-------|----------|--------|
+| `include` | 本轮有效业务代码、测试、规格、必要文档 | 可暂存 |
+| `confirm` | lockfile、批量格式化、生成文档/截图、脚本、跨模块配置 | 说明原因，必要时让用户确认 |
+| `exclude` | secrets、本地配置、缓存、日志、构建产物、临时 harness、无关漂移 | 不暂存 |
+
+同时输出 test focus：`changed surface -> required verification -> executed/missing -> risk`。缺少关键 surface 验证时，不得把 Git 边界标 `DONE`。
+
+## Staged Artifact Guard
+
+进入 commit / push / PR 前必须基于暂存区再检查一次：
+
+- `git diff --cached --name-status` 必须可解释为本轮 effective diff、测试、规格或已确认文档。
+- local docs、规格草稿、记忆、生成物、截图、日志、缓存、临时 harness、replay 输出、评审包或大批量格式化默认 `confirm` 或 `exclude`，不能被 `git add .` 顺带纳入。
+- ignore 边界内文件默认只作为本地真值；除非用户明确要求版本化，否则不得 `git add -f`。
+- 若发现误暂存，先 unstaged 并重新输出 staging plan；不能用“后续再清理”进入提交。
+
 ## 🔴 Critical（阻断提交）
 
 ### 安全

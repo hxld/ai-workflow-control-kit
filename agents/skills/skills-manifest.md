@@ -48,11 +48,11 @@ Non-negotiables:
 |---|---|
 | `workflow-router` | Route user intent to the right workflow. |
 | `restore-context` | Restore lightweight project state before work continues. |
+| `project-context-compiler` | Compile local project docs and root guidance into AI-ready project context. |
 | `pre-flight-check` | Run safety, memory, boundary, and isolation gates before edits. |
 | `req-alignment-check` | Freeze requirements, literals, surfaces, and open issues before planning. |
 | `ideate` | Run dialogue design or planning brainstorm before technical design is frozen. |
 | `deep-plan` | Produce technical design, OpenSpec, surface matrix, and expected diff matrix. |
-| `goal-mode` | Define structured goals for long-running autonomous agent tasks. |
 | `dev-workflow` | Implement only after planning, OpenSpec, TDD, isolation, and scope gates pass. |
 | `gen-tests` | Generate and verify tests from requirement and surface matrices. |
 | `deep-review` | Review implementation risks and regressions. |
@@ -65,6 +65,12 @@ Non-negotiables:
 | `replay-pre-flight-check` | Validate test environment (JUnit/TestNG, compilation, smoke test) before Phase 1 execution. |
 | `replay-tdd-enforcer` | Force complete TDD cycle: RED-only is invalid progress, GREEN phase with production code required. |
 | `replay-test-charter-validator` | Require side-effect proof (DB/state/file/API) in tests, reject helper-only validations. |
+
+## Repository-Only Extensions
+
+| Skill | Role |
+|---|---|
+| `goal-mode` | Repository compatibility skill for structured long-running goals; kept outside the runtime mirror until it is promoted into `%USERPROFILE%\.agents\skills`. |
 
 ## SKILL.md Size Budget
 
@@ -98,6 +104,7 @@ Audit rule: if the main `SKILL.md` exceeds 250 lines, it must explain why it is 
 | Domain language, tracer bullets, deep modules, and throwaway prototypes | `req-alignment-check`, `deep-plan`, `dev-workflow`, `gen-tests`, `deep-review`, `sync-progress` |
 | Trace distillation, harness tuning, and anti-sequential-drift learning | `skill-evolution`, `skill-audit`, `pre-flight-check` replay/eval references |
 | Host-neutral portability, memory promotion, and lossy handoff disclosure | `skill-evolution`, `pre-flight-check`, `sync-progress` |
+| Code graph / repo knowledge graph / project context indexing | `project-context-compiler`, `workflow-router`, `restore-context`, project-local `AGENTS.md` and `.doc` |
 
 No external skill source remains required after absorption.
 

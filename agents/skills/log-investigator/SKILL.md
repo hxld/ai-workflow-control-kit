@@ -1,6 +1,6 @@
 ---
 name: log-investigator
-description: "Use when user says 查日志, search logs, investigate logs, 排查问题, 查生产, 日志调查, 生产问题, pod crash, Kubernetes logs, Elasticsearch logs"
+description: "Use when user says 查日志, search logs, investigate logs, 排查问题, 查生产, 生产环境, 线上环境, 日志调查, 生产问题, pod crash, Kubernetes logs, Elasticsearch logs"
 allowed-tools: Bash,Read,Edit,Grep,Skill
 ---
 
@@ -19,6 +19,7 @@ allowed-tools: Bash,Read,Edit,Grep,Skill
 
 - "查 [环境] [项目] [问题]" — 如 "查 生产 订单服务 重试失败"
 - "search logs" / "investigate logs"
+- 用户给出“生产环境/线上环境 + 业务 selector + 排查/为什么/异常/看不到等现象”时，即使没有说“查日志”，也按 `debug-only` 日志调查处理。
 - Kubernetes pod 错误、容器崩溃循环
 - Elasticsearch 日志查询
 
@@ -171,10 +172,13 @@ Hard Gate：
 
 If a Kibana URL or Discover URL is available and `config.kibanaBackendSearch.enabled=true`, do not start with endpoint exploration. Treat the configured Kibana backend path as the first query transport.
 
+- Normalize Kibana base URL before any backend request. Treat `KIBANA_*_URL` as possibly a browser/frontend URL; parse it to origin `scheme://host[:port]` and strip `/app/...`, query, and hash before appending backend API paths.
 - First attempt order: freeze routing tuple -> resolve index from Discover `_a.index` or project `indexPattern` -> POST `config.kibanaBackendSearch.msearchPath` with configured NDJSON body and headers.
+- Backend URL must be `normalizedOrigin + config.kibanaBackendSearch.msearchPath`. Never append `/elasticsearch/_msearch` to `/app/kibana`, `#/`, Discover URLs, or saved object paths.
 - Only resolve `/api/saved_objects/index-pattern/{id}` when the input contains a Discover index-pattern id or the first `_msearch` fails because the index pattern is unresolved.
 - Do not probe `/api/status`, navigate Kibana UI, search for alternate ES paths, or ask the user to manually search before one concrete configured `_msearch` attempt has failed.
 - Rebuild a narrow DSL from environment, app/service, selector, and time window; do not blindly reuse an overly broad URL query.
+- If the first backend call returns 404, classify it as `path/version` first, retry once with `normalizedOrigin + msearchPath`, and only then report backend unavailable or fall back.
 - On failure, classify once: `auth/session`, `path/version`, `index_pattern`, `empty_result`, or `network`; then use the matching fallback instead of repeating endpoint discovery.
 - Pivot on trace id once a relevant hit is found, then sort ascending to reconstruct the call chain.
 - Browser/Kibana UI is fallback only when backend endpoints are unavailable, authentication requires the user's browser session, or the user explicitly asks for UI screenshots.
@@ -204,10 +208,24 @@ If a Kibana URL or Discover URL is available and `config.kibanaBackendSearch.ena
 - `Evidence Table`：日志/DB/API/代码/版本证据逐条列出，标明支持或排除哪条假设。
 - `End-to-End Chain`：入口 -> 处理 -> 状态/落库/消息/cache -> 下游 -> 用户可见结果。
 - `Hypothesis Matrix`：已确认、已排除、待验证及其证据。
+- `Counter-Evidence Challenge`：最强反证是什么，如何排除，哪些仍未排除。
+- `Same Symptom Branch Matrix`：同一现象是否可能来自其它入口、配置、缓存、异步、下游或展示分支；本次证据覆盖哪些、未覆盖哪些。
 - `Conclusion Level`：`已确认` / `高置信推断` / `PARTIAL`，并说明证据缺口。
 - `Next Action`：保持 debug-only、hotfix、数据修复、外部系统确认、继续采证或转设计/观测性改造。
 
 缺任一关键链路时，最终状态只能是 `PARTIAL` 或 `高置信推断`，不得写“已确认根因”。
+L2/L3 风险问题缺反证挑战或同症状分支矩阵时，最终状态最高只能是 `PARTIAL`；如果只覆盖目标分支，必须写“本结论只覆盖该分支”，不得说整个症状已修复。
+
+### Counter-Evidence Challenge
+
+在把假设标成 `已确认` 前，至少提出并处理 2-3 个可反驳问题：
+
+```markdown
+| candidate conclusion | strongest counter-evidence | checked evidence | result | remaining gap |
+|----------------------|----------------------------|------------------|--------|---------------|
+```
+
+常见反证方向：业务号/环境/时间窗是否错、当前源码是否等于运行时、同症状是否绕过目标分支、配置/缓存是否变化、异步/重试是否延迟、下游/展示是否改写结果。无法排除时，结论必须降级为 `高置信推断` 或 `PARTIAL`。
 
 ---
 

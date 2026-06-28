@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Context Compiler"
+  short_description: "Compile project docs into AI-ready context"
+  default_prompt: "Use $project-context-compiler to build or refresh an AI-readable project context pack."

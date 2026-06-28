@@ -26,14 +26,15 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 1. 加载需求来源。
 2. 命中开放式需求、多落点风险或用户已纠错时，先生成 Intent Alignment Gate；若属于纠错场景，还必须执行 User Correction Escalation Gate。
 3. 命中领域术语混用、跨上下文或业务口径不一致时，生成 Domain Language Ledger。
-4. 分类 scope：范围内、前端-only、已有需证据、待确认、支撑工具、无关漂移。
-5. 用户要求自主实现或 90%+ 覆盖时，生成 Requirement Coverage Ledger，并标出核心主链优先级。
-6. 识别业务目标、范围内、范围外。
-7. 扫描隐藏需求与未决问题。
-8. 生成 Decision Ledger。
-9. 命中显式契约时生成冻结矩阵。
-10. 命中多 surface 时生成 Surface 覆盖矩阵。
-11. 输出 APPROVED / REJECTED / NEEDS_CLARIFICATION，并为非平凡需求交接 `ideate:planning-brainstorm` 后再进入 `deep-plan`。
+4. 命中生产症状、热修、修数、缓存、外部接口、状态/数据链路或用户纠错时，生成 Same Symptom Branch Matrix。
+5. 分类 scope：范围内、前端-only、已有需证据、待确认、支撑工具、无关漂移。
+6. 用户要求自主实现或 90%+ 覆盖时，生成 Requirement Coverage Ledger，并标出核心主链优先级。
+7. 识别业务目标、范围内、范围外。
+8. 扫描隐藏需求与未决问题。
+9. 生成 Decision Ledger。
+10. 命中显式契约时生成冻结矩阵。
+11. 命中多 surface 时生成 Surface 覆盖矩阵。
+12. 输出 APPROVED / REJECTED / NEEDS_CLARIFICATION，并为非平凡需求交接 `ideate:planning-brainstorm` 后再进入 `deep-plan`。
 ## Intent Alignment Gate
 当用户只描述现象、期望修复或改进方向，但没有明确“改哪个落点、保留哪个口径、谁能看到结果”时，先做轻量意图对齐。
 触发信号：
@@ -70,6 +71,27 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 若需求源、原型图、用户最新口径冲突，以用户最新明确口径为当前冻结契约；旧文档要标为 `stale_or_conflict`，不得继续按旧文档解释。
 - 纠错后重新输出 APPROVED 前，每个受影响 requirement 行都必须有代码落点和测试/静态/运行态验证计划。
 - 未完成本门禁时，状态最高只能是 `PARTIAL`，不得进入“已完成”或提交收口。
+
+## Same Symptom Branch Matrix
+
+当同一个用户可见或生产业务症状可能由多个入口、配置、缓存、异步任务、数据来源、外部系统或展示面造成时，必须先列分支，不能把目标 bug 分支等同于整个症状。
+
+触发信号：
+
+- 生产/线上问题、热修、修数、缓存刷新、外部接口、状态推进、异步链路、跨组件归因。
+- 需求说“同样现象 / 还是不行 / 某单也这样 / 修了之后仍出现”。
+- 用户已纠错，或之前的结论只覆盖了某个函数、日志、配置或下游响应。
+
+```markdown
+| symptom | possible branch | entry / precondition | evidence to check | covered by this change? | must-not / regression | status |
+|---------|-----------------|----------------------|-------------------|-------------------------|-----------------------|--------|
+```
+
+规则：
+
+- `possible branch` 至少覆盖当前目标分支、绕过目标修复的入口、配置/缓存分支、异步/重试分支、外部/下游分支和展示/查询分支；确实不适用时写 `not_applicable:<reason>`。
+- `covered by this change? = no/partial` 的行必须进入范围外说明、后续采证或 `deep-plan` blocker；不能在最终回答中说整个症状已修复。
+- 同症状矩阵中的 `must-not / regression` 必须交给 `deep-plan` / `gen-tests`，至少形成一个反向断言、静态检查或明确 blocker。
 ## Domain Language Ledger
 需求、用户口述、代码注释、已有文档或界面文案对同一业务概念使用多个词，或同一词可能指向多个概念时，先冻结共享语言；不能让实现阶段靠猜测命名。
 
@@ -294,6 +316,7 @@ Hard Gate：
 - 显式需求冻结矩阵:
 - 字段与数据来源冻结表:
 - Surface 覆盖矩阵:
+- Same Symptom Branch Matrix:
 - 下一步补齐模板: dev-workflow/references/complex-requirement-delivery-kit.md
 - 下一步: ideate:planning-brainstorm / deep-plan / 用户确认 / 停止
 ```

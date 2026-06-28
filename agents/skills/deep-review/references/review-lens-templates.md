@@ -12,7 +12,7 @@ Every non-trivial finding must include:
 - Verification method
 - Assumption marker when not directly verified
 
-If evidence is missing, write `verification_gap` instead of turning the claim into a conclusion.
+If evidence is missing, write `verification_gap` instead of turning the assertion into a conclusion.
 
 ## Backend Business Code
 
@@ -25,6 +25,19 @@ If evidence is missing, write `verification_gap` instead of turning the claim in
 7. Logs, metrics, and observability
 8. Regression and shared-entry risk
 9. API, database, and document consistency
+10. Reviewer challenge
+
+## Production / Hotfix Workflow
+
+1. Evidence packet completeness: environment, time window, selector, runtime version, log/source basis
+2. End-to-end chain: entry, transform, persistence/message/cache, downstream, visible result
+3. Same symptom branch coverage: alternate entry, config/cache, async/retry, downstream, display/query paths
+4. Target fix preconditions: whether the changed code is actually reached by the failing scenario
+5. Counter-evidence challenge: strongest disproof, checked evidence, unresolved gaps
+6. Minimal diff and blast radius: shared entry, state, data, release, or rollback impact
+7. Data repair / retry / cache safety: idempotency, pre-check, post-check, must-not side effects
+8. Test and production evidence: RED/static guard, must-not assertion, original failure phase, runtime proof
+9. Conclusion level and business wording: confirmed, high-confidence inference, PARTIAL, or blocker
 10. Reviewer challenge
 
 ## Frontend UI
@@ -82,7 +95,7 @@ If evidence is missing, write `verification_gap` instead of turning the claim in
 ## Knowledge Wiki
 
 1. Source traceability
-2. Claim status: extracted, inferred, unverified, or normative pending validation
+2. Assertion status: extracted, inferred, unverified, or normative pending validation
 3. Cross-source agreement or conflict
 4. Time sensitivity and current-validity risk
 5. Concept/entity/theme promotion boundary

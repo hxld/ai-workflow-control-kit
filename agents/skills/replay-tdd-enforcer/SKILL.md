@@ -123,7 +123,7 @@ allowed-tools: Read,Glob
 ```bash
 # 运行 3 轮带 TDD enforcer 的 replay
 for i in {1..3}; do
-  ./run-replay.sh --feature=example-feature --tdd-enforcer
+  ./run-replay.sh --feature=aiClaimV2 --tdd-enforcer
   # 检查 SLICE_RESULT.json 是否包含 green_phase
   # 检查 production_changes 是否非空
 done
@@ -147,4 +147,4 @@ done
 
 ---
 
-**演化来源**: example-feature replay v278-v293 deep review, RC4: TDD cycle incomplete - RED-only execution, no GREEN phase
+**演化来源**: aiClaimV2 replay v278-v293 deep review, RC4: TDD cycle incomplete - RED-only execution, no GREEN phase

@@ -27,6 +27,8 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 |------|------|----------|
 | `references/anti-patterns.md` | Anti-Patterns 表 + 代码异味 + 安全检查 + mock/testing 反模式 | 发现反模式、安全问题或测试质量风险时 |
 | `references/review-lens-templates.md` | 按任务类型选择审查视角：后端、前端、提示词/Agent、技术方案、技能、知识库 | 用户要求多轮/十轮审查、第二视角审校，或显式提到 Claude Code/Codex/外部 reviewer 会复核时 |
+| `references/codex-only-cross-review.md` | 只用 Codex 做单上下文多镜头或 Codex 线程隔离审查的协议 | 用户要求只用 Codex 实现交叉审查、第二视角、多 reviewer 或模拟跨工具复核时 |
+| `references/subagent-review-contracts.md` | 可选只读子 agent 审查契约、结果合并门禁和禁止事项 | 大 diff、多 surface、review pressure 或需要独立审查镜头时 |
 
 ---
 
@@ -79,7 +81,20 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 - 按目标类型读取 `references/review-lens-templates.md` 中最小匹配模板。
 - 每轮必须使用不同视角；如果找不到足够证据，输出 `verification_gap`，不要补幻想结论。
 - 每个非平凡发现必须标注证据来源、严重级别、确定性、验证方式；无法验证的内容只能标为假设。
-- 同一模型同一上下文的多轮审查不等于独立外部审查；如用户需要真正第二意见，建议把本报告交给外部 reviewer 后再走 `resolve-feedback`。
+- 同一模型同一上下文的多轮审查不等于独立外部审查；必须披露 `independence_level=same_context_lens`。
+- 用户要求只用 Codex 实现交叉审查时，读取 `references/codex-only-cross-review.md`，在 `single_context_lens` 与 `codex_thread_isolated` 中选择；不要声称使用了外部模型。
+
+## Codex-Only Cross-Review Mode
+
+当用户想要“只用 Codex”模拟多方审查、交叉审查或第二视角时，读取 `references/codex-only-cross-review.md`。默认 `single_context_lens`；只有宿主支持只读 Codex 线程/分叉且风险足够时，才使用 `codex_thread_isolated`。
+
+最低门禁：报告必须写明 review mode、independence level、是否使用外部模型、审查镜头和主会话复核范围；可选隔离线程只能输出证据、候选发现、置信度和未覆盖范围，最终裁决仍由主会话完成。
+
+## Optional Subagent Dispatch Mode
+
+当任务命中大 diff、多 surface、review pressure、技能/知识库/技术方案审查，且当前宿主支持并允许并行代理时，可派只读子 agent 做独立审查镜头。详细契约见 `references/subagent-review-contracts.md`。
+
+子 agent 只能输出证据、候选发现、置信度和未覆盖范围；主会话必须去重、复核 P0/P1 与核心事实、裁决冲突，并保留唯一审查报告。Next Steps 确认前仍保持 Review-Only，不得由子 agent 直接修复或宣布通过。
 
 ---
 
@@ -277,6 +292,8 @@ Stage 1 FAIL → 直接报告，不进 Stage 2。Stage 1 PASS → Stage 2 审查
 - 模式: {SCAN/REVIEW/FIX/PERF} | 批次: {N} | 发现: {P0:N} {P1:N} {P2:N}
 - Stage 1 Spec: {PASS/FAIL} | Stage 2 Quality: {score}/10
 - Completion Claim Review: {PASS/FAIL/NOT_APPLICABLE}
+- Codex Review Mode: {single_context_lens/codex_thread_isolated/not_applicable} | Independence: {same_context_lens/codex_thread_isolated/not_applicable} | External Model Used: {yes/no}
+- Review Lenses: {lens list} | Main Verification: {what was rechecked / gaps}
 
 ### P0 Critical（必须修复）
 | # | file:line | 问题 | 建议 |

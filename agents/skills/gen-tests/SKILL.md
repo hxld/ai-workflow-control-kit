@@ -113,7 +113,8 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 
 1. `.doc/<feature>/tech-design.md` 中的 `Test Design Control / 测试设计控制`。
 2. `.doc/<feature>/test-design.md` 或同等测试设计文档。
-3. 用户显式给出的最终测试范围与风险分级。
+3. `Branch Coverage Plan` 或上游 `Same Symptom Branch Matrix` 中的验证 / must-not 行。
+4. 用户显式给出的最终测试范围与风险分级。
 
 命中以下任一情况时，若缺少 Test Design Control 或合法 mini form，输出 `test_design_gap` 并回到 `deep-plan`，不得自由生成一批测试后宣称覆盖完成：多 surface、状态流转、落库/事务、异步、外部接口、报表/导出、前端可见面、旧数据兼容、must-not 行为、明显高返工风险。
 
@@ -161,8 +162,10 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 | 外部接口 / 第三方协议 | 使用 request/response/config fixture 冻结 contract；区分外部错误、我方幂等跳过和我方处理 bug |
 | 并行聚合 / 多数据源回填 | 构造任一来源失败、超时或返回空的用例；断言其它来源按契约继续回填或整体按契约 fail closed |
 | 单活记录 / 唯一语义 / 幂等保存 | 构造重复有效记录、重复提交或并发保存场景；断言读取确定、更新范围正确、唯一约束或冲突处理明确 |
+| 同症状多分支 / 生产热修 / 缓存修复 | 至少为目标分支和一个绕过目标修复的分支设计断言、静态 guard 或 blocker；证明本次覆盖范围与未覆盖范围 |
 
 **Hard Gate：** 如果测试计划里只有 `should happen`，没有 `must not happen`，而需求涉及失败、空值、禁止 fallback、副作用边界或多 surface，则不得进入 Phase 4。
+**Branch Gate：** 上游存在 Same Symptom Branch Matrix / Branch Coverage Plan 时，测试报告必须逐行映射 `covered / static_only / blocked / out_of_scope_confirmed`；缺映射时只能 `PARTIAL`，不得写“热修验证完成”。
 
 **断言粒度：** guard 测试优先断言需求行为、数据流、持久化、展示、消息、状态和副作用边界；除非需求显式指定内部 API，否则不得把非必要方法名、私有 helper 名或临时实现结构写成完成标准。
 
@@ -319,4 +322,4 @@ Java: `src/test/**/*Test.java`；JS/TS: `**/*.test.ts`, `**/*.spec.ts`；Python:
 
 ## 输出格式
 
-默认输出：模式、验证范围、失败阶段、RED/GREEN 证据、Test Design Control 测试映射、覆盖账本测试映射、遗留 blocker、下一步。完整模板见 `references/output-formats.md`。
+默认输出：模式、验证范围、失败阶段、RED/GREEN 证据、Test Design Control 测试映射、Branch Coverage 测试映射、覆盖账本测试映射、遗留 blocker、下一步。完整模板见 `references/output-formats.md`。

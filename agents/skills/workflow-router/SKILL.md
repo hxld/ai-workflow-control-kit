@@ -57,7 +57,8 @@ allowed-tools: Read,Glob
 - 这只提高证据标准，不默认扩大产物数量、不默认生成第二套方案、不默认进入 replay/eval。
 - 如果当前任务是代码、方案、技能或知识库审查，路由到 `deep-review`，并按任务类型读取 `references/review-lens-templates.md`。
 - 如果用户已经给出 Claude Code/Codex/人工 reviewer 的反馈，路由到 `resolve-feedback`，先验证再接受。
-- 如果用户明确要求“只用 Codex / 不用外部模型 / 模拟交叉审查”，设置 `review_mode=codex_only_cross_review`，路由到 `deep-review` 并读取 `references/codex-only-cross-review.md`。
+- 本工作流默认只使用 Codex。只要出现 review pressure、第二视角、多轮/十轮、发布前/提交前高风险、怕漏问题、要求交叉审查或类似信号，就设置 `review_mode=codex_only_cross_review`，路由到 `deep-review` 并读取 `references/codex-only-cross-review.md`；用户无需记住或说出该路由名。
+- 只有用户明确要求外部模型/人工 reviewer，或已经提供外部反馈时，才进入外部 review / `resolve-feedback` 语义。
 - 如果任务仍在实现链路中，保持原技能链，但把 `CONTRACT` 标为 `review_pressure`，`VERIFY` 必须包含证据来源、确定性、验证方式和无法验证的假设。
 
 Codex-only 选择规则：默认 `single_context_lens`；若宿主支持只读 Codex 线程/分叉，且任务为 L3、review pressure、大 diff 或多 surface，可升级为 `codex_thread_isolated`。不允许把同一上下文多镜头说成外部独立审查。
@@ -71,7 +72,7 @@ Codex-only 选择规则：默认 `single_context_lens`；若宿主支持只读 C
 | `L0` | 纯问答、单命令、查枚举/路径、无写入无生产风险 | 直接答复或轻量自检，不强制 `deep-review` |
 | `L1` | 小代码改动、普通 SQL、单 surface、局部文档/配置 | 目标技能 + 定向验证；收口说明验证范围 |
 | `L2` | 生产/线上结论、热修、修数、缓存刷新、外部接口、跨组件归因、状态/数据链路 | `log-investigator` 或 `req-alignment-check` 先建证据链与同症状分支矩阵；修复前进入 `deep-plan` 或轻量 hotfix |
-| `L3` | 发布/提交前高风险、批量数据影响、资金/状态推进、用户已纠错、曾提前完成、review pressure + 多 surface | 必须有反证挑战、`deep-review` 多镜头或等效审查账本，`sync-progress` 缺审查闭环时只能 `PARTIAL` |
+| `L3` | 发布/提交前高风险、批量数据影响、资金/状态推进、用户已纠错、曾提前完成、review pressure + 多 surface | 必须有反证挑战、`deep-review` 多镜头或等效审查账本；默认 `review_mode=codex_only_cross_review`，`sync-progress` 缺审查闭环时只能 `PARTIAL` |
 
 升级规则：从 L1 以后，只要出现“同一个业务症状可能来自多个入口/配置/缓存/异步/下游分支”，必须要求 `Same Symptom Branch Matrix`；只修目标分支不能宣称整个症状已闭环。
 

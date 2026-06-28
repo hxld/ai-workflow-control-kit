@@ -82,11 +82,11 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 - 每轮必须使用不同视角；如果找不到足够证据，输出 `verification_gap`，不要补幻想结论。
 - 每个非平凡发现必须标注证据来源、严重级别、确定性、验证方式；无法验证的内容只能标为假设。
 - 同一模型同一上下文的多轮审查不等于独立外部审查；必须披露 `independence_level=same_context_lens`。
-- 用户要求只用 Codex 实现交叉审查时，读取 `references/codex-only-cross-review.md`，在 `single_context_lens` 与 `codex_thread_isolated` 中选择；不要声称使用了外部模型。
+- 路由层传入 `review_mode=codex_only_cross_review`，或用户要求只用 Codex / 第二视角 / 多轮交叉审查时，读取 `references/codex-only-cross-review.md`，在 `single_context_lens` 与 `codex_thread_isolated` 中选择；不要声称使用了外部模型。
 
 ## Codex-Only Cross-Review Mode
 
-当用户想要“只用 Codex”模拟多方审查、交叉审查或第二视角时，读取 `references/codex-only-cross-review.md`。默认 `single_context_lens`；只有宿主支持只读 Codex 线程/分叉且风险足够时，才使用 `codex_thread_isolated`。
+当路由层自动设置 `review_mode=codex_only_cross_review`，或用户想要“只用 Codex”模拟多方审查、交叉审查或第二视角时，读取 `references/codex-only-cross-review.md`。默认 `single_context_lens`；只有宿主支持只读 Codex 线程/分叉且风险足够时，才使用 `codex_thread_isolated`。
 
 最低门禁：报告必须写明 review mode、independence level、是否使用外部模型、审查镜头和主会话复核范围；可选隔离线程只能输出证据、候选发现、置信度和未覆盖范围，最终裁决仍由主会话完成。
 

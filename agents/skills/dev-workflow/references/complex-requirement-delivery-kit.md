@@ -1,21 +1,21 @@
-# Complex Requirement Delivery Kit
+# 复杂需求交付包
 
-Use this kit when a requirement has fixed literals, multiple surfaces, cross-module implementation, external integrations, async tasks, reports/exports, logs, state transitions, or data persistence.
+当需求包含固定字面量、多 surface、跨模块实现、外部集成、异步任务、报表/导出、日志、状态流转或数据持久化时使用。
 
-The purpose is to turn a blocking NO-GO into a concrete ready-for-implementation package.
+目标：把阻塞性的 NO-GO 转成具体、可实现、可验证的交付包。
 
-## 0. Branch / Commit Reconstruction Addendum
+## 0. 分支 / 提交反推补充
 
-Use this addendum when there is no PRD, but the user provides a branch, commit range, patch, or target diff. The diff is evidence or oracle material; it is not a PRD until a human confirms the reconstructed requirement.
+没有 PRD，但用户提供分支、commit range、patch 或目标 diff 时使用。diff 是证据或后验材料；在人工确认反推需求前，不是 PRD。
 
 ```markdown
-| Inferred requirement | Confidence | Evidence | Missing source | Verification gap | Next step |
-|----------------------|------------|----------|----------------|------------------|-----------|
+| 反推需求 | 置信度 | 证据 | 缺失来源 | 验证缺口 | 下一步 |
+|----------|--------|------|----------|----------|--------|
 ```
 
 ```markdown
-| File family | Role | Expected or surprising | Shared impact | Validation |
-|-------------|------|------------------------|---------------|------------|
+| 文件族 | 角色 | 预期内/意外 | 共享影响 | 验证方式 |
+|--------|------|------------|----------|----------|
 ```
 
 Rules:
@@ -26,11 +26,11 @@ Rules:
 - If the diff touches shared enums, base handlers, framework files, shared DTOs, shared utilities, or public config, upgrade to shared-impact planning.
 - Compile success proves structure only; it does not prove business behavior or external protocol correctness.
 
-## 1. Requirement Freeze Matrix
+## 1. 需求冻结矩阵
 
 ```markdown
-| Req ID | Requirement literal | Order / priority | must happen | must not happen | Owner / surface | Code location | Test assertion | Status |
-|--------|---------------------|------------------|-------------|-----------------|-----------------|---------------|----------------|--------|
+| 需求ID | 需求字面量 | 顺序/优先级 | 必须发生 | 禁止发生 | owner/surface | 代码落点 | 测试断言 | 状态 |
+|--------|------------|-------------|----------|----------|---------------|----------|----------|------|
 | R-001 |                     |                  |             |                 |                 |               |                | mapped / gap |
 ```
 
@@ -41,11 +41,11 @@ Rules:
 - `must not happen` is mandatory for fallback, side effects, empty values, status fields, and failure paths.
 - `Status=gap` blocks coding.
 
-## 2. Field And Data Source Matrix
+## 2. 字段与数据来源矩阵
 
 ```markdown
-| Req ID | Requirement label | Required source | Domain field | DB / external field | Stored value | Display value | Forbidden fallback/default | Test assertion |
-|--------|-------------------|-----------------|--------------|---------------------|--------------|---------------|----------------------------|----------------|
+| 需求ID | 需求标签 | 必需来源 | 领域字段 | DB/外部字段 | 落库值 | 展示值 | 禁止 fallback/default | 测试断言 |
+|--------|----------|----------|----------|------------|--------|--------|-----------------------|----------|
 ```
 
 Rules:
@@ -54,11 +54,11 @@ Rules:
 - If a value must come from an external payload, do not fall back to page value, manual value, old DB value, or helper default.
 - If the backend cannot observe a UI-only raw value, mark it as a design gap before coding.
 
-## 3. Surface Coverage Matrix
+## 3. Surface 覆盖矩阵
 
 ```markdown
-| Surface ID | Surface | Entry | Orchestration | Query/write point | Output/display | Independent validation | Status |
-|------------|---------|-------|---------------|-------------------|----------------|------------------------|--------|
+| Surface ID | Surface | 入口 | 编排 | 查询/写入点 | 输出/展示 | 独立验证 | 状态 |
+|------------|---------|------|------|------------|----------|----------|------|
 ```
 
 Rules:
@@ -67,13 +67,13 @@ Rules:
 - Similar entries do not cover each other.
 - Each surface needs its own validation.
 
-## 3.5 Autonomous Coverage Ledger
+## 3.5 自主实现覆盖账本
 
-Use this ledger when the user asks for autonomous implementation, minimal interruptions, or 90%+ coverage from a requirement document.
+当用户要求基于需求文档自主实现、少打扰或 90%+ 覆盖时使用。
 
 ```markdown
-| Req ID | Requirement item | Priority | Weight | Literal / wire fields | Surface | Expected files | Verification | Status |
-|--------|------------------|----------|--------|-----------------------|---------|----------------|--------------|--------|
+| 需求ID | 需求项 | 优先级 | 权重 | 字面量/协议字段 | Surface | 预计文件 | 验证方式 | 状态 |
+|--------|--------|--------|------|----------------|---------|----------|----------|------|
 ```
 
 Priority values:
@@ -91,22 +91,22 @@ Rules:
 - `optional_or_later`, `frontend_or_external`, and `out_of_scope` do not count toward the numerator.
 - If a deferred or external row blocks the core path, the overall result is `PARTIAL` or `BLOCKED`.
 
-## 3.6 Change Impact Search Matrix
+## 3.6 改动影响搜索矩阵
 
-Use this before Expected Diff when the change touches rules, conditions, field sources, enums, data-source switching, method signatures, shared helpers, or repeated implementations.
+当改动涉及规则、条件、字段来源、枚举、数据源切换、方法签名、共享 helper 或重复实现时，在预计变更前使用。
 
 ```markdown
-| change axis | search evidence | must-change locations | maybe-change locations | explicitly-excluded | consistency rule |
-|-------------|-----------------|-----------------------|------------------------|---------------------|------------------|
+| 改动轴 | 搜索证据 | 必改位置 | 可能改动位置 | 明确排除 | 一致性规则 |
+|--------|----------|----------|--------------|----------|------------|
 ```
 
 Search evidence should cover method names, field reads/writes, assignments, enum reverse lookups, SQL/filter/select, callers, serialization/deserialization, templates/export columns, and test fixtures. If `must-change locations` are uncertain, implementation readiness is `NO-GO`. Exclusions require a reason; “not involved” without evidence is not enough.
 
-## 4. Expected Diff Matrix
+## 4. 预计变更矩阵
 
 ```markdown
-| Req ID | Expected modules | Expected file families | Change type | Out-of-scope file families | Validation |
-|--------|------------------|------------------------|-------------|----------------------------|------------|
+| 需求ID | 预计模块 | 预计文件族 | 改动类型 | 范围外文件族 | 验证方式 |
+|--------|----------|------------|----------|--------------|----------|
 ```
 
 Rules:
@@ -115,7 +115,7 @@ Rules:
 - Name out-of-scope families explicitly so scope drift is visible.
 - Actual diff must be compared with this matrix before completion.
 
-### 4A. File Family Granularity
+### 4A. 文件族粒度
 
 Expected Diff must be specific enough to prove the entry and carrier are covered:
 
@@ -127,11 +127,11 @@ Expected Diff must be specific enough to prove the entry and carrier are covered
 - Stateful core paths need a transaction-depth test plan; mock-only collaborator tests require a coverage cap.
 - `core_path` must include a real production entry or carrier such as controller, facade, processor, worker, exporter, mapper, or scheduler.
 
-## 5. TDD Coverage Plan
+## 5. TDD 覆盖计划
 
 ```markdown
-| Test ID | Req rows covered | Surface covered | Positive assertion | Reverse assertion | Command | Expected RED |
-|---------|------------------|-----------------|--------------------|-------------------|---------|--------------|
+| 测试ID | 覆盖需求行 | 覆盖 Surface | 正向断言 | 反向断言 | 命令 | 预期 RED |
+|--------|------------|--------------|----------|----------|------|----------|
 ```
 
 Rules:
@@ -140,11 +140,11 @@ Rules:
 - Tests must cover freeze rows, surfaces, field-source rows, and must-not side effects.
 - `testCompile` or environment failures are not business RED.
 
-## 5.5 Baseline And Verification Blocker Matrix
+## 5.5 基线与验证阻断矩阵
 
 ```markdown
-| Stage | Command / evidence | Expected result | Actual result | Blocker classification | Action | What passing proves |
-|-------|--------------------|-----------------|---------------|------------------------|--------|---------------------|
+| 阶段 | 命令/证据 | 预期结果 | 实际结果 | blocker 分类 | 行动 | 通过后能证明什么 |
+|------|----------|----------|----------|-------------|------|----------------|
 ```
 
 Allowed blocker classifications:
@@ -162,41 +162,41 @@ Rules:
 - PowerShell static Maven commands with `-Dtest` / `-Dsurefire` can use `mvn --%` for copy-ready output.
 - If the command uses variables, generated paths, or dynamic filters, use argument arrays or explicit quoting instead of `--%`.
 
-## 6. Readiness Decision
+## 6. 实现就绪决策
 
 ```markdown
-## Implementation Readiness
+## 实现就绪
 
-- Requirement Freeze Matrix: complete / gaps
-- Field And Data Source Matrix: complete / gaps / n/a
-- Surface Coverage Matrix: complete / gaps / n/a
-- Autonomous Coverage Ledger: complete / gaps / n/a
-- Expected Diff Matrix: complete / gaps
-- TDD Coverage Plan: complete / gaps
-- Baseline And Verification Blocker Matrix: complete / gaps
+- 需求冻结矩阵: complete / gaps
+- 字段与数据来源矩阵: complete / gaps / n/a
+- Surface 覆盖矩阵: complete / gaps / n/a
+- 自主实现覆盖账本: complete / gaps / n/a
+- 预计变更矩阵: complete / gaps
+- TDD 覆盖计划: complete / gaps
+- 基线与验证阻断矩阵: complete / gaps
 - OpenSpec + .doc: complete / gaps
-- Human review: approved / pending
-- Decision: READY / NO-GO
-- Blocking gaps:
+- 人工审查: approved / pending
+- 决策: READY / NO-GO
+- 阻断缺口:
 ```
 
 `READY` requires no `gap` rows and human approval when the workflow has a review gate.
 
-## 7. Final Completion Check
+## 7. 最终完成检查
 
-Before declaring done:
+宣称完成前必须检查：
 
 ```markdown
-| Gate | Evidence | Result |
-|------|----------|--------|
-| Requirement freeze rows implemented | code + tests | pass/fail |
-| Field/source rows implemented | code + tests | pass/fail |
-| Surface rows validated | commands/assertions | pass/fail |
-| Autonomous weighted coverage | ledger + verification | pass/fail/n-a |
-| Expected diff matched actual diff | diff summary | pass/fail |
-| Original RED rerun | command output | pass/fail |
-| Baseline blockers classified | matrix + action | pass/fail |
-| No unplanned scope drift | file list | pass/fail |
+| 门禁 | 证据 | 结果 |
+|------|------|------|
+| 需求冻结行已实现 | 代码 + 测试 | pass/fail |
+| 字段/来源行已实现 | 代码 + 测试 | pass/fail |
+| Surface 行已验证 | 命令/断言 | pass/fail |
+| 自主实现加权覆盖 | 账本 + 验证 | pass/fail/n-a |
+| 预计变更匹配实际 diff | diff 摘要 | pass/fail |
+| 原始 RED 已复跑 | 命令输出 | pass/fail |
+| 基线 blocker 已分类 | 矩阵 + 行动 | pass/fail |
+| 无计划外范围漂移 | 文件列表 | pass/fail |
 ```
 
 Any fail means `PARTIAL`, not complete.

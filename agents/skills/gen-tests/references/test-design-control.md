@@ -1,61 +1,61 @@
-# AI-Assisted Test Design Control
+# AI 辅助测试设计控制
 
-Use this reference when a requirement is non-trivial, multi-surface, stateful, external-facing, or has explicit compatibility / must-not risk.
+当需求非平凡、多 surface、有状态、对外可见，或存在兼容 / must-not 风险时使用本参考。
 
-Core rule: humans confirm scope and risk; AI assists impact scanning, grouping, step generation, and coverage checking. Do not let AI free-generate tests without an agreed risk surface.
+核心规则：人确认范围和风险；AI 辅助影响扫描、用例分组、步骤生成和覆盖校验。没有已确认的风险面时，不允许 AI 自由生成一批测试。
 
-## Step 1: Impact Scope
-
-```markdown
-| Surface | Entry | Related change | Call/traffic/code evidence | Old data affected | Initial risk | Test in scope |
-|---------|-------|----------------|----------------------------|-------------------|--------------|---------------|
-```
-
-Scan from both code diff and runtime/API/page/task entries. Remove false positives before test generation.
-
-## Step 2: Risk Grading
+## 步骤 1：影响范围
 
 ```markdown
-| Target | Change size | Branch point | Old data compatibility | External visibility | Risk | Test depth |
-|--------|-------------|--------------|------------------------|---------------------|------|------------|
+| Surface | 入口 | 关联改动 | 调用/流量/代码证据 | 是否影响旧数据 | 初始风险 | 是否纳入测试 |
+|---------|------|----------|--------------------|----------------|----------|--------------|
 ```
 
-Answer three questions: how much changed, where the branch sits, and whether old data remains compatible.
+同时从代码 diff 和运行时/API/页面/任务入口扫描。生成测试前先移除误报。
 
-## Step 3: Decision Table
+## 步骤 2：风险分级
 
 ```markdown
-| Condition A | Condition B | Condition C | Expected result | Must test | Merge/keep reason |
-|-------------|-------------|-------------|-----------------|-----------|-------------------|
+| 目标 | 改动量 | 分支点 | 旧数据兼容 | 外部可见性 | 风险 | 测试深度 |
+|------|--------|--------|------------|------------|------|----------|
 ```
 
-Expand first, then merge equivalent cases. Do not merge away high-risk, boundary, old-data, or must-not cases.
+回答三个问题：改了多少、分支点在哪里、旧数据是否仍兼容。
 
-## Step 4: Executable Steps
+## 步骤 3：判定表
 
 ```markdown
-| Case | Fixture/precondition | Action | Positive assertion | Side-effect assertion | Reverse assertion | Auto/manual |
-|------|----------------------|--------|--------------------|-----------------------|-------------------|-------------|
+| 条件A | 条件B | 条件C | 预期结果 | 是否必须测 | 合并/保留理由 |
+|-------|-------|-------|----------|------------|----------------|
 ```
 
-Prefer one action with multiple verification dimensions: response, DB, state, log, file, page, export, message, or external payload.
+先展开，再合并等价用例。不要合并掉高风险、边界、旧数据或 must-not 用例。
 
-## Step 5: Coverage Check
+## 步骤 4：可执行步骤
 
 ```markdown
-| Surface | Positive | Negative | Old data compatibility | Side effects | Must-not | Status |
-|---------|----------|----------|------------------------|--------------|----------|--------|
+| 用例 | 前置数据/条件 | 操作 | 正向断言 | 副作用断言 | 反向断言 | 自动/人工 |
+|------|---------------|------|----------|------------|----------|----------|
 ```
 
-Status values: `covered`, `partial`, `not_applicable:<reason>`, `blocked:<reason>`.
+优先用一个操作覆盖多个验证维度：响应、DB、状态、日志、文件、页面、导出、消息或外部 payload。
 
-## Mini Form
-
-Small requirements may use:
+## 步骤 5：覆盖校验
 
 ```markdown
-| Change | Impact | Risk | Test point | Must-not | Status |
-|--------|--------|------|------------|----------|--------|
+| Surface | 正例 | 反例 | 旧数据兼容 | 副作用 | Must-not | 状态 |
+|---------|------|------|------------|--------|----------|------|
 ```
 
-Mini form compresses expression only. It does not remove impact, risk, must-not, or coverage checks.
+状态值：`covered`、`partial`、`not_applicable:<reason>`、`blocked:<reason>`。
+
+## 小需求表
+
+小需求可使用：
+
+```markdown
+| 改动 | 影响 | 风险 | 测试点 | Must-not | 状态 |
+|------|------|------|--------|----------|------|
+```
+
+小需求表只压缩表达，不取消影响、风险、must-not 或覆盖校验。

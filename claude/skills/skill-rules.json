@@ -2,7 +2,10 @@
   "_meta": {
     "runtime_truth": "skills contains the managed auto-trigger registry; skill directories may include manual or company-specific skills that are intentionally unmanaged.",
     "intentionally_unmanaged_skills": {
-      "rdc-git": "company-specific Git/MR workflow skill; manually invoked and not part of generic auto-trigger routing by default."
+      "rdc-git": "company-specific Git/MR workflow skill; manually invoked and not part of generic auto-trigger routing by default.",
+      "replay-pre-flight-check": "replay/eval specialist; invoked by explicit replay workflows and not part of generic auto-trigger routing.",
+      "replay-tdd-enforcer": "replay/eval specialist; invoked by explicit replay workflows and not part of generic auto-trigger routing.",
+      "replay-test-charter-validator": "replay/eval specialist; invoked by explicit replay workflows and not part of generic auto-trigger routing."
     }
   },
   "skills": {
@@ -50,12 +53,12 @@
       }
     },
     "ideate": {
-      "description": "在头脑风暴改进想法、探索方案或在定方向前生成备选项时使用",
+      "description": "在头脑风暴改进想法、探索方案、规划阶段交叉追问、先聊方案或在定方向前生成备选项时使用",
       "priority": "medium",
       "scope_tier": "generic",
       "scope_note": "这是跨项目可复用的发散式思考方法，不依赖特定仓库或公司流程。",
       "triggers": {
-        "keywords": ["构思", "创意", "ideate", "改进想法", "头脑风暴", "方案探索", "有什么想法"]
+        "keywords": ["构思", "创意", "ideate", "改进想法", "头脑风暴", "规划头脑风暴", "交叉追问", "苏格拉底", "方案探索", "有什么想法", "先聊方案", "方案未定", "多方案"]
       }
     },
     "requirement-assessment": {
@@ -118,7 +121,7 @@
       "scope_tier": "generic",
       "scope_note": "代码审查与风险识别属于通用工程实践，不依赖当前项目约束。",
       "triggers": {
-        "keywords": ["深度审查", "代码审查", "deep review", "check this code", "代码优化", "优化代码", "审查代码", "检查代码质量", "review this PR", "code review", "审查代码质量", "十轮深度审查", "10轮深度审查", "第二视角审校", "reviewer challenge", "Claude Code 审查", "Codex 审查"]
+        "keywords": ["深度审查", "代码审查", "deep review", "check this code", "代码优化", "优化代码", "审查代码", "检查代码质量", "review this PR", "code review", "审查代码质量", "十轮深度审查", "10轮深度审查", "多轮审查", "交叉审查", "事前审查", "方案审查", "计划审查", "审一下方案", "先审方案", "先审计划", "开发前先审", "实现前先审", "写代码前审", "开发前审查", "实现前审查", "发布前审查", "上线前审查", "提交前审查", "审查当前改动", "审查当前 diff", "审查当前diff", "怕漏问题", "有没有漏", "第二视角", "第二视角审查", "第二视角审校", "reviewer challenge", "Claude Code 审查", "Codex 审查"]
       }
     },
     "add-comments": {
@@ -155,7 +158,7 @@
       "scope_tier": "generic",
       "scope_note": "日志排查与事故定位是通用运行时分析方法，可跨项目使用。",
       "triggers": {
-        "keywords": ["查日志", "search logs", "investigate logs", "日志调查", "排查日志", "查生产", "生产问题", "pod crash", "跨组件字段丢失", "单点日志解释不了", "状态链路", "数据链路"]
+        "keywords": ["查日志", "search logs", "investigate logs", "日志调查", "排查日志", "查生产", "生产环境", "线上环境", "线上问题", "生产问题", "排查问题", "排查一下", "运行时证据", "pod crash", "跨组件字段丢失", "单点日志解释不了", "状态链路", "数据链路"]
       }
     },
     "retro": {
@@ -212,6 +215,15 @@
         "keywords": ["刷新知识", "知识维护", "refresh knowledge", "knowledge maintenance", "知识过期", "知识刷新"]
       }
     },
+    "project-context-compiler": {
+      "description": "在为本地项目创建或刷新 AI 可读上下文、项目根 AGENTS/CLAUDE 指引、.doc system-context 包时使用",
+      "priority": "high",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖项目根指令、.doc 上下文和当前本地仓库结构；方法通用，项目事实必须下沉到项目本地上下文。",
+      "triggers": {
+        "keywords": ["项目上下文", "项目AI上下文", "AI上下文指南", "上下文包", "system-context", "project context", "编译上下文", "刷新项目上下文", "创建AGENTS.md", "创建CLAUDE.md", ".doc上下文"]
+      }
+    },
     "ship-release": {
       "description": "在代码准备发版、创建 PR、推送变更或执行发布流程时使用",
       "priority": "high",
@@ -227,7 +239,7 @@
       "scope_tier": "generic",
       "scope_note": "评审意见分流、验证与处理属于通用协作方法，不依赖特定项目业务。",
       "triggers": {
-        "keywords": ["处理反馈", "resolve feedback", "fix review comments", "address PR feedback", "修复审查", "处理审查意见", "review 反馈", "review反馈", "push back", "破坏契约", "破坏现有契约"]
+        "keywords": ["处理反馈", "resolve feedback", "fix review comments", "address PR feedback", "修复审查", "处理审查意见", "review 反馈", "review反馈", "外部反馈", "外部审查意见", "外部 reviewer 反馈", "外部 reviewer 的反馈", "人工 reviewer 反馈", "push back", "破坏契约", "破坏现有契约"]
       }
     },
     "workflow-router": {
@@ -238,7 +250,7 @@
       "auto_apply": true,
       "feedback_summary": "会在真正开始实现前，先选择最合适的首个技能或工作流路径。",
       "triggers": {
-        "keywords": ["开始工作", "what should I do", "哪个技能", "用哪个技能", "先用什么技能", "我拿到一个需求，应该怎么做", "拿到一个需求", "给定需求文档", "需求文档后实现", "自主实现", "自主开发", "少问我", "覆盖90", "90%覆盖", "先出技术方案", "先出快版", "出评审版", "准备评审材料", "给我口播稿", "技术反讲", "反讲稿", "上午先出", "下午补全", "这个是不是已经可以开发了", "会不会影响旧逻辑", "有没有遗漏", "继续完成", "继续推进", "剩下未完成的任务", "按功能点继续做", "没有需求文档", "从分支反推", "重跑分支", "分支重跑", "commit重跑", "口头现象", "只有口头描述", "没有日志也没有复现", "跨组件问题", "跨组件字段丢失", "单点日志解释不了", "我会让 Claude Code 审查你", "我会让 Codex 审查你", "Claude Code 会审查", "Codex 会审查", "外部 AI 会复核", "第二视角审校"]
+        "keywords": ["开始工作", "what should I do", "哪个技能", "用哪个技能", "先用什么技能", "我拿到一个需求，应该怎么做", "拿到一个需求", "给定需求文档", "需求文档后实现", "自主实现", "自主开发", "少问我", "覆盖90", "90%覆盖", "先出技术方案", "先出快版", "出评审版", "准备评审材料", "给我口播稿", "技术反讲", "反讲稿", "上午先出", "下午补全", "这个是不是已经可以开发了", "会不会影响旧逻辑", "有没有遗漏", "有没有漏", "有没有漏问题", "帮我看下有没有漏", "发布前", "要发布", "准备发布", "上线前", "要上线", "提交前", "事前审查", "方案审查", "计划审查", "审一下方案", "先审方案", "先审计划", "开发前先审", "实现前先审", "写代码前审", "开发前审查", "实现前审查", "发布前审查", "上线前审查", "提交前审查", "高风险审查", "怕漏问题", "多轮审查", "十轮审查", "交叉审查", "审查当前改动", "审查当前 diff", "审查当前diff", "第二视角", "第二视角审查", "继续完成", "继续推进", "剩下未完成的任务", "按功能点继续做", "没有需求文档", "从分支反推", "重跑分支", "分支重跑", "commit重跑", "口头现象", "只有口头描述", "没有日志也没有复现", "跨组件问题", "跨组件字段丢失", "单点日志解释不了", "我会让 Claude Code 审查你", "我会让 Codex 审查你", "Claude Code 会审查", "Codex 会审查", "外部 AI 会复核", "第二视角审校"]
       }
     },
     "backend-effort-estimate": {

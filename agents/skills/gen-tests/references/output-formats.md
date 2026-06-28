@@ -5,9 +5,9 @@
 ```markdown
 ## 测试已生成/补充 | 新增 X | 通过 X | 失败 0
 ### 框架: [框架名] | 测试文件: [路径] | 场景: 正常/空/Null/无效/边界
-### Test Design Control 映射
-| row | target/surface | test file/method | status | gap/action |
-|-----|----------------|------------------|--------|------------|
+### 测试设计控制映射
+| 行 | 目标/surface | 测试文件/方法 | 状态 | 缺口/行动 |
+|----|----------------|----------------|------|-----------|
 ### 自动化验证: [已覆盖场景]
 ### 集成验证: [需外部确认场景]
 ```
@@ -16,7 +16,7 @@
 
 ```markdown
 ## 测试修复报告
-| Round | Tests | Fixed | Remaining | Status |
+| 轮次 | 测试 | 已修复 | 剩余 | 状态 |
 ### 失败阶段: [resolve / compile / testCompile / test / runtime]
 ### 验证范围: [文件 / 模块 / workspace / 全仓库]
 ### 修复详情: [每个修复的说明]
@@ -40,7 +40,7 @@
 ## 覆盖率报告
 ### 代码覆盖率: X% (行) / Y% (分支)
 ### 场景覆盖: [已覆盖/总数]
-### Test Design Control 覆盖矩阵: [covered / partial / blocked / not_applicable 摘要]
+### 测试设计控制覆盖矩阵: [covered / partial / blocked / not_applicable 摘要]
 ### 缺口文件: [未覆盖的源文件列表]
 ### 建议下一步: FILL (补缺口) / CREATE (新建)
 ```

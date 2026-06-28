@@ -72,7 +72,7 @@ Generate grounded ideas through either dialogue-led design or divergent sub-agen
 | Mode | 适用 | 输出边界 |
 |------|------|----------|
 | `dialogue-design` | 方向模糊、用户想先聊方案、需要 2-3 个方向但还没有需求源 | 一问一答澄清 + 2-3 方案 + Design Brief |
-| `planning-brainstorm` | 已有需求源，进入技术方案前需要 AI 自主盘问“为什么这样做/为什么不那样做” | Self-Socratic Matrix + 方案取舍 + 验证断言，交给 `deep-plan` |
+| `planning-brainstorm` | 已有需求源，进入技术方案前需要 AI 自主盘问“为什么这样做/为什么不那样做” | 规划盘问矩阵（Self-Socratic Matrix）+ 方案取舍 + 验证断言，交给 `deep-plan` |
 | `divergent-ideation` | 用户明确要广泛发散、改进想法或大范围探索 | 20-30 候选 + 对抗过滤 + Top 5-7 |
 | `improvement-mining` | 用户问 what to improve，且目标仓库/产品已存在 | 代码/文档 grounding 后输出改进候选 |
 
@@ -86,18 +86,18 @@ Generate grounded ideas through either dialogue-led design or divergent sub-agen
 4. 用户选择或默认接受后，输出 Design Brief：`problem / constraints / success criteria / chosen approach / non-goals / validation / open questions`。
 5. 交接给 `req-alignment-check` 或 `deep-plan`；不得直接调用实现链路。
 
-### Planning Brainstorm Mode
+### 规划盘问模式（Planning Brainstorm Mode）
 
 当已有需求文档、验收口径、bug 证据或冻结矩阵，但方案尚未写死时使用。目标不是新增需求，而是在规划阶段替用户先追问一轮，减少后续返工：
 
 1. 输入必须来自 `req-alignment-check` 的冻结表、需求原文、代码事实或已确认约束；不得凭空扩范围。
 2. 对每个高风险需求项至少问：`到底要改变什么？为什么当前落点对？为什么不选其他落点？会在哪个入口/状态/数据源/副作用上漏？用什么断言证明？`
 3. 每行分配稳定 `PB-xx` ID（如 `PB-01`），后续 `tech-design.md`、测试、review finding 和 `sync-progress` 都引用同一个 ID；拆分行时新增 ID，已发布 ID 不重编号。
-4. 输出 Self-Socratic Matrix：
+4. 输出规划盘问矩阵（Self-Socratic Matrix）：
 
 ```markdown
-| PB id | requirement / fact | question | option A | option B | chosen | rejected because | risk | validation assertion |
-|-------|--------------------|----------|----------|----------|--------|------------------|------|----------------------|
+| PB 编号 | 需求/事实 | 追问 | 方案A | 方案B | 选择方案 | 放弃理由 | 风险 | 验证断言 |
+|---------|-----------|------|-------|-------|----------|----------|------|----------|
 ```
 
 5. 固定字面量、must-not、多 surface、数据源/owner、状态/事务、副作用、外部契约、用户已纠偏、review pressure 任一命中时必须入矩阵；其余需求按风险取 Top 3-5。
@@ -143,7 +143,7 @@ Generate grounded ideas through either dialogue-led design or divergent sub-agen
     └── 每个被拒 idea 附带 rejection reason
     ↓
 [4] 展示幸存者
-    └── Table: title, description, rationale, downsides, 验证范围, 完成标准（DoD）, key risks, confidence, complexity
+    └── 表格: 标题、描述、理由、不足、验证范围、完成标准（DoD）、关键风险、置信度、复杂度
     ↓
 [5] 写入产出物
     ├── docs/ideation/YYYY-MM-DD-<topic>-ideation.md
@@ -179,38 +179,38 @@ Generate grounded ideas through either dialogue-led design or divergent sub-agen
 # Ideation: {Topic}
 Date: YYYY-MM-DD | Candidates: {N} | Survivors: {N}
 
-## Ranked Ideas
-| # | Title | Score | 验证范围 | 完成标准（DoD） | Key Risks | Confidence | Complexity |
-|---|-------|-------|------------------|-----|-----------|------------|------------|
-| 1 | ... | 4.2/5 | 受影响模块+验证范围 | 明确完成标准 | 主要风险与代价 | High | Medium |
+## 候选想法排序
+| # | 标题 | 分数 | 验证范围 | 完成标准（DoD） | 关键风险 | 置信度 | 复杂度 |
+|---|------|------|----------|------------------|----------|--------|--------|
+| 1 | ... | 4.2/5 | 受影响模块+验证范围 | 明确完成标准 | 主要风险与代价 | 高 | 中 |
 ...
 
-### Idea #1: {Title}
-- **Description:** ...
-- **Rationale:** ... (引用: `src/foo.ts:L42`, issue #123)
-- **Downsides:** ...
+### 想法 #1：{标题}
+- **描述:** ...
+- **理由:** ... (引用: `src/foo.ts:L42`, issue #123)
+- **不足:** ...
 - **验证范围:** 验什么、范围到哪、哪些链路必须覆盖
 - **完成标准（DoD）:** 什么叫可交付/验证完成
-- **Key Risks:** 这条想法最可能在哪些地方失败或走偏
-- **Grounding:** ...
+- **关键风险:** 这条想法最可能在哪些地方失败或走偏
+- **依据:** ...
 
-## Rejection Summary
-| Idea | Rejection Reason |
-|------|-----------------|
+## 淘汰原因汇总
+| 想法 | 淘汰原因 |
+|------|----------|
 | ... | Low value, no grounding |
 
-## Session Log
-- Scanned: {file count} files, {N} TODOs, {N} issues
-- Agents: {N} divergent, {N} adversarial
-- Duration: ~{N} minutes
+## 会话记录
+- 扫描: {file count} 个文件, {N} 个 TODO, {N} 个 issue
+- Agent: {N} 个发散, {N} 个对抗
+- 耗时: ~{N} 分钟
 ```
 
 **幸存者硬规则：**
 
 - 没写 `验证范围` 的 idea 不能进入下游需求澄清 / plan
 - 没写 `完成标准（DoD）` 的 idea 不能作为推荐方案输出
-- 没写 `Key Risks` 的 idea 不能作为最终幸存者
-- `Downsides` 不能替代上述三项
+- 没写 `关键风险` 的 idea 不能作为最终幸存者
+- `不足` 不能替代上述三项
 
 ---
 

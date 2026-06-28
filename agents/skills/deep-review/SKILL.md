@@ -15,6 +15,7 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 - "检查代码质量" / "优化代码" / "fix review comments"
 - "十轮深度审查" / "第二视角审校" / "Claude Code/Codex 会审查结果"
 - 代码完成后、提交前、PR 审查时
+- 技术设计完成后、实现前，需要审查方案、预计变更、测试设计和风险反证时
 ## 何时不使用
 
 - 只需语法检查 | 快速 lint | 无代码变更
@@ -65,6 +66,36 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 3. 再看实现：正确性、可读性/简单性、架构边界、安全、性能五轴。
 4. 最后核对验证故事：命令、范围、失败阶段复验、手工/运行态证据。
 
+## 实现前方案审查模式（PRE-IMPLEMENTATION-REVIEW）
+
+用途：把审查左移到写代码前，先审方案是否可交付、可验证、不会漏 surface。
+
+触发：路由层或 `dev-workflow` 传入实现前方案审查；或用户说“先审方案 / 事前审查 / 计划审查 / 开发前审查”。
+
+审查对象：
+
+- 需求冻结表、字段/数据来源、Surface 覆盖矩阵。
+- 规划盘问矩阵、预计变更矩阵、测试设计控制、能力切片、90% 覆盖计划。
+- 决策反证点、开放假设、用户审批问题、预计验证命令。
+
+审查镜头：
+
+| 镜头 | 看什么 | 常见发现 |
+|------|--------|----------|
+| 需求契约 | literal、字段来源、must-not、owner 是否完整 | `requirement_contract_gap` |
+| Surface 覆盖 | 入口、展示、导出、异步、外部 payload 是否漏 | `surface_gap` |
+| 预计变更 | 预计文件族是否能闭环到真实入口和测试 | `expected_diff_gap` |
+| 测试设计 | 正反断言、失败阶段复验、真实入口和副作用证据 | `test_design_gap` |
+| 决策反证 | 为什么不选其他入口/事务/数据源，是否有可反驳证据 | `decision_doubt_gap` |
+| 可实施切片 | slice 是否过大、依赖不清、无法独立验证/回退 | `slice_readiness_gap` |
+
+输出规则：
+
+- 本模式保持只读，不修改代码。
+- P0/P1 发现必须回到 `deep-plan` 修正方案；不得直接进入实现。
+- 没有 P0/P1 时输出“可进入实现”，但仍列出 P2/P3 风险和验证注意点。
+- 报告标题和表头中文优先；英文 finding code 只作为机器可检索标签。
+
 若非平凡决策缺少可反驳证据，输出 `decision_doubt_gap`，不要用“看起来合理”放行。
 
 需求驱动的非平凡实现还必须审查 Planning Brainstorm Matrix：是否有稳定 `PB-xx`、是否真的比较了方案，是否写清 `chosen / rejected because / risk / validation assertion`，以及验证断言是否落到测试、静态检查或明确 blocker。缺失时输出 `planning_brainstorm_gap`；只有矩阵但没有真实被拒方案或验证证据时输出 `brainstorm_formalism_gap`；PB-ID 无法贯穿计划、测试、实现证据和收口时输出 `brainstorm_trace_gap`；`skip_reason` 不在白名单或理由是 `prd_exists / looks_simple / time_pressure / tests_pass / model_confident` 时输出 `invalid_brainstorm_skip`。
@@ -104,6 +135,7 @@ allowed-tools: Bash,Read,Edit,Glob,Grep,Skill,Task
 |----------|------|----------|
 | "快速检查" | `SCAN` | 仅 Always-on 专家，高层扫描 |
 | "代码审查"（默认）| `REVIEW` | 全维度专家审查 |
+| "实现前方案审查" | `PRE-IMPLEMENTATION-REVIEW` | 审查需求/方案/预计变更/测试设计，不改代码 |
 | "修复问题" | `FIX` | 审查 + 自动修复 |
 | "性能检查" | `PERF` | 专注性能审查 |
 | "后验对比" / "replay报告" | `ORACLE-REVIEW` | 先分类 oracle diff，再判断技能或实现缺口 |
@@ -289,7 +321,7 @@ Stage 1 FAIL → 直接报告，不进 Stage 2。Stage 1 PASS → Stage 2 审查
 
 ```
 ## 审查报告
-- 模式: {SCAN/REVIEW/FIX/PERF} | 批次: {N} | 发现: {P0:N} {P1:N} {P2:N}
+- 模式: {SCAN/REVIEW/PRE-IMPLEMENTATION-REVIEW/FIX/PERF} | 批次: {N} | 发现: {P0:N} {P1:N} {P2:N}
 - Stage 1 Spec: {PASS/FAIL} | Stage 2 Quality: {score}/10
 - Completion Claim Review: {PASS/FAIL/NOT_APPLICABLE}
 - Codex Review Mode: {single_context_lens/codex_thread_isolated/not_applicable} | Independence: {same_context_lens/codex_thread_isolated/not_applicable} | External Model Used: {yes/no}
@@ -304,6 +336,28 @@ Stage 1 FAIL → 直接报告，不进 Stage 2。Stage 1 PASS → Stage 2 审查
 
 ### Next Steps
 → [ ] Fix All P0 / Fix All / Manual / Approve
+```
+
+实现前方案审查可使用中文模板：
+
+```markdown
+## 实现前方案审查报告
+- 结论: 可进入实现 / 需要回到方案 / 阻塞
+- 审查模式: PRE-IMPLEMENTATION-REVIEW
+- Codex 审查模式: single_context_lens / codex_thread_isolated / not_applicable
+- 审查镜头: 需求契约 / Surface 覆盖 / 预计变更 / 测试设计 / 决策反证 / 可实施切片
+
+### P0/P1 阻断项
+| 编号 | 严重级别 | 审查镜头 | 问题 | 证据位置 | 建议修正 |
+|------|----------|----------|------|----------|----------|
+
+### P2/P3 风险
+| 编号 | 风险 | 影响 | 验证建议 |
+|------|------|------|----------|
+
+### 进入实现条件
+| 条件 | 状态 | 说明 |
+|------|------|------|
 ```
 
 **修复完成后：** 输出修复报告（修复了哪些、跳过了哪些、验证结果）。

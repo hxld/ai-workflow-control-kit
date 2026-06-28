@@ -87,7 +87,9 @@ if ($null -eq $slicePlan) {
         }
     }
     if ([string]$slicePlan.experiment -ne 'high_weight_family_proof_router') { $issues.Add('family_router_wrong_experiment') | Out-Null }
-    if (-not [string]::IsNullOrWhiteSpace([string]$slicePlan.highest_weight_open_family) -and [string]$slicePlan.selected_family -ne [string]$slicePlan.highest_weight_open_family) {
+    $forcedFamily = if ($slicePlan.PSObject.Properties['forced_requirement_family']) { [string]$slicePlan.forced_requirement_family } else { '' }
+    $runnerForcedSelection = -not [string]::IsNullOrWhiteSpace($forcedFamily) -and [string]$slicePlan.selected_family -eq $forcedFamily
+    if (-not $runnerForcedSelection -and -not [string]::IsNullOrWhiteSpace([string]$slicePlan.highest_weight_open_family) -and [string]$slicePlan.selected_family -ne [string]$slicePlan.highest_weight_open_family) {
         $issues.Add('family_router_not_highest_weight_open_family') | Out-Null
     }
     if (@($slicePlan.forbidden_proof).Count -eq 0) { $issues.Add('family_router_missing_forbidden_proof') | Out-Null }

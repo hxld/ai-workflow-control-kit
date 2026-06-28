@@ -584,6 +584,9 @@ Required machine lines:
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
+- gate_budget_decision: regression_test | gate_consolidation | existing_gate_enforcement | new_gate_exception
+- new_gate_artifacts: none (or exact new verify/carrier/machine_gate artifacts)
+- new_gate_exception_rationale: required only for new_gate_exception; explain existing gate gap, regression test, and runner/verifier invocation
 - verification_results: PASS
 - changed_files: <actual replay-autopilot scripts/prompts/tests changed>
 - actual_knowledge_version_after_push: $expectedAfterEvolution

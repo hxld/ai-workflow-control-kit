@@ -3459,14 +3459,22 @@ function Test-AuthorizingSliceEvidence {
         $resultStatus = [string]$sliceResult.slice_status
         $verifyStatus = [string]$sliceVerify.verification_status
         $verifySliceStatus = [string]$sliceVerify.slice_status
+        $closedFamilies = @(Get-StringArray $sliceVerify.closed_requirement_families)
+        $adjustedCoverage = Get-SafeInt -Value $sliceVerify.adjusted_coverage_delta -Default 0
         $hasAuthorization = (
             ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_next_slice' -and [bool]$sliceVerify.authorized_for_next_slice) -or
             ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and [bool]$sliceVerify.authorized_for_synthesis)
         )
+        $hasVerifierProgress = (
+            ($sliceVerify.PSObject.Properties.Name -contains 'authorized_for_synthesis' -and [bool]$sliceVerify.authorized_for_synthesis) -or
+            $closedFamilies.Count -gt 0 -or
+            [int]$adjustedCoverage -gt 0
+        )
         return (
             $verifyStatus -in @('PASS', 'PARTIAL') -and
             ($resultStatus -in @('DONE', 'PARTIAL') -or $verifySliceStatus -in @('DONE', 'PARTIAL')) -and
-            $hasAuthorization
+            $hasAuthorization -and
+            $hasVerifierProgress
         )
     } catch {
         return $false
@@ -3589,11 +3597,15 @@ function Test-StaleBlockedSliceForResume {
 
     if ($null -eq $SliceResultObject) { return $false }
     $sliceStatus = [string]$SliceResultObject.slice_status
-    if (@('BLOCKED', 'INVALID_REPLAY') -notcontains $sliceStatus) { return $false }
-
+    $authorizedForNextSlice = if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['authorized_for_next_slice']) { [bool]$SliceVerifyObject.authorized_for_next_slice } else { $true }
+    $authorizedForSynthesis = if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['authorized_for_synthesis']) { [bool]$SliceVerifyObject.authorized_for_synthesis } else { $false }
+    $shouldContinue = if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['should_continue']) { [bool]$SliceVerifyObject.should_continue } else { $true }
+    $verifyStatus = if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['verification_status']) { [string]$SliceVerifyObject.verification_status } else { '' }
     $gapFlags = @((@(Get-StringArray $SliceResultObject.gap_flags) + @(Get-StringArray $SliceVerifyObject.gap_flags)) | Select-Object -Unique)
     $implementedFiles = @(Get-StringArray $SliceResultObject.implemented_files)
     $closedFamilies = @(Get-StringArray $SliceVerifyObject.closed_requirement_families)
+    $touchedFamilies = @((@(Get-StringArray $SliceResultObject.touched_requirement_families) + @(Get-StringArray $SliceVerifyObject.touched_requirement_families)) | Select-Object -Unique)
+    $adjustedCoverage = if ($SliceVerifyObject) { Get-SafeInt -Value $SliceVerifyObject.adjusted_coverage_delta -Default 0 } else { 0 }
     $currentFamily = [string]$ForcedDecision.family_id
     $oldForcedFamily = ''
     if ($SliceVerifyObject -and $SliceVerifyObject.PSObject.Properties['next_required_slice']) {
@@ -3609,9 +3621,62 @@ function Test-StaleBlockedSliceForResume {
     $hasNoProgressFlag = @(@('no_progress_slice', 'gate_present_but_not_enforced', 'tooling_executor_failed') | Where-Object { $gapFlags -contains $_ }).Count -gt 0
     $noProgressBlocker = ($implementedFiles.Count -eq 0 -and $hasNoProgressFlag)
     if ($noProgressBlocker) { return $true }
+    $authorizedZeroCoverageReusableSlice = (
+        @('BLOCKED', 'INVALID_REPLAY') -notcontains $sliceStatus -and
+        $authorizedForNextSlice -and
+        -not $authorizedForSynthesis -and
+        $shouldContinue -and
+        @('PASS', 'PARTIAL') -contains $verifyStatus -and
+        [int]$adjustedCoverage -le 0 -and
+        $closedFamilies.Count -eq 0
+    )
+    if ($authorizedZeroCoverageReusableSlice) { return $true }
+    if (@('BLOCKED', 'INVALID_REPLAY') -notcontains $sliceStatus -and $authorizedForNextSlice -and $shouldContinue -and $verifyStatus -ne 'FAIL') { return $false }
+    if (
+        -not [string]::IsNullOrWhiteSpace($currentFamily) -and
+        $touchedFamilies -contains $currentFamily -and
+        (-not $authorizedForNextSlice -or -not $shouldContinue -or $verifyStatus -eq 'FAIL') -and
+        $closedFamilies -notcontains $currentFamily
+    ) { return $true }
     if (-not [string]::IsNullOrWhiteSpace($currentFamily) -and -not [string]::IsNullOrWhiteSpace($oldForcedFamily) -and $oldForcedFamily -ne $currentFamily) { return $true }
     if ($reasonText -match 'forced_family_not_highest_weight_open' -and -not [string]::IsNullOrWhiteSpace($currentFamily) -and $closedFamilies -notcontains $currentFamily) { return $true }
     return $false
+}
+
+function Test-StaleReusedSliceAfterGateRefresh {
+    param(
+        [string]$SliceResultPath,
+        [string]$SliceVerifyPath,
+        $ForcedDecision
+    )
+
+    if (-not (Test-Path -LiteralPath $SliceResultPath) -or -not (Test-Path -LiteralPath $SliceVerifyPath)) {
+        return $false
+    }
+
+    try {
+        $sliceResultObject = Read-JsonObject -Path $SliceResultPath
+        $sliceVerifyObject = Read-JsonObject -Path $SliceVerifyPath
+        $authorizedForNextSlice = if ($sliceVerifyObject.PSObject.Properties['authorized_for_next_slice']) { [bool]$sliceVerifyObject.authorized_for_next_slice } else { $true }
+        $authorizedForSynthesis = if ($sliceVerifyObject.PSObject.Properties['authorized_for_synthesis']) { [bool]$sliceVerifyObject.authorized_for_synthesis } else { $false }
+        $shouldContinue = if ($sliceVerifyObject.PSObject.Properties['should_continue']) { [bool]$sliceVerifyObject.should_continue } else { $true }
+        $verifyStatus = if ($sliceVerifyObject.PSObject.Properties['verification_status']) { [string]$sliceVerifyObject.verification_status } else { '' }
+        $adjustedCoverage = Get-SafeInt -Value $sliceVerifyObject.adjusted_coverage_delta -Default 0
+        $currentFamily = if ($null -ne $ForcedDecision -and $ForcedDecision.PSObject.Properties['family_id']) { [string]$ForcedDecision.family_id } else { '' }
+        $closedFamilies = @(Get-StringArray $sliceVerifyObject.closed_requirement_families)
+
+        $failedGateRefresh = (
+            -not $authorizedForNextSlice -and
+            -not $authorizedForSynthesis -and
+            (-not $shouldContinue -or $verifyStatus -eq 'FAIL') -and
+            [int]$adjustedCoverage -le 0
+        )
+        if (-not $failedGateRefresh) { return $false }
+        if ([string]::IsNullOrWhiteSpace($currentFamily)) { return $true }
+        return ($closedFamilies -notcontains $currentFamily)
+    } catch {
+        return $false
+    }
 }
 
 function Add-RunnerEnforcementContract {
@@ -3672,7 +3737,7 @@ function Update-FamilyLedgerFromSlice {
     $verifyTouched = @(Get-StringArray $verify.touched_requirement_families)
     $verifyClosed = @(Get-StringArray $verify.closed_requirement_families)
     $explicitTouched = @(if ($verifyTouched.Count -gt 0 -or $verifyClosed.Count -gt 0) { @($verifyTouched + $verifyClosed) | Select-Object -Unique } else { Get-StringArray $result.touched_requirement_families })
-    $explicitClosed = @(if ($verifyClosed.Count -gt 0) { $verifyClosed } else { Get-StringArray $result.closed_requirement_families })
+    $explicitClosed = @($verifyClosed)
     $hasExplicitTouched = $explicitTouched.Count -gt 0
     $ledgerBefore = $ledger | ConvertTo-Json -Depth 12 | ConvertFrom-Json
 
@@ -3778,6 +3843,7 @@ function Update-FamilyLedgerFromSlice {
             $verifyBlockers = @(Get-StringArray $verify.authorization_blockers)
             $proofMismatchFamilies = @(Get-StringArray $verify.proof_type_mismatch_families)
             $familyProofTypeMatches = -not ($proofMismatchFamilies -contains [string]$family.id)
+            $verifyGapFlags = @(Get-StringArray $verify.gap_flags)
             $nonAuthorizingForFamily = @(
                 'wrong_test_surface',
                 'shallow_module',
@@ -3793,15 +3859,29 @@ function Update-FamilyLedgerFromSlice {
                 'side_effect_red_not_business_assertion',
                 'exact_contract_not_closed'
             ) | Where-Object { $gapFlags -contains $_ }
+            $nonAuthorizingVerifierForFamily = @(
+                'wrong_test_surface',
+                'shallow_module',
+                'synthetic_carrier_gap',
+                'tooling_enforcement_stop',
+                'mock_behavior_gap',
+                'tdd_red_not_replayed',
+                'no_progress_slice',
+                'carrier_authorization_missing',
+                'carrier_authorization_stop',
+                'exact_contract_assertion_missing',
+                'side_effect_evidence_missing',
+                'side_effect_red_not_business_assertion',
+                'exact_contract_not_closed'
+            ) | Where-Object { $verifyGapFlags -contains $_ }
             $explicitlyClosedByVerifier = $verifyClosed -contains [string]$family.id
             $authoritativeVerifierClosure = $explicitlyClosedByVerifier `
                 -and $authorizedForNextSlice `
-                -and [string]$verify.verification_status -eq 'PASS' `
+                -and @('PASS', 'PARTIAL') -contains [string]$verify.verification_status `
                 -and @('DONE', 'PARTIAL') -contains [string]$result.slice_status `
-                -and -not $hasFamilyGap `
                 -and $familyProofTypeMatches `
                 -and $verifyBlockers.Count -eq 0 `
-                -and @($nonAuthorizingForFamily).Count -eq 0
+                -and @($nonAuthorizingVerifierForFamily).Count -eq 0
             if ($authoritativeVerifierClosure -or ($explicitlyClosed -and $authorizedForNextSlice -and @('PASS', 'PARTIAL') -contains [string]$verify.verification_status -and @('DONE', 'PARTIAL') -contains [string]$result.slice_status -and -not $hasFamilyGap -and $familyProofTypeMatches -and $blockingClosureWarnings.Count -eq 0 -and @($nonAuthorizingForFamily).Count -eq 0)) {
                 Set-ObjectProperty -Object $family -Name 'status' -Value 'EXECUTABLE_CLOSED'
                 Set-ObjectProperty -Object $family -Name 'open_sibling_surfaces' -Value @()
@@ -3860,6 +3940,66 @@ function Update-FamilyLedgerFromSlice {
     Save-FamilyLedger -Ledger $ledger -Path $Path
     $ledgerAfter = Get-FamilyLedger -Path $Path
     Write-FamilyLedgerAudit -ReplayRoot $replayRootForLedger -Stage 'post_slice_verify_absorption' -SliceIndex $SliceIndex -Before $ledgerBefore -After $ledgerAfter -TouchedFamilies $explicitTouched -ClosedFamilies $explicitClosed
+}
+
+function Update-FamilyLedgerFromSliceIfPresent {
+    param(
+        [string]$Path,
+        [string]$SliceResultPath,
+        [string]$SliceVerifyPath,
+        [int]$SliceIndex,
+        [int]$MaxSlices,
+        [string]$RunnerContractPath = ''
+    )
+
+    if (-not (Test-Path -LiteralPath $SliceResultPath) -or -not (Test-Path -LiteralPath $SliceVerifyPath)) {
+        return
+    }
+
+    try {
+        Update-FamilyLedgerFromSlice -Path $Path -SliceResultPath $SliceResultPath -SliceVerifyPath $SliceVerifyPath -SliceIndex $SliceIndex -MaxSlices $MaxSlices
+    } catch {
+        if (-not [string]::IsNullOrWhiteSpace($RunnerContractPath)) {
+            Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} ledger absorption skipped | family_ledger | verifier_closure_sync | non_authorizing_evidence | error={1}. |" -f $SliceIndex, ($_.Exception.Message -replace '\|', '/'))
+        }
+    }
+}
+
+function Sync-FamilyLedgerFromAuthorizingSliceEvidence {
+    param(
+        [string]$Path,
+        [string]$ReplayRoot,
+        [int]$MaxSlices,
+        [string]$RunnerContractPath = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($ReplayRoot)) {
+        return 0
+    }
+
+    $synced = 0
+    for ($idx = 1; $idx -le $MaxSlices; $idx++) {
+        if (-not (Test-AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $idx)) {
+            continue
+        }
+
+        $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $idx)
+        $sliceVerifyPath = Join-Path $ReplayRoot ('SLICE_VERIFY_{0:D2}.json' -f $idx)
+        try {
+            Update-FamilyLedgerFromSlice -Path $Path -SliceResultPath $sliceResultPath -SliceVerifyPath $sliceVerifyPath -SliceIndex $idx -MaxSlices $MaxSlices
+            $synced++
+        } catch {
+            if (-not [string]::IsNullOrWhiteSpace($RunnerContractPath)) {
+                Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| S{0} ledger authorization sync skipped | family_ledger | verifier_closure_sync | non_authorizing_evidence | error={1}. |" -f $idx, ($_.Exception.Message -replace '\|', '/'))
+            }
+        }
+    }
+
+    if ($synced -gt 0 -and -not [string]::IsNullOrWhiteSpace($RunnerContractPath)) {
+        Add-Content -LiteralPath $RunnerContractPath -Encoding UTF8 -Value ("| all slices ledger authorization sync | family_ledger | verifier_closure_sync | executable_evidence | synced_authorizing_slices={0}. |" -f $synced)
+    }
+
+    return $synced
 }
 
 function Write-FamilyCapReport {
@@ -4261,7 +4401,20 @@ function Normalize-SliceProgress {
                 $text = [string]$item
                 if ($text -match '(\d+)') {
                     $value = [int]$Matches[1]
-                    if ($value -gt 0 -and -not $completed.Contains($value)) {
+                    $sliceResultPath = Join-Path $ReplayRoot ('SLICE_RESULT_{0:D2}.json' -f $value)
+                    $sliceVerifyPath = Join-Path $ReplayRoot ('SLICE_VERIFY_{0:D2}.json' -f $value)
+                    $staleSliceDir = Join-Path (Join-Path $ReplayRoot 'logs\stale-slice-results') ('slice{0:D2}' -f $value)
+                    $hasActiveSliceEvidence = (Test-Path -LiteralPath $sliceResultPath) -or (Test-Path -LiteralPath $sliceVerifyPath)
+                    $hasArchivedSliceEvidence = (Test-Path -LiteralPath $staleSliceDir -PathType Container) -and @(
+                        Get-ChildItem -LiteralPath $staleSliceDir -File -ErrorAction SilentlyContinue
+                    ).Count -gt 0
+                    $shouldKeepCompletedEntry = $true
+                    if ($hasActiveSliceEvidence) {
+                        $shouldKeepCompletedEntry = Test-AuthorizingSliceEvidence -ReplayRoot $ReplayRoot -SliceIndex $value
+                    } elseif ($hasArchivedSliceEvidence) {
+                        $shouldKeepCompletedEntry = $false
+                    }
+                    if ($value -gt 0 -and $shouldKeepCompletedEntry -and -not $completed.Contains($value)) {
                         $completed.Add($value) | Out-Null
                     }
                 }
@@ -4360,6 +4513,7 @@ function Invoke-AllSliceGates {
         [Parameter(Mandatory = $true)]
         [string]$MavenSettings,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$PhaseSuffix,
         [switch]$SkipTestCharterRepair
     )
@@ -4868,24 +5022,53 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
             -SliceVerifyPath $sliceVerify `
             -MavenSettings $MavenSettings `
             -PhaseSuffix '')) {
-            break
-        }
-        Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
-        $verify = Read-JsonObject -Path $sliceVerify
-        if ($null -ne $verify.authorized_for_next_slice -and -not [bool]$verify.authorized_for_next_slice) {
-            Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay authorization stop | existing_artifact_replay | existing_artifact_replay | non_authorizing_evidence | authorized_for_next_slice=false; downstream existing slice artifacts are ignored until S{0} is fixed. blockers={1}. |" -f $i, ((Get-StringArray $verify.authorization_blockers) -join ','))
-            Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "non_authorizing_existing_artifact_replay: $(((Get-StringArray $verify.authorization_blockers) -join ','))"
-            break
-        }
-        if (-not [bool]$verify.should_continue) {
-            $nextExistingResult = Join-Path $replayRootFull ('SLICE_RESULT_{0:D2}.json' -f ($i + 1))
-            if (Test-Path -LiteralPath $nextExistingResult) {
-                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay stop | existing_artifact_replay | existing_artifact_replay | verifier_stop | should_continue=false; S{1} existing artifact is ignored until S{0} passes verification. |" -f $i, ($i + 1))
-                Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "verifier_stop_existing_artifact_replay"
+            if (Test-StaleReusedSliceAfterGateRefresh -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -ForcedDecision $currentForced) {
+                Archive-StaleSliceArtifacts `
+                    -ReplayRoot $replayRootFull `
+                    -SliceIndex $i `
+                    -Paths @(
+                        $sliceResult,
+                        $sliceVerify,
+                        $carrierAuthorization,
+                        $preSliceAuthorization,
+                        $preSliceCapDisplay,
+                        $carrierRank,
+                        $exactContractMatrix,
+                        $nextSliceExactContract,
+                        $sideEffectEvidence,
+                        (Join-Path $replayRootFull ('CHECKPOINT_GATE_{0:D2}.json' -f $i)),
+                        (Join-Path $replayRootFull ('V348_SLICE_QUALITY_GATE_{0:D2}.json' -f $i)),
+                        (Join-Path $replayRootFull ('LAYER_VALIDATION_{0:D2}.stdout.log' -f $i)),
+                        (Join-Path $replayRootFull ('PHASE0_PRECHECK_{0:D2}.stdout.log' -f $i))
+                    ) `
+                    -Reason ("stale reused slice invalidated after gate refresh; current forced family={0}; gate stop superseded by fresh slice generation" -f $currentForced.family_id) `
+                    -RunnerContractPath $runnerContractPath
+                Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices
+                $hasExistingResult = $false
+                $hasExistingVerify = $false
+            } else {
+                Update-FamilyLedgerFromSliceIfPresent -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices -RunnerContractPath $runnerContractPath
+                break
             }
-            break
         }
-        continue
+        if ($hasExistingResult -and $hasExistingVerify) {
+            Update-FamilyLedgerFromSlice -Path $familyLedgerPath -SliceResultPath $sliceResult -SliceVerifyPath $sliceVerify -SliceIndex $i -MaxSlices $MaxSlices
+            $verify = Read-JsonObject -Path $sliceVerify
+            if ($null -ne $verify.authorized_for_next_slice -and -not [bool]$verify.authorized_for_next_slice) {
+                Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay authorization stop | existing_artifact_replay | existing_artifact_replay | non_authorizing_evidence | authorized_for_next_slice=false; downstream existing slice artifacts are ignored until S{0} is fixed. blockers={1}. |" -f $i, ((Get-StringArray $verify.authorization_blockers) -join ','))
+                Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "non_authorizing_existing_artifact_replay: $(((Get-StringArray $verify.authorization_blockers) -join ','))"
+                break
+            }
+            if (-not [bool]$verify.should_continue) {
+                $nextExistingResult = Join-Path $replayRootFull ('SLICE_RESULT_{0:D2}.json' -f ($i + 1))
+                if (Test-Path -LiteralPath $nextExistingResult) {
+                    Add-Content -LiteralPath $runnerContractPath -Encoding UTF8 -Value ("| S{0} reuse replay stop | existing_artifact_replay | existing_artifact_replay | verifier_stop | should_continue=false; S{1} existing artifact is ignored until S{0} passes verification. |" -f $i, ($i + 1))
+                    Normalize-SliceProgress -Path $progressPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -SliceIndex $i -MarkStopped -StopReason "verifier_stop_existing_artifact_replay"
+                }
+                break
+            }
+            continue
+        }
     }
 
     $ledger = Get-FamilyLedger -Path $familyLedgerPath
@@ -5654,6 +5837,7 @@ for ($i = 1; $i -le $MaxSlices; $i++) {
     }
 }
 
+Sync-FamilyLedgerFromAuthorizingSliceEvidence -Path $familyLedgerPath -ReplayRoot $replayRootFull -MaxSlices $MaxSlices -RunnerContractPath $runnerContractPath | Out-Null
 Write-FamilyCapReport -LedgerPath $familyLedgerPath -OutPath $familyCapPath
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'verify-family-ledger-from-slice-verify.ps1') -ReplayRoot $replayRootFull -Ledger $familyLedgerPath | Out-Null
 if ($LASTEXITCODE -ne 0) {

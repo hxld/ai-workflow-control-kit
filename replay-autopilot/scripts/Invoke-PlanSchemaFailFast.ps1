@@ -223,6 +223,29 @@ function Resolve-ReplayEvidencePath {
     return [System.IO.Path]::GetFullPath((Join-Path $ReplayRoot $cleanPath))
 }
 
+function Test-ReplayAutopilotPowerShellHarness {
+    param(
+        [string]$ModuleName,
+        [string]$Command
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ModuleName) -or [string]::IsNullOrWhiteSpace($Command)) {
+        return $false
+    }
+
+    $moduleNorm = $ModuleName.Replace('/', '\').Trim('\').ToLowerInvariant()
+    if ($moduleNorm -ne 'replay-autopilot\scripts\tests') {
+        return $false
+    }
+
+    $commandNorm = $Command.Replace('/', '\').ToLowerInvariant()
+    return (
+        $commandNorm -match '(^|\s)(powershell|pwsh)(\.exe)?(\s|$)' -and
+        $commandNorm -match '(\s|^)-file(\s|$)' -and
+        $commandNorm -match 'replay-autopilot\\scripts\\tests\\test-v\d+-.+\.ps1'
+    )
+}
+
 function Get-TestInfrastructureRealityIssues {
     param(
         $Infra,
@@ -239,9 +262,11 @@ function Get-TestInfrastructureRealityIssues {
         $issues += 'test_infrastructure_check.test_module_for_target empty'
     }
 
+    $isControlPlaneHarness = Test-ReplayAutopilotPowerShellHarness -ModuleName $moduleName -Command $dryRunCommand
+
     if ([string]::IsNullOrWhiteSpace($dryRunCommand)) {
         $issues += 'test_infrastructure_check.compilation_dry_run_command missing'
-    } else {
+    } elseif (-not $isControlPlaneHarness) {
         $commandText = $dryRunCommand.Trim().ToLowerInvariant()
         if ($commandText -notmatch '(^|\s)mvn(\.cmd|\.bat)?(\s|$)') {
             $issues += 'test_infrastructure_check.compilation_dry_run_command must invoke mvn'
@@ -281,8 +306,16 @@ function Get-TestInfrastructureRealityIssues {
     $worktreeExists = -not [string]::IsNullOrWhiteSpace($Worktree) -and (Test-Path -LiteralPath $Worktree)
     if ($worktreeExists -and -not [string]::IsNullOrWhiteSpace($moduleName)) {
         $modulePath = Join-Path $Worktree $moduleName
+        if ($isControlPlaneHarness -and -not (Test-Path -LiteralPath $modulePath -PathType Container)) {
+            $modulePath = Join-Path $Worktree 'replay-autopilot\scripts\tests'
+        }
         if (-not (Test-Path -LiteralPath $modulePath -PathType Container)) {
             $issues += "test_module_missing:$moduleName"
+        } elseif ($isControlPlaneHarness) {
+            $testSource = Get-ChildItem -LiteralPath $modulePath -Filter 'Test-v*.ps1' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $testSource) {
+                $issues += "test_module_has_no_powershell_tests:$moduleName"
+            }
         } else {
             if (-not (Test-Path -LiteralPath (Join-Path $modulePath 'pom.xml') -PathType Leaf)) {
                 $issues += "test_module_pom_missing:$moduleName"
@@ -328,10 +361,13 @@ function Get-TestInfrastructureRealityIssues {
             }
             if (-not [string]::IsNullOrWhiteSpace($evidenceCommand)) {
                 $evidenceCommandText = $evidenceCommand.ToLowerInvariant()
-                if (-not [string]::IsNullOrWhiteSpace($moduleName) -and -not $evidenceCommandText.Contains($moduleName.ToLowerInvariant())) {
+                $evidenceCommandNorm = $evidenceCommandText.Replace('/', '\')
+                $moduleNameNorm = $moduleName.ToLowerInvariant().Replace('/', '\')
+                $isEvidenceControlPlaneHarness = Test-ReplayAutopilotPowerShellHarness -ModuleName $moduleName -Command $evidenceCommand
+                if (-not [string]::IsNullOrWhiteSpace($moduleName) -and -not $evidenceCommandNorm.Contains($moduleNameNorm)) {
                     $issues += "compilation_dry_run_evidence_command_wrong_module:$moduleName"
                 }
-                if (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile')) {
+                if (-not $isEvidenceControlPlaneHarness -and (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile'))) {
                     $issues += 'compilation_dry_run_evidence_command_incomplete'
                 }
                 if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
@@ -346,7 +382,7 @@ function Get-TestInfrastructureRealityIssues {
             if (Test-MavenFailureSignal -Text $evidenceText) {
                 $issues += 'compilation_dry_run_evidence_contains_failure_signal'
             }
-            if ($evidenceText -notmatch '(?i)BUILD SUCCESS' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
+            if ($evidenceText -notmatch '(?i)BUILD SUCCESS|ALL PASSED|PASS:' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
                 $issues += 'compilation_dry_run_evidence_missing_success_signal'
             }
         }

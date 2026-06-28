@@ -42,6 +42,8 @@ function New-EvolutionFixture {
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 $StopFieldLine
+- gate_budget_decision: existing_gate_enforcement
+- new_gate_artifacts: none
 - verification_results: PASS
 - changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1; replay-autopilot/prompts/skill-evolution.prompt.md
 - closed_machine_gates: stop_and_evolve_result_contract

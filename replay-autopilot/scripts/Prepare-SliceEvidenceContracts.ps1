@@ -277,6 +277,45 @@ function New-ExactContractRow {
     }
 }
 
+function New-SideEffectExactContractRow {
+    param(
+        [string]$Literal,
+        [string]$SelectedCarrier = '',
+        [string]$FamilyId = ''
+    )
+
+    $value = $Literal.Trim()
+    $surface = if ($value -match '(?i)\b(payload|wire|json|request|response|api|mq|message|exchange)\b') {
+        'wire'
+    } elseif ($value -match '(?i)\b(display|page|screen|column|excel|export|download|image|png|jpg|pdf|render)\b') {
+        'display'
+    } elseif ($FamilyId -match '(?i)lifecycle|stateful|side_effect' -or $value -match '(?i)\b(row|log|status|operator|task|write|persist|save|insert|update|delete)\b') {
+        'db'
+    } else {
+        'behavior'
+    }
+    $boundaryType = Get-ContractBoundaryType -Surface $surface -Literal $value
+    if ($surface -eq 'db') { $boundaryType = 'db' }
+    if ($surface -eq 'wire') { $boundaryType = 'wire' }
+    if ($surface -eq 'display') { $boundaryType = 'display' }
+
+    return [ordered]@{
+        literal = $value
+        symbol_or_field = $value
+        db_or_wire_or_display = $surface
+        boundary_type = $boundaryType
+        production_boundary = $SelectedCarrier
+        closure_proof = ''
+        test_assertion = "assert '$value' through the selected production carrier"
+        red_command = ''
+        blocker_condition = 'missing executable exact-contract boundary proof'
+        status = 'OPEN'
+        touched = $false
+        required_for_this_slice = $true
+        source_type = 'family_proof_required'
+    }
+}
+
 function Get-SlicePlannedTestName {
     param([string]$ReplayRoot, [int]$SliceIndex)
     $plan = Read-TextIfExists (Join-Path $ReplayRoot 'REPLAY_PLAN.md')
@@ -286,9 +325,8 @@ function Get-SlicePlannedTestName {
             $columns = @($line -split '\|')
             if ($columns.Count -gt 7) {
                 $testsColumn = [string]$columns[7]
-                $match = [regex]::Match($testsColumn, '\b[A-Z][A-Za-z0-9_]*Test\b')
+                $match = [regex]::Match($testsColumn, '(?i)(?:[A-Za-z0-9_.\-]+[/\\])*src[/\\]test[/\\]java[/\\][A-Za-z0-9_./\\]+Test\.java(?:[#.][A-Za-z_][A-Za-z0-9_]*)?|\b[A-Za-z_][A-Za-z0-9_$.]*Test(?:[#.][A-Za-z_][A-Za-z0-9_]*)?\b')
                 if ($match.Success) { return $match.Value }
-                if (-not [string]::IsNullOrWhiteSpace($testsColumn.Trim())) { return $testsColumn.Trim() }
             }
         }
     }
@@ -297,7 +335,7 @@ function Get-SlicePlannedTestName {
         $sliceToken = 'S{0}' -f $SliceIndex
         foreach ($line in ($charter -split "`r?`n")) {
             if ($line -notmatch [regex]::Escape($sliceToken)) { continue }
-            $match = [regex]::Match($line, '\b[A-Z][A-Za-z0-9_]*Test\b')
+            $match = [regex]::Match($line, '(?i)(?:[A-Za-z0-9_.\-]+[/\\])*src[/\\]test[/\\]java[/\\][A-Za-z0-9_./\\]+Test\.java(?:[#.][A-Za-z_][A-Za-z0-9_]*)?|\b[A-Za-z_][A-Za-z0-9_$.]*Test(?:[#.][A-Za-z_][A-Za-z0-9_]*)?\b')
             if ($match.Success) { return $match.Value }
         }
     }
@@ -324,6 +362,66 @@ function Get-AnyPlannedTestName {
     if ($classMatch.Success) { return $classMatch.Groups[1].Value.Trim() }
 
     return ''
+}
+
+function Get-TestClassLeafFromCarrier {
+    param([string]$Carrier)
+    if ([string]::IsNullOrWhiteSpace($Carrier)) { return '' }
+    $head = @(([string]$Carrier -split '\s*->\s*') | Select-Object -First 1)[0]
+    $head = @(([string]$head -split '\(') | Select-Object -First 1)[0]
+    $typedMatches = @([regex]::Matches($head, '\b(?<class>[A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Processor|Handler|Task|Client|Provider|Repository|Mapper|Dao|DAO)(?:Impl)?)\b'))
+    if ($typedMatches.Count -gt 0) {
+        return [string]$typedMatches[$typedMatches.Count - 1].Groups['class'].Value
+    }
+    $methodMatches = @([regex]::Matches($head, '\b(?<class>[A-Z][A-Za-z0-9_]*)[.#][A-Za-z_][A-Za-z0-9_]*\b'))
+    if ($methodMatches.Count -gt 0) {
+        return [string]$methodMatches[$methodMatches.Count - 1].Groups['class'].Value
+    }
+    return ''
+}
+
+function Get-DefaultSliceTestName {
+    param([string]$Carrier, [string]$FamilyId)
+    $classLeaf = Get-TestClassLeafFromCarrier -Carrier $Carrier
+    if ([string]::IsNullOrWhiteSpace($classLeaf)) { return '' }
+    $familyToken = if ([string]::IsNullOrWhiteSpace($FamilyId)) { 'Slice' } else {
+        [regex]::Replace($FamilyId.ToLowerInvariant(), '(^|_)([a-z])', {
+            param($m)
+            $m.Groups[2].Value.ToUpperInvariant()
+        })
+    }
+    return "${classLeaf}Test#shouldCover$familyToken"
+}
+
+function Test-ClassOnlyCarrier {
+    param([string]$Carrier)
+    if ([string]::IsNullOrWhiteSpace($Carrier)) { return $false }
+    $head = @(([string]$Carrier -split '\s*->\s*') | Select-Object -First 1)[0]
+    $head = @(([string]$head -split '\(') | Select-Object -First 1)[0]
+    $leaf = @(([string]$head -split '\.') | Select-Object -Last 1)[0]
+    return ($leaf -match '^[A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Processor|Handler|Task|Client|Provider|Repository|Mapper|Dao|DAO)(?:Impl)?$')
+}
+
+function Resolve-MethodCarrierFromProof {
+    param(
+        [string]$Carrier,
+        [string[]]$ProofRequired,
+        [string]$FamilyId
+    )
+
+    if (-not (Test-ClassOnlyCarrier -Carrier $Carrier)) { return $Carrier }
+    $proofText = (@($ProofRequired) -join ' ')
+    $proofTokenText = $proofText -replace '[_\-.]+', ' '
+    $method = ''
+    if ($proofTokenText -match '(?i)\b(persist|save|insert|update|delete|clear|reject|invalid|amount|config|threshold|free|review)\b') {
+        $method = 'save'
+    } elseif ($proofTokenText -match '(?i)\b(query|read|load|get|return|display|list|page)\b') {
+        $method = 'queryById'
+    } elseif ($proofTokenText -match '(?i)\b(gate|enabled|check|module)\b' -or [string]$FamilyId -eq 'config_policy_threshold') {
+        $method = 'checkReviewModuleEnabled'
+    }
+    if ([string]::IsNullOrWhiteSpace($method)) { return $Carrier }
+    return "$Carrier.$method"
 }
 
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
@@ -363,6 +461,7 @@ if (-not [string]::IsNullOrWhiteSpace($ForcedRequirementFamily)) {
 $proofRequired = if ($null -ne $family) { @(Get-StringArray $family.proof_required) } else { @() }
 $forbiddenProof = if ($null -ne $family) { @(Get-StringArray $family.forbidden_proof) } else { @() }
 $selectedCarrier = if ($null -ne $family) { [string]$family.first_executable_carrier } else { '' }
+$selectedCarrier = Resolve-MethodCarrierFromProof -Carrier $selectedCarrier -ProofRequired $proofRequired -FamilyId $ForcedRequirementFamily
 $realEntry = $selectedCarrier
 $plannedTestName = ''
 $plannedRedResult = 'PENDING'
@@ -470,10 +569,21 @@ $requiresExactContract = (
     (($proofRequired -join ' ') -match '(?i)exact|literal|field|wire|display|payload|header|column|copy|string|contract')
 )
 if ([string]::IsNullOrWhiteSpace($plannedTestName) -and $requiresExactContract) {
-    $plannedTestName = Get-AnyPlannedTestName -ReplayRoot $replayRootFull
+    $plannedTestName = if ($SliceIndex -eq 1) {
+        Get-AnyPlannedTestName -ReplayRoot $replayRootFull
+    } else {
+        Get-DefaultSliceTestName -Carrier $selectedCarrier -FamilyId $ForcedRequirementFamily
+    }
     if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
         $plannedRedResult = 'PENDING_BUSINESS_ASSERTION'
         $warnings.Add("planned_test_name_inferred_for_exact_contract:$plannedTestName") | Out-Null
+    }
+}
+if ([string]::IsNullOrWhiteSpace($plannedTestName) -and $requiresSideEffectEvidence) {
+    $plannedTestName = Get-DefaultSliceTestName -Carrier $selectedCarrier -FamilyId $ForcedRequirementFamily
+    if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
+        $plannedRedResult = 'PENDING_BUSINESS_ASSERTION'
+        $warnings.Add("planned_test_name_inferred_for_forced_carrier:$plannedTestName") | Out-Null
     }
 }
 $preGuardWrites = @()
@@ -519,20 +629,57 @@ $exactSources = @(
     (Join-Path $replayRootFull 'TEST_CHARTER.md'),
     (Join-Path $replayRootFull 'FAMILY_CONTRACT.json')
 )
-$exactText = (($exactSources | ForEach-Object { Read-TextIfExists -Path $_ }) -join "`n")
-$literals = @(Get-ExactLiteralsFromText -Text $exactText)
-$exactRows = @($literals | ForEach-Object {
-    $row = New-ExactContractRow -Literal ([string]$_) -SelectedCarrier $selectedCarrier
-    if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
-        $row.red_command = "run focused RED test: $plannedTestName"
+$sideEffectExactScope = (
+    $requiresExactContract -and
+    $requiresSideEffectEvidence -and
+    $proofRequired.Count -gt 0 -and
+    (
+        [string]$ForcedSliceType -match '(?i)stateful|lifecycle' -or
+        @('generated_artifact_template_upload', 'lifecycle_cleanup_retention') -contains $ForcedRequirementFamily
+    )
+)
+$familyProofExactScope = (
+    $requiresExactContract -and
+    -not $sideEffectExactScope -and
+    $proofRequired.Count -gt 0 -and
+    -not [string]::IsNullOrWhiteSpace($ForcedRequirementFamily) -and
+    -not [string]::IsNullOrWhiteSpace($selectedCarrier)
+)
+$exactRowScope = if ($sideEffectExactScope) {
+    'side_effect_proof_required'
+} elseif ($familyProofExactScope) {
+    'family_proof_required'
+} else {
+    'requirement_literals'
+}
+if ($sideEffectExactScope -or $familyProofExactScope) {
+    if ($familyProofExactScope) {
+        $warnings.Add('exact_contract_scope_from_family_proof_required') | Out-Null
     }
-    $row
-})
+    $exactRows = @($proofRequired | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique | ForEach-Object {
+        $row = New-SideEffectExactContractRow -Literal ([string]$_) -SelectedCarrier $selectedCarrier -FamilyId $ForcedRequirementFamily
+        if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
+            $row.red_command = "run focused RED test: $plannedTestName"
+        }
+        $row
+    })
+} else {
+    $exactText = (($exactSources | ForEach-Object { Read-TextIfExists -Path $_ }) -join "`n")
+    $literals = @(Get-ExactLiteralsFromText -Text $exactText)
+    $exactRows = @($literals | ForEach-Object {
+        $row = New-ExactContractRow -Literal ([string]$_) -SelectedCarrier $selectedCarrier
+        if (-not [string]::IsNullOrWhiteSpace($plannedTestName)) {
+            $row.red_command = "run focused RED test: $plannedTestName"
+        }
+        $row
+    })
+}
 [ordered]@{
     schema_version = 1
     slice_index = $SliceIndex
     forced_requirement_family = $ForcedRequirementFamily
     required_for_this_slice = $requiresExactContract
+    row_scope = $exactRowScope
     rows = @($exactRows)
     gate = 'exact_contract_assertion_lock'
 } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $exactPath -Encoding UTF8

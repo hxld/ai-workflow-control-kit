@@ -13,15 +13,152 @@ function Resolve-AbsolutePath {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function Get-SliceIndexFromPath {
+    param([string]$Path)
+    $name = [System.IO.Path]::GetFileName($Path)
+    $match = [regex]::Match($name, '_(\d{2})\.json$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($match.Success) { return [int]$match.Groups[1].Value }
+    return 1
+}
+
 function Read-JsonFile {
     param([string]$Path)
     return Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+}
+
+function Read-OptionalJsonFile {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    return Read-JsonFile -Path $Path
 }
 
 function Get-StringValue {
     param($Object, [string]$Name)
     if ($null -eq $Object -or -not $Object.PSObject.Properties[$Name]) { return '' }
     return ([string]$Object.$Name).Trim()
+}
+
+function Get-PropertyObject {
+    param($Object, [string]$Name)
+    if ($null -eq $Object -or -not $Object.PSObject.Properties[$Name]) { return $null }
+    return $Object.$Name
+}
+
+function Get-NestedStringValue {
+    param($Object, [string[]]$Path)
+    $current = $Object
+    foreach ($segment in $Path) {
+        if ($null -eq $current -or -not $current.PSObject.Properties[$segment]) { return '' }
+        $current = $current.$segment
+    }
+    if ($null -eq $current) { return '' }
+    return ([string]$current).Trim()
+}
+
+function Get-BoolValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object -or -not $Object.PSObject.Properties[$Name]) { return $false }
+    $value = $Object.$Name
+    if ($value -is [bool]) { return $value }
+    $text = ([string]$value).Trim()
+    return $text -match '^(?i:true|1|yes)$'
+}
+
+function Test-EmptyJsonArrayLike {
+    param($Value)
+    if ($null -eq $Value) { return $true }
+    if ($Value -is [System.Array]) { return @($Value).Count -eq 0 }
+    if ($Value -is [string]) { return [string]::IsNullOrWhiteSpace($Value) }
+    return $false
+}
+
+function Test-CandidateMatchesEntry {
+    param([string]$Candidate, [string]$Entry)
+    if ([string]::IsNullOrWhiteSpace($Candidate) -or [string]::IsNullOrWhiteSpace($Entry)) { return $false }
+    $candidateText = $Candidate.Trim()
+    $entryText = $Entry.Trim()
+    return ($candidateText -eq $entryText -or $candidateText -like "*$entryText*" -or $entryText -like "*$candidateText*")
+}
+
+function Add-ResolutionCandidate {
+    param(
+        [System.Collections.Generic.List[object]]$Candidates,
+        [string]$Source,
+        [string]$Value,
+        [string]$Path
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return }
+    $Candidates.Add([pscustomobject]@{
+        source = $Source
+        value = $Value.Trim()
+        path = $Path
+    }) | Out-Null
+}
+
+function Add-DryRunResolutionEvidence {
+    param(
+        [System.Collections.Generic.List[object]]$Candidates,
+        [string]$ReplayRoot,
+        [int]$SliceIndex,
+        [string]$Entry
+    )
+    $path = Join-Path $ReplayRoot ('CARRIER_AUTHORIZATION_DRY_RUN_{0:D2}.json' -f $SliceIndex)
+    $artifact = Read-OptionalJsonFile -Path $path
+    if ($null -eq $artifact) { return }
+
+    $blockers = Get-PropertyObject -Object $artifact -Name 'blockers'
+    $chosen = Get-StringValue -Object $artifact -Name 'chosen_replacement_or_blocked'
+    $trusted = (Get-BoolValue -Object $artifact -Name 'pre_authorized') `
+        -and (Test-EmptyJsonArrayLike -Value $blockers) `
+        -and ([string]::IsNullOrWhiteSpace($chosen) -or $chosen -eq 'authorized_original')
+    if (-not $trusted) { return }
+
+    $values = @(
+        (Get-StringValue -Object $artifact -Name 'selected_symbol'),
+        (Get-StringValue -Object $artifact -Name 'signature')
+    )
+    if (-not ($values | Where-Object { Test-CandidateMatchesEntry -Candidate $_ -Entry $Entry })) { return }
+    foreach ($value in $values) {
+        Add-ResolutionCandidate -Candidates $Candidates -Source 'carrier_authorization_dry_run' -Value $value -Path $path
+    }
+}
+
+function Add-CallableResolutionEvidence {
+    param(
+        [System.Collections.Generic.List[object]]$Candidates,
+        [string]$ReplayRoot,
+        [int]$SliceIndex,
+        [string]$Entry
+    )
+    $path = Join-Path $ReplayRoot ('CALLABLE_CARRIER_AUTHORIZATION_{0:D2}.json' -f $SliceIndex)
+    $artifact = Read-OptionalJsonFile -Path $path
+    if ($null -eq $artifact) { return }
+
+    $blockers = Get-PropertyObject -Object $artifact -Name 'blockers'
+    $status = Get-StringValue -Object $artifact -Name 'authorization_status'
+    $authorization = Get-StringValue -Object $artifact -Name 'authorization'
+    $methodSignatureFound = $true
+    if ($artifact.PSObject.Properties['method_signature_found']) {
+        $methodSignatureFound = Get-BoolValue -Object $artifact -Name 'method_signature_found'
+    }
+    $trusted = (Test-EmptyJsonArrayLike -Value $blockers) `
+        -and $methodSignatureFound `
+        -and ((Get-BoolValue -Object $artifact -Name 'can_proceed') -or $status -eq 'AUTHORIZED' -or $authorization -eq 'ALLOW')
+    if (-not $trusted) { return }
+
+    $values = @(
+        (Get-StringValue -Object $artifact -Name 'selected_carrier'),
+        (Get-StringValue -Object $artifact -Name 'selected_real_entry'),
+        (Get-StringValue -Object $artifact -Name 'selected_carrier_fqn'),
+        (Get-StringValue -Object $artifact -Name 'existing_entry_fqn'),
+        (Get-StringValue -Object $artifact -Name 'existing_entry_signature'),
+        (Get-NestedStringValue -Object $artifact -Path @('resolved_signature', 'selected_carrier', 'formatted')),
+        (Get-NestedStringValue -Object $artifact -Path @('resolved_signature', 'selected_real_entry', 'formatted'))
+    )
+    if (-not ($values | Where-Object { Test-CandidateMatchesEntry -Candidate $_ -Entry $Entry })) { return }
+    foreach ($value in $values) {
+        Add-ResolutionCandidate -Candidates $Candidates -Source 'callable_carrier_authorization' -Value $value -Path $path
+    }
 }
 
 function Get-CarrierStrings {
@@ -53,9 +190,11 @@ function Get-CarrierStrings {
 $contractPath = Resolve-AbsolutePath $Contract
 $carrierIndexPath = Resolve-AbsolutePath $CarrierIndex
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path (Split-Path -Parent $contractPath) 'CARRIER_INVOCATION_CONTRACT_01.json'
+    $OutputPath = Join-Path (Split-Path -Parent $contractPath) ('CARRIER_INVOCATION_CONTRACT_{0:D2}.json' -f (Get-SliceIndexFromPath -Path $contractPath))
 }
 $outputPathFull = Resolve-AbsolutePath $OutputPath
+$replayRootFull = Split-Path -Parent $outputPathFull
+$sliceIndex = Get-SliceIndexFromPath -Path $outputPathFull
 
 $issues = New-Object System.Collections.Generic.List[string]
 $contractObject = $null
@@ -85,10 +224,27 @@ if ($entry -match '(?i)\b(NEW_PLANNED_CARRIER|planned_only|synthetic|helper_only
 
 $indexStrings = @(Get-CarrierStrings -Node $carrierIndexObject)
 $resolved = $false
+$resolutionSource = ''
+$resolutionEvidence = ''
 if (-not [string]::IsNullOrWhiteSpace($entry)) {
     foreach ($candidate in $indexStrings) {
-        if ($candidate -eq $entry -or $candidate -like "*$entry*" -or $entry -like "*$candidate*") {
+        if (Test-CandidateMatchesEntry -Candidate $candidate -Entry $entry) {
             $resolved = $true
+            $resolutionSource = 'carrier_index'
+            $resolutionEvidence = $candidate
+            break
+        }
+    }
+}
+if (-not $resolved -and -not [string]::IsNullOrWhiteSpace($entry)) {
+    $sameRoundCandidates = New-Object System.Collections.Generic.List[object]
+    Add-DryRunResolutionEvidence -Candidates $sameRoundCandidates -ReplayRoot $replayRootFull -SliceIndex $sliceIndex -Entry $entry
+    Add-CallableResolutionEvidence -Candidates $sameRoundCandidates -ReplayRoot $replayRootFull -SliceIndex $sliceIndex -Entry $entry
+    foreach ($candidate in @($sameRoundCandidates.ToArray())) {
+        if (Test-CandidateMatchesEntry -Candidate $candidate.value -Entry $entry) {
+            $resolved = $true
+            $resolutionSource = $candidate.source
+            $resolutionEvidence = $candidate.value
             break
         }
     }
@@ -119,6 +275,8 @@ $result = [ordered]@{
     signature_match = $signatureMatch
     test_invokes_entry = $testInvokesEntry
     carrier_origin = if ($resolved) { 'existing_production' } else { 'unresolved' }
+    resolution_source = $resolutionSource
+    resolution_evidence = $resolutionEvidence
     production_entry_qn = $entry
     test_invocation_method = $invocation
     contract = $contractPath

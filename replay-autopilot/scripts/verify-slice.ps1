@@ -246,6 +246,38 @@ function Test-SideEffectNotApplicable {
     return ($readOnly -and (-not $statefulRequired -or $nonApplicableFamilies -contains 'stateful_side_effect' -or $verifyWaived))
 }
 
+function Test-SideEffectNotRequiredForSlice {
+    param(
+        [string]$ReplayRoot,
+        [string]$SliceResultPath
+    )
+
+    $sliceIndex = Get-SliceIndexFromPath -Path $SliceResultPath
+    if ($sliceIndex -le 0) { return $false }
+
+    $evidencePath = Join-Path $ReplayRoot ('SIDE_EFFECT_EVIDENCE_{0:D2}.json' -f $sliceIndex)
+    $evidence = Read-JsonIfExists -Path $evidencePath
+    if ($null -eq $evidence) { return $false }
+
+    $required = Get-ObjectBoolValue -Object $evidence -Names @('required_for_this_slice') -Default $true
+    $status = ([string](Get-ObjectPropertyValue -Object $evidence -Name 'status')).Trim().ToUpperInvariant()
+    $family = ([string](Get-ObjectPropertyValue -Object $evidence -Name 'forced_requirement_family')).Trim()
+    if ($required) { return $false }
+    if (@('NOT_REQUIRED', 'NOT_APPLICABLE', 'WAIVED') -notcontains $status) { return $false }
+
+    $sliceResult = Read-JsonIfExists -Path $SliceResultPath
+    $touchedFamilies = if ($null -ne $sliceResult) {
+        @(Get-StringArray (Get-ObjectPropertyValue -Object $sliceResult -Name 'touched_requirement_families'))
+    } else {
+        @()
+    }
+    if ($family -eq 'stateful_side_effect' -or $touchedFamilies -contains 'stateful_side_effect') {
+        return $false
+    }
+
+    return $true
+}
+
 function Test-SideEffectLedger {
     <#
     .SYNOPSIS
@@ -269,6 +301,16 @@ function Test-SideEffectLedger {
         return @{
             IsValid = $true
             Reason = 'side_effect_not_applicable_by_feature_classification'
+            HasSideEffects = $false
+            Skipped = $true
+        }
+    }
+
+    if (Test-SideEffectNotRequiredForSlice -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath) {
+        Write-Host "INFO: Side-effect ledger skipped for non-stateful slice-level evidence." -ForegroundColor Cyan
+        return @{
+            IsValid = $true
+            Reason = 'side_effect_not_required_for_slice'
             HasSideEffects = $false
             Skipped = $true
         }

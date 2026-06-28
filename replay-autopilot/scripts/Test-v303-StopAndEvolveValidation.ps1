@@ -70,6 +70,8 @@ Required Before Next Round:
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
+- gate_budget_decision: existing_gate_enforcement
+- new_gate_artifacts: none
 - verification_results: PASS
 - changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1; replay-autopilot/prompts/skill-evolution.prompt.md
 - pushed_commit: abc1234def5678
@@ -107,6 +109,8 @@ Required Before Next Round:
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
+- gate_budget_decision: existing_gate_enforcement
+- new_gate_artifacts: none
 - verification_results: PASS
 - changed_files: replay-autopilot/scripts/Validate-EvolutionResult.ps1
 - pushed_commit: local-only:$localCommit
@@ -124,6 +128,7 @@ Required Before Next Round:
     Assert-True ($untilRunnerText.Contains('Validate-EvolutionResult.ps1')) 'Run-UntilKnowledgeVersion must call evolution result validator'
     Assert-True ($promptText.Contains('{{AUTOPILOT_ROOT}}')) 'Evolution prompt must expose replay autopilot root'
     Assert-True ($promptText.Contains('stop_and_evolve_satisfied')) 'Evolution prompt must require stop_and_evolve_satisfied marker'
+    Assert-True ($promptText.Contains('gate_budget_decision')) 'Evolution prompt must require gate budget decision marker'
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -139,6 +144,7 @@ Required Before Next Round:
         'run_replayloop_calls_validator',
         'run_until_calls_validator',
         'prompt_exposes_autopilot_root',
-        'prompt_requires_stop_and_evolve_marker'
+        'prompt_requires_stop_and_evolve_marker',
+        'prompt_requires_gate_budget_marker'
     )
 } | ConvertTo-Json -Depth 5

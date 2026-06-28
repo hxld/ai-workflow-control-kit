@@ -32,6 +32,25 @@ function Get-StringValue {
     return ''
 }
 
+function Get-BoolValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object -or -not ($Object.PSObject.Properties.Name -contains $Name)) { return $false }
+    $value = $Object.$Name
+    if ($value -is [bool]) { return [bool]$value }
+    return @('true', '1', 'yes', 'allow', 'required') -contains ([string]$value).Trim().ToLowerInvariant()
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) {
+        return @($Value | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return @() }
+    return @($text)
+}
+
 function Test-BroadExactRow {
     param($Row)
     $literalText = @(
@@ -51,10 +70,44 @@ function Test-BroadExactRow {
     return $false
 }
 
+function Test-ExactRowMatchesSideEffectScope {
+    param($Row, [string[]]$AllowedLiterals, [string]$SelectedCarrier)
+
+    if ($AllowedLiterals.Count -eq 0) { return $true }
+    $literal = Get-StringValue $Row 'literal'
+    $symbol = Get-StringValue $Row 'symbol_or_field'
+    $assertion = Get-StringValue $Row 'test_assertion'
+    $boundary = Get-StringValue $Row 'production_boundary'
+    $rowText = @($literal, $symbol, $assertion) -join ' '
+
+    foreach ($allowed in $AllowedLiterals) {
+        if ([string]::IsNullOrWhiteSpace($allowed)) { continue }
+        if ($literal -eq $allowed -or $symbol -eq $allowed) { return $true }
+        if ($rowText -match [regex]::Escape($allowed)) { return $true }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($SelectedCarrier) -and -not [string]::IsNullOrWhiteSpace($boundary) -and $boundary -eq $SelectedCarrier) {
+        $carrierLeaf = ''
+        if ($SelectedCarrier -match '\.([A-Z][A-Za-z0-9_]+)\.([A-Za-z_][A-Za-z0-9_]*)$') {
+            $carrierLeaf = "$($matches[1]).$($matches[2])"
+        } elseif ($SelectedCarrier -match '([A-Z][A-Za-z0-9_]+[.#][A-Za-z_][A-Za-z0-9_]*)') {
+            $carrierLeaf = $matches[1] -replace '#', '.'
+        }
+        if (-not [string]::IsNullOrWhiteSpace($carrierLeaf) -and ($literal -eq $carrierLeaf -or $symbol -eq $carrierLeaf)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Get-ExactRowClass {
-    param($Row, [string]$SelectedCarrier, [bool]$RequiredForSlice)
+    param($Row, [string]$SelectedCarrier, [bool]$RequiredForSlice, [string[]]$AllowedLiterals = @())
 
     if (Test-BroadExactRow -Row $Row) { return 'invalid_meta_row' }
+    if (-not (Test-ExactRowMatchesSideEffectScope -Row $Row -AllowedLiterals $AllowedLiterals -SelectedCarrier $SelectedCarrier)) {
+        return 'out_of_slice_scope'
+    }
 
     $literal = Get-StringValue $Row 'literal'
     $symbol = Get-StringValue $Row 'symbol_or_field'
@@ -106,9 +159,13 @@ $issues = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 $rows = @()
 $requiredForSlice = $false
+$matrixRowScope = ''
 if ($null -ne $matrix) {
     if ($matrix.PSObject.Properties.Name -contains 'required_for_this_slice') {
         $requiredForSlice = [bool]$matrix.required_for_this_slice
+    }
+    if ($matrix.PSObject.Properties.Name -contains 'row_scope') {
+        $matrixRowScope = [string]$matrix.row_scope
     }
     if ($null -ne $matrix.rows) {
         if ($matrix.rows -is [System.Array]) { $rows = @($matrix.rows) } else { $rows = @($matrix.rows) }
@@ -121,6 +178,17 @@ if ($null -ne $carrier -and [bool]$carrier.requires_exact_contract_assertions) {
     $requiredForSlice = $true
 }
 $selectedCarrier = Get-StringValue $carrier 'selected_carrier'
+$sideEffectStatus = Get-StringValue $sideEffect 'status'
+$sideEffectExpected = @(Get-StringArray $sideEffect.expected_writes_or_outputs)
+$sideEffectExactScope = (
+    $requiredForSlice -and
+    $sideEffectExpected.Count -gt 0 -and
+    (
+        $sideEffectStatus -eq 'READY' -or
+        (Get-BoolValue $carrier 'requires_side_effect_evidence')
+    )
+)
+$allowedSideEffectRows = if ($sideEffectExactScope) { @($sideEffectExpected | Select-Object -Unique) } else { @() }
 
 if ($requiredForSlice -and $rows.Count -eq 0) {
     $issues.Add('exact_contract_rows_missing') | Out-Null
@@ -136,7 +204,7 @@ $selected = New-Object System.Collections.Generic.List[object]
 $rowClasses = New-Object System.Collections.Generic.List[object]
 foreach ($row in $rows) {
     if ($selected.Count -ge $MaxRows) { break }
-    $rowClass = Get-ExactRowClass -Row $row -SelectedCarrier $selectedCarrier -RequiredForSlice $requiredForSlice
+    $rowClass = Get-ExactRowClass -Row $row -SelectedCarrier $selectedCarrier -RequiredForSlice $requiredForSlice -AllowedLiterals $allowedSideEffectRows
     $rowClasses.Add([pscustomobject][ordered]@{
         literal = (Get-StringValue $row 'literal')
         class = $rowClass
@@ -148,6 +216,10 @@ foreach ($row in $rows) {
     }
     if ($rowClass -eq 'warning_only' -and -not $requiredForSlice) {
         $warnings.Add("warning_only_exact_row:$((Get-StringValue $row 'literal'))") | Out-Null
+    }
+    if ($rowClass -eq 'out_of_slice_scope') {
+        $warnings.Add("out_of_slice_exact_row_skipped:$((Get-StringValue $row 'literal'))") | Out-Null
+        continue
     }
 
     $literal = Get-StringValue $row 'literal'
@@ -198,6 +270,8 @@ $result = [ordered]@{
     replay_root = $root
     slice_index = $SliceIndex
     required_for_this_slice = $requiredForSlice
+    row_scope = if ($sideEffectExactScope) { 'side_effect_expected_outputs' } elseif (-not [string]::IsNullOrWhiteSpace($matrixRowScope)) { $matrixRowScope } else { 'matrix_rows' }
+    side_effect_scope_literals = @($allowedSideEffectRows)
     max_rows = $MaxRows
     matrix_path = $MatrixPath
     rows = @($selectedRows)

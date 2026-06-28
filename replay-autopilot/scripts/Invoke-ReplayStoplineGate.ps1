@@ -133,6 +133,52 @@ function Get-RootCombinedText {
     return ($parts -join "`n")
 }
 
+function Get-RoundCoverageSnapshotSafe {
+    param([string]$Root)
+
+    $snapshotScript = Join-Path $PSScriptRoot 'Get-RoundCoverageSnapshot.ps1'
+    if (-not (Test-Path -LiteralPath $snapshotScript)) {
+        return $null
+    }
+
+    try {
+        $output = & powershell -NoProfile -ExecutionPolicy Bypass -File $snapshotScript -ReplayRoot $Root 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return $null
+        }
+        $text = (@($output) -join "`n").Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            return $null
+        }
+        return $text | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Test-CoverageSnapshotAvailable {
+    param($Snapshot)
+
+    if ($null -eq $Snapshot) { return $false }
+    if (-not ($Snapshot.PSObject.Properties.Name -contains 'coverage_source')) { return $false }
+    $source = [string]$Snapshot.coverage_source
+    return -not [string]::IsNullOrWhiteSpace($source) -and $source -ne 'missing'
+}
+
+function Get-SnapshotIntValue {
+    param(
+        $Snapshot,
+        [string]$Name
+    )
+
+    if ($null -eq $Snapshot) { return $null }
+    if (-not ($Snapshot.PSObject.Properties.Name -contains $Name)) { return $null }
+    if ("$($Snapshot.$Name)" -match '^-?\d+$') {
+        return [int]$Snapshot.$Name
+    }
+    return $null
+}
+
 function Get-MetricNumber {
     param(
         [string]$Text,
@@ -159,7 +205,10 @@ function Get-MetricNumber {
 }
 
 function Get-RootFingerprints {
-    param([string]$Text)
+    param(
+        [string]$Text,
+        $CoverageSnapshot = $null
+    )
 
     $fps = New-Object System.Collections.Generic.List[string]
     $hasPolicyRebuildIssue = $Text -match 'policy_rebuild_(?:test_module_must_be_claim_server|expected_test_class_must_use_claim_server_harness|compile_dry_run_must_use_claim_server_am_test_compile|plan_invalid:test_harness_claim_core)'
@@ -168,7 +217,12 @@ function Get-RootFingerprints {
     if ($hasPolicyRebuildIssue -or ($hasPolicyContext -and $hasClaimCoreHarness)) {
         Add-UniqueString -List $fps -Value 'policy_rebuild_claim_core_harness'
     }
-    if ($Text -match 'verification_capped_coverage\s*[:=]\s*0|low_verification_cap') {
+    $hasCoverageSnapshot = Test-CoverageSnapshotAvailable -Snapshot $CoverageSnapshot
+    $snapshotCap = Get-SnapshotIntValue -Snapshot $CoverageSnapshot -Name 'verification_capped_coverage'
+    if (
+        ($hasCoverageSnapshot -and $null -ne $snapshotCap -and [int]$snapshotCap -le 0 -and $Text -match 'verification_capped_coverage\s*[:=]\s*0|low_verification_cap') -or
+        (-not $hasCoverageSnapshot -and $Text -match 'verification_capped_coverage\s*[:=]\s*0|low_verification_cap')
+    ) {
         Add-UniqueString -List $fps -Value 'low_verification_cap'
     }
     if ($Text -match 'side_effect_ledger_gap|side effect') {
@@ -264,7 +318,8 @@ function Test-NoProgressRoot {
         [string]$Root,
         [string]$CombinedText,
         [string]$Stage,
-        [int]$MinimumProgress
+        [int]$MinimumProgress,
+        $CoverageSnapshot = $null
     )
 
     if ($Stage -eq 'PlanReady') {
@@ -272,6 +327,11 @@ function Test-NoProgressRoot {
     }
     if ($Stage -in @('PlanSchemaFailFast', 'PlanContract', 'Plan')) {
         return $true
+    }
+
+    $snapshotCap = Get-SnapshotIntValue -Snapshot $CoverageSnapshot -Name 'verification_capped_coverage'
+    if ((Test-CoverageSnapshotAvailable -Snapshot $CoverageSnapshot) -and $null -ne $snapshotCap) {
+        return ([int]$snapshotCap -lt $MinimumProgress)
     }
 
     $verificationCap = Get-MetricNumber -Text $CombinedText -Names @(
@@ -332,6 +392,7 @@ function Get-NewestToolingChange {
         (Join-Path $PSScriptRoot 'Invoke-TodoPlaceholderCheck.ps1'),
         (Join-Path $PSScriptRoot 'Resolve-PythonLauncher.ps1'),
         (Join-Path $PSScriptRoot 'Write-ControlPlaneSummary.ps1'),
+        (Join-Path $PSScriptRoot 'Get-RoundCoverageSnapshot.ps1'),
         (Join-Path $PSScriptRoot 'Write-FailureAuditPack.ps1'),
         (Join-Path $PSScriptRoot 'Invoke-ReplayStoplineGate.ps1'),
         (Join-Path $PSScriptRoot 'Invoke-PlanSchemaFailFast.ps1')
@@ -375,10 +436,14 @@ $roots = @(Get-ReplayRoots -EvidenceRootFull $evidenceRootFull -ReplayRootBaseFu
 $records = New-Object System.Collections.Generic.List[object]
 foreach ($root in $roots) {
     $combined = Get-RootCombinedText -Root $root.FullName
+    $coverageSnapshot = Get-RoundCoverageSnapshotSafe -Root $root.FullName
     $stage = Get-RootStage -Root $root.FullName
-    $fps = @(Get-RootFingerprints -Text $combined)
+    $fps = @(Get-RootFingerprints -Text $combined -CoverageSnapshot $coverageSnapshot)
     $decisionUpdated = Get-RootDecisionTimestamp -Root $root.FullName
-    $noProgress = Test-NoProgressRoot -Root $root.FullName -CombinedText $combined -Stage $stage -MinimumProgress $MinimumVerificationProgress
+    $noProgress = Test-NoProgressRoot -Root $root.FullName -CombinedText $combined -Stage $stage -MinimumProgress $MinimumVerificationProgress -CoverageSnapshot $coverageSnapshot
+    $coverageSource = if ($coverageSnapshot -and $coverageSnapshot.PSObject.Properties.Name -contains 'coverage_source') { [string]$coverageSnapshot.coverage_source } else { '' }
+    $verificationCappedCoverage = Get-SnapshotIntValue -Snapshot $coverageSnapshot -Name 'verification_capped_coverage'
+    $blindCoverage = Get-SnapshotIntValue -Snapshot $coverageSnapshot -Name 'blind_self_assessed_coverage'
     $records.Add([pscustomobject]@{
         root = $root.FullName
         name = $root.Name
@@ -387,6 +452,9 @@ foreach ($root in $roots) {
         decision_updated = $decisionUpdated
         decision_updated_text = $decisionUpdated.ToString('s')
         stage = $stage
+        coverage_source = $coverageSource
+        verification_capped_coverage = $verificationCappedCoverage
+        blind_self_assessed_coverage = $blindCoverage
         no_progress = $noProgress
         substantive_progress = (-not $noProgress)
         fingerprints = @($fps)
@@ -470,10 +538,10 @@ if ($newestTool) {
 $md.Add('') | Out-Null
 $md.Add('## Recent Rounds') | Out-Null
 $md.Add('') | Out-Null
-$md.Add('| Root | Stage | No Progress | Substantive Progress | Fingerprints | Decision Updated | Root Updated |') | Out-Null
-$md.Add('| --- | --- | --- | --- | --- | --- | --- |') | Out-Null
+$md.Add('| Root | Stage | Coverage Source | Verification Cap | No Progress | Substantive Progress | Fingerprints | Decision Updated | Root Updated |') | Out-Null
+$md.Add('| --- | --- | --- | ---: | --- | --- | --- | --- | --- |') | Out-Null
 foreach ($record in @($records.ToArray())) {
-    $md.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} |' -f $record.name, $record.stage, $record.no_progress, $record.substantive_progress, ((@($record.fingerprints) -join ', ').Replace('|', '\|')), $record.decision_updated_text, $record.updated_text)) | Out-Null
+    $md.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} |' -f $record.name, $record.stage, $record.coverage_source, $record.verification_capped_coverage, $record.no_progress, $record.substantive_progress, ((@($record.fingerprints) -join ', ').Replace('|', '\|')), $record.decision_updated_text, $record.updated_text)) | Out-Null
 }
 $md.Add('') | Out-Null
 $md.Add('## Rule') | Out-Null

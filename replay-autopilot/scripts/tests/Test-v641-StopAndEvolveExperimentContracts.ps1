@@ -82,7 +82,7 @@ public class RealEntry {
     Assert-True (@($blockedJson.blockers).Count -gt 0) 'blocked placeholders must list blockers'
     $assertionCount += 3
 
-    Write-Host '[Scenario 3] Coverage recomputation rejects positive coverage without synthesis authorization...'
+    Write-Host '[Scenario 3] Coverage recomputation preserves verifier-adjusted partial progress while blocking missing closure...'
     $coverageRoot = Join-Path $tempRoot 'coverage'
     New-Item -ItemType Directory -Force -Path $coverageRoot | Out-Null
     @{ slice_index = 1; authorized_for_synthesis = $false; adjusted_coverage_delta = 25; closed_requirement_families = @() } |
@@ -94,10 +94,13 @@ public class RealEntry {
 - verification_capped_coverage: 25
 '@
     $coverageOutput = & python (Join-Path $scriptsRoot 'recompute_round_coverage.py') --root $coverageRoot --require-closed-family --fail-on-positive-without-synthesis 2>&1
-    Assert-True ($LASTEXITCODE -ne 0) "non-authorizing positive coverage must fail. Output: $coverageOutput"
+    Assert-True ($LASTEXITCODE -ne 0) "missing closed family must fail. Output: $coverageOutput"
     $coverageJson = $coverageOutput | ConvertFrom-Json
-    Assert-True (@($coverageJson.issues) -contains 'positive_coverage_without_synthesis_authorization') 'coverage recomputation must flag positive coverage without synthesis'
-    $assertionCount += 2
+    Assert-True (@($coverageJson.issues) -contains 'closed_requirement_families_empty') 'coverage recomputation must still flag missing closed families'
+    Assert-True (-not (@($coverageJson.issues) -contains 'positive_coverage_without_synthesis_authorization')) 'non-authorizing partial progress must not be zeroed by a legacy positive-coverage blocker'
+    Assert-True ([int]$coverageJson.recomputed_adjusted_coverage -eq 25) 'coverage recomputation must preserve verifier-adjusted partial progress'
+    Assert-True ([string]$coverageJson.coverage_counting_mode -eq 'verifier_adjusted_partial_progress') 'coverage recomputation must disclose partial-progress counting mode'
+    $assertionCount += 4
 
     Write-Host '[Scenario 4] Replay context index freshness validation blocks stale indexes...'
     $contextRoot = Join-Path $tempRoot 'context'

@@ -79,7 +79,7 @@ ROUND_RESULT.md 必须写到 `{{ROUND_RESULT}}`，并包含：
 - static-only / helper-only / blocker-only 不能计 DONE。
 - REQUIREMENT_FAMILY_LEDGER 中仍有高权重 required family 为 OPEN/PARTIAL 时，必须按 REQUIREMENT_FAMILY_CAP.md 降分。
 - 如果存在 no_progress_slice，必须计入 workflow gate root cause，且对应 slice 的 coverage_delta 不得贡献高分。
-- 如果任一 `SLICE_VERIFY_*.json` 写明 `authorized_for_next_slice=false` 或 `authorized_for_synthesis=false`，必须在 `ROUND_RESULT.md` 写 `tooling_authorization_stop`，不得把该 slice 计为正向可交付覆盖。
+- 如果任一 `SLICE_VERIFY_*.json` 写明 `authorized_for_next_slice=false` 或 `authorized_for_synthesis=false`，必须在 `ROUND_RESULT.md` 写 `tooling_authorization_stop`，不得把本轮写成 `PASS`、不得报 90+；但 `verification_capped_coverage` 仍按 verifier 接受的 `adjusted_coverage_delta` 求和后受 family ledger cap 限制，保留 PARTIAL 真实进度。
 - Family closure 只能来自 `authorized_for_synthesis=true` 且 `required_proof_type` 与 `actual_proof_type` 匹配的 slice；`proof_type_mismatch_families` 非空时必须保留对应 family 为 OPEN/PARTIAL。
 - `blind_self_assessed_coverage` 也必须诚实受 family ledger cap 和 authorization 信号约束。若存在 `wrong_test_surface`、`core_entry_unclosed`、`side_effect_ledger_gap`、`non_authorizing_evidence`、`authorized_for_synthesis=false`、`final_pass_allowed=false` 或 required family OPEN/PARTIAL，blind 自评不得写成 90+；它必须不高于 `coverage_cap_from_ledger`，并写出 `self_assessment_honesty_override`。
 

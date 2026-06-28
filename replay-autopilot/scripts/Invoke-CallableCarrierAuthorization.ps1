@@ -71,10 +71,10 @@ $plannedCarrier = Get-PlanField -Text $planText -Name 'selected_carrier'
 $plannedEntry = Get-PlanField -Text $planText -Name 'selected_real_entry'
 $proofObservationPoint = if ($null -ne $carrier -and $carrier.PSObject.Properties.Name -contains 'downstream_side_effect_or_output') { [string]$carrier.downstream_side_effect_or_output } else { '' }
 
-if (-not [string]::IsNullOrWhiteSpace($plannedCarrier)) {
+if ($SliceIndex -eq 1 -and -not [string]::IsNullOrWhiteSpace($plannedCarrier)) {
     $selectedCarrier = $plannedCarrier
 }
-if (-not [string]::IsNullOrWhiteSpace($plannedEntry)) {
+if ($SliceIndex -eq 1 -and -not [string]::IsNullOrWhiteSpace($plannedEntry)) {
     $selectedRealEntry = $plannedEntry
 }
 

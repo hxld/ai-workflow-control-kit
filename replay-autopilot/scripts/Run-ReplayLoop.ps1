@@ -2856,6 +2856,23 @@ function Write-PlanEarlyStopEvolutionArtifacts {
     $evolutionPromptTemplate = Join-Path $ScriptRoot 'prompts\skill-evolution.prompt.md'
     $evolutionPrompt = Join-Path $ReplayRoot 'EVOLUTION_PROMPT.md'
     $versionContext = Get-EvolutionVersionContext -Config $Config
+    $roundSnapshotScript = Join-Path $ScriptRoot 'scripts\Get-RoundCoverageSnapshot.ps1'
+    $earlyRoundSnapshot = $null
+    if (Test-Path -LiteralPath $roundSnapshotScript) {
+        try {
+            $snapshotJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $roundSnapshotScript -ReplayRoot $ReplayRoot
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($snapshotJson | Out-String).Trim())) {
+                $earlyRoundSnapshot = ($snapshotJson | Out-String) | ConvertFrom-Json
+            }
+        } catch {
+            Write-Warning "Unable to read round coverage snapshot for early-stop artifacts: $($_.Exception.Message)"
+        }
+    }
+    $roundResultExistsForEarlyStop = ($null -ne $earlyRoundSnapshot -and [bool]$earlyRoundSnapshot.round_result_exists)
+    $earlyBlindCoverage = if ($null -ne $earlyRoundSnapshot) { [int]$earlyRoundSnapshot.blind_self_assessed_coverage } else { 0 }
+    $earlyCappedCoverage = if ($null -ne $earlyRoundSnapshot) { [int]$earlyRoundSnapshot.verification_capped_coverage } else { 0 }
+    $earlyFinalStatus = if ($null -ne $earlyRoundSnapshot) { [string]$earlyRoundSnapshot.final_status } else { '' }
+    if ([string]::IsNullOrWhiteSpace($earlyFinalStatus)) { $earlyFinalStatus = $PlanStatus }
 
     $summary = @"
 # Replay Autopilot Summary
@@ -2863,16 +2880,16 @@ function Write-PlanEarlyStopEvolutionArtifacts {
 - Replay root: $ReplayRoot
 - PHASE0_RESULT exists: True
 - PLAN_RESULT exists: $(Test-Path -LiteralPath (Join-Path $ReplayRoot 'PLAN_RESULT.md'))
-- ROUND_RESULT exists: False
+- ROUND_RESULT exists: $roundResultExistsForEarlyStop
 - FINAL_REPLAY_REPORT exists: False
 - phase0_status: $Phase0Status
 - plan_status: $PlanStatus
 - stop_stage: $StopStage
 - oracle_used: false
-- blind_self_assessed_coverage: 0
-- verification_capped_coverage: 0
+- blind_self_assessed_coverage: $earlyBlindCoverage
+- verification_capped_coverage: $earlyCappedCoverage
 - oracle_adjusted_coverage:
-- final_status: $PlanStatus
+- final_status: $earlyFinalStatus
 
 ## Early Stop Reason
 
@@ -2922,7 +2939,9 @@ Fix the failing prompt, verifier, executor logging, retry behavior, or runner ar
         '',
         "- target_coverage: $TargetCoverage",
         '- oracle_adjusted_coverage:',
-        '- verification_capped_coverage: 0',
+        "- verification_capped_coverage: $earlyCappedCoverage",
+        "- early_stop_round_result_exists: $roundResultExistsForEarlyStop",
+        "- blind_self_assessed_coverage: $earlyBlindCoverage",
         "- phase0_status: $Phase0Status",
         "- plan_status: $PlanStatus",
         "- stop_stage: $StopStage",
@@ -3127,6 +3146,9 @@ Required machine lines in `$EvolutionResultPath` after a successful repair:
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
+- gate_budget_decision: regression_test | gate_consolidation | existing_gate_enforcement | new_gate_exception
+- new_gate_artifacts: none (or exact new verify/carrier/machine_gate artifacts)
+- new_gate_exception_rationale: required only for new_gate_exception; explain existing gate gap, regression test, and runner/verifier invocation
 - verification_results: PASS
 - changed_files: <actual replay-autopilot scripts/prompts/tests changed and invoked by runner/verifier>
 - pushed_commit: <knowledge repo commit hash>
@@ -6787,6 +6809,9 @@ Required machine lines in `$evolutionResultPath` after a successful repair:
 - final_status: VALIDATED_TOOLING_EVOLUTION
 - tooling_changes_applied: true
 - stop_and_evolve_satisfied: true
+- gate_budget_decision: regression_test | gate_consolidation | existing_gate_enforcement | new_gate_exception
+- new_gate_artifacts: none (or exact new verify/carrier/machine_gate artifacts)
+- new_gate_exception_rationale: required only for new_gate_exception; explain existing gate gap, regression test, and runner/verifier invocation
 - verification_results: PASS
 - changed_files: <actual replay-autopilot scripts/prompts/tests changed>
 - pushed_commit: <knowledge repo commit hash>

@@ -29,11 +29,20 @@ try {
     $result = Get-Content -LiteralPath (Join-Path $replayRoot 'SLICE_SCHEMA_FAILFAST_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True 'valid_writes_pass_status' ([string]$result.status -eq 'PASS')
 
-    # 3. Markdown-fenced JSON -> FAIL
+    # 3. Markdown-fenced JSON -> deterministic boundary repair -> PASS
     $fenced = '```json' + "`n" + $valid + "`n" + '```'
     Set-Content -LiteralPath (Join-Path $replayRoot 'SLICE_RESULT_01.json') -Value $fenced -Encoding UTF8
     & pwsh -NoProfile -File $gatePath -ReplayRoot $replayRoot -SliceIndex 1
-    Assert-True 'fenced_json_fails' ($LASTEXITCODE -ne 0)
+    Assert-True 'fenced_json_is_unwrapped' ($LASTEXITCODE -eq 0)
+    $repairedResult = Get-Content -LiteralPath (Join-Path $replayRoot 'SLICE_SCHEMA_FAILFAST_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True 'fenced_json_records_repair' ([bool]$repairedResult.repaired -and [string]$repairedResult.repair_action -eq 'unwrap_single_markdown_json_fence')
+    $canonicalSlice = Get-Content -LiteralPath (Join-Path $replayRoot 'SLICE_RESULT_01.json') -Raw -Encoding UTF8
+    Assert-True 'fenced_json_rewritten_as_pure_json' ($canonicalSlice.TrimStart().StartsWith('{') -and $canonicalSlice -notmatch '```')
+
+    # 3b. Prose-prefixed JSON remains a hard schema failure
+    Set-Content -LiteralPath (Join-Path $replayRoot 'SLICE_RESULT_01.json') -Value ("Here is the result:`n" + $valid) -Encoding UTF8
+    & pwsh -NoProfile -File $gatePath -ReplayRoot $replayRoot -SliceIndex 1
+    Assert-True 'prose_prefixed_json_fails' ($LASTEXITCODE -ne 0)
 
     # 4. Missing slice_status -> FAIL
     $noStatus = @{ slice_index = 1 } | ConvertTo-Json

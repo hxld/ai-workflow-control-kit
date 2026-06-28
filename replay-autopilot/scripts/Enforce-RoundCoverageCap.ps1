@@ -22,6 +22,41 @@ function Get-StringArray {
     return @([string]$Value)
 }
 
+function Get-IntValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return 0 }
+    if ($Object.PSObject.Properties.Name -contains $Name -and "$($Object.$Name)" -match '^-?\d+$') {
+        return [int]$Object.$Name
+    }
+    return 0
+}
+
+function Get-VerifierAdjustedCoverage {
+    param([string]$Root)
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root)) {
+        return $null
+    }
+
+    $total = 0
+    $count = 0
+    foreach ($file in Get-ChildItem -LiteralPath $Root -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^SLICE_VERIFY_\d+\.json$' } |
+        Sort-Object Name) {
+        try {
+            $verify = Read-JsonObject -Path $file.FullName
+        } catch {
+            continue
+        }
+        $total += Get-IntValue -Object $verify -Name 'adjusted_coverage_delta'
+        $count += 1
+    }
+
+    if ($count -eq 0) { return $null }
+    if ($total -lt 0) { $total = 0 }
+    return $total
+}
+
 function Replace-FirstMetricAboveCap {
     param(
         [string]$Text,
@@ -97,6 +132,11 @@ $finalPassAllowed = if ($null -ne $routerCap.final_pass_allowed) { [bool]$router
 $rootForSignals = if (-not [string]::IsNullOrWhiteSpace($ReplayRoot)) { $ReplayRoot } else { Split-Path -Parent $RoundResultPath }
 $authorizationSignals = @(Get-AuthorizationSignals -Root $rootForSignals)
 $hasNonAuthorizingEvidence = (-not $finalPassAllowed) -or $authorizationSignals.Count -gt 0
+$verifierAdjustedCoverage = Get-VerifierAdjustedCoverage -Root $rootForSignals
+$verificationCap = $ledgerCap
+if ($null -ne $verifierAdjustedCoverage) {
+    $verificationCap = [Math]::Min([int]$verifierAdjustedCoverage, $ledgerCap)
+}
 
 $text = Get-Content -LiteralPath $RoundResultPath -Raw -Encoding UTF8
 
@@ -109,7 +149,7 @@ $text = [string]$blindResult.text
 $cappedResult = Replace-FirstMetricAboveCap `
     -Text $text `
     -Pattern ([regex]'(?m)(verification_capped_coverage\s*[:=]\s*`?)(\d+)(`?)') `
-    -Cap $ledgerCap
+    -Cap $verificationCap
 $text = [string]$cappedResult.text
 
 $coverageCapResult = Replace-FirstMetricAboveCap `
@@ -131,15 +171,16 @@ $enforcementLines = @(
     '## Runner Cap Enforcement',
     "- family_router_and_cap: $RouterCapPath",
     "- coverage_cap_from_ledger: $ledgerCap",
+    "- verifier_adjusted_coverage: $(if ($null -ne $verifierAdjustedCoverage) { [string]$verifierAdjustedCoverage } else { 'N/A' })",
     "- blind_self_assessed_coverage: $ledgerCap",
-    "- verification_capped_coverage: $ledgerCap",
+    "- verification_capped_coverage: $verificationCap",
     "- final_status: $effectiveFinalStatus",
     "- original_blind_self_assessed_coverage: $originalBlindText",
     "- original_verification_capped_coverage: $originalCappedText",
     "- final_pass_allowed_by_ledger: $finalPassAllowed",
     "- non_authorizing_signals: $signalsText",
     "- authorization_enforced: $hasNonAuthorizingEvidence",
-    '- enforcement: `blind_self_assessed_coverage`, `verification_capped_coverage`, and `final_status` must not exceed ledger cap/final-pass authorization'
+    '- enforcement: `blind_self_assessed_coverage` must not exceed ledger cap; `verification_capped_coverage` must not exceed verifier-adjusted coverage or ledger cap; `final_status` must not exceed final-pass authorization'
 ) -join "`n"
 
 $enforcementPattern = [regex]'(?ms)^## Runner Cap Enforcement\s*.*?(?=^## |\z)'

@@ -26,7 +26,34 @@ function Get-ExistingFileHash {
     if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return ''
     }
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return Get-Sha256Hex -Path $Path
+}
+
+function Get-Sha256Hex {
+    param([string]$Path)
+
+    $cmd = Get-Command Get-FileHash -ErrorAction SilentlyContinue
+    if ($null -ne $cmd) {
+        try {
+            return ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash).ToLowerInvariant()
+        } catch {
+            # Some unattended Windows shells can see or shadow Get-FileHash but
+            # fail to invoke it. Fall through to the .NET implementation.
+        }
+    }
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = $sha.ComputeHash($stream)
+            return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+        } finally {
+            $sha.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
 }
 
 function Get-RootInfo {

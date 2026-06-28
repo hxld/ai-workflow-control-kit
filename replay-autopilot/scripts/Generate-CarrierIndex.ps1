@@ -29,23 +29,64 @@ if (-not $OutputPath) {
 Push-Location $ProjectRoot
 
 try {
-    function Convert-RgClassMatch {
+    $rootFull = [System.IO.Path]::GetFullPath($ProjectRoot) -replace '[\\/]+$', ''
+
+    function Convert-ToRepoPath {
         param(
+            [Parameter(Mandatory=$true)]
+            [string]$Path
+        )
+
+        $full = [System.IO.Path]::GetFullPath($Path)
+        if ($full.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $full = $full.Substring($rootFull.Length) -replace '^[\\/]+', ''
+        }
+        return ($full -replace '\\', '/')
+    }
+
+    function Convert-JavaClassMatch {
+        param(
+            [Parameter(Mandatory=$true)]
+            [string]$Path,
+            [Parameter(Mandatory=$true)]
+            [int]$LineNumber,
             [Parameter(Mandatory=$true)]
             [string]$Line
         )
-        if ($Line -notmatch '^(.+?\.java):(\d+):.*\b(?:interface|class)\s+([A-Za-z_][A-Za-z0-9_]*)') {
+        if ($Line -notmatch '\b(?:interface|class)\s+([A-Za-z_][A-Za-z0-9_]*)') {
             return $null
         }
-        $path = $matches[1] -replace '\\', '/'
+        $path = Convert-ToRepoPath $Path
         if ($path -match '/src/test/') {
             return $null
         }
         [PSCustomObject]@{
             Path = $path
-            Line = $matches[2]
-            Name = $matches[3]
+            Line = $LineNumber
+            Name = $matches[1]
         }
+    }
+
+    function Find-JavaClassMatches {
+        param(
+            [Parameter(Mandatory=$true)]
+            [string]$Pattern
+        )
+
+        $matchesOut = @()
+        $javaFiles = @(Get-ChildItem -LiteralPath $ProjectRoot -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue)
+        foreach ($file in $javaFiles) {
+            $lineNumber = 0
+            foreach ($line in @(Get-Content -LiteralPath $file.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+                $lineNumber++
+                if ($line -notmatch $Pattern) { continue }
+                $match = Convert-JavaClassMatch -Path $file.FullName -LineNumber $lineNumber -Line $line
+                if ($match) {
+                    $matchesOut += $match
+                }
+            }
+        }
+        return @($matchesOut)
     }
 
     $output = @()
@@ -57,9 +98,9 @@ try {
     $output += "## Facade Layer (claim-api / claim-api-open)"
     $output += ""
 
-    # Find all Facade interfaces
-    $facades = @(rg "public interface.*Facade" --type java -n 2>$null |
-                ForEach-Object { Convert-RgClassMatch $_ } |
+    # Find all Facade interfaces. Native enumeration keeps empty/non-Java repos from
+    # turning ripgrep's "no files searched" diagnostic into a hard replay failure.
+    $facades = @(Find-JavaClassMatches "public interface.*Facade" |
                 Where-Object { $_ -and $_.Path -match '(^|/)(claim-api|claim-api-open)(/|$)' })
 
     foreach ($facade in ($facades | Sort-Object Name)) {
@@ -73,8 +114,7 @@ try {
     $output += ""
 
     # Find all Controllers
-    $controllers = @(rg "public class.*Controller" --type java -n 2>$null |
-                    ForEach-Object { Convert-RgClassMatch $_ } |
+    $controllers = @(Find-JavaClassMatches "public class.*Controller" |
                     Where-Object { $_ -and $_.Path -match '/src/main/java/' -and $_.Path -match 'Controller\.java$' })
 
     foreach ($controller in ($controllers | Sort-Object Name)) {
@@ -88,8 +128,7 @@ try {
     $output += ""
 
     # Find all FacadeImpl classes
-    $facadeImpls = @(rg "public class.*FacadeImpl" --type java -n 2>$null |
-                   ForEach-Object { Convert-RgClassMatch $_ } |
+    $facadeImpls = @(Find-JavaClassMatches "public class.*FacadeImpl" |
                    Where-Object { $_ -and $_.Path -match '/src/main/java/' -and $_.Path -match '/facade/' -and $_.Path -match 'FacadeImpl\.java$' })
 
     foreach ($impl in ($facadeImpls | Sort-Object Name)) {

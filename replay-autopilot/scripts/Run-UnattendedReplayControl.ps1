@@ -35,6 +35,24 @@ function Read-SimpleYaml {
     return $result
 }
 
+function Write-SimpleYaml {
+    param(
+        [hashtable]$Config,
+        [string]$Path
+    )
+
+    $dir = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($key in @($Config.Keys | Sort-Object)) {
+        $value = [string]$Config[$key]
+        $lines.Add(('{0}: {1}' -f $key, $value)) | Out-Null
+    }
+    $lines | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
 function Require-Key {
     param([hashtable]$Config, [string]$Key)
     if (-not $Config.ContainsKey($Key) -or [string]::IsNullOrWhiteSpace($Config[$Key])) {
@@ -506,11 +524,18 @@ function Invoke-CycleReplayLoop {
 }
 
 $scriptRoot = Resolve-AbsolutePath (Join-Path $PSScriptRoot '..')
+$controlWorkingDirectory = (Get-Location).Path
 $configPathFull = Resolve-AbsolutePath $ConfigPath
 $config = Read-SimpleYaml $configPathFull
 $projectRoot = Resolve-AbsolutePath (Require-Key $config 'project_root')
 $knowledgeRepo = Resolve-AbsolutePath (Require-Key $config 'knowledge_repo')
 $replayRootBaseTemplate = Resolve-AbsolutePath (Require-Key $config 'replay_root_base')
+$config['project_root'] = $projectRoot
+$config['knowledge_repo'] = $knowledgeRepo
+$config['replay_root_base'] = $replayRootBaseTemplate
+$effectiveConfigPath = Join-Path $scriptRoot ('.tmp\unattended-effective-config-{0}.yaml' -f $PID)
+Write-SimpleYaml -Config $config -Path $effectiveConfigPath
+$configPathForChild = Resolve-AbsolutePath $effectiveConfigPath
 $cycleRoundsActual = if ($CycleRounds -gt 0) { $CycleRounds } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_cycle_rounds' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'max_rounds' -DefaultValue '3')) }
 $maxCyclesActual = if ($MaxCycles -gt 0) { $MaxCycles } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_max_cycles' -DefaultValue '3') }
 $executorActual = if (-not [string]::IsNullOrWhiteSpace($Executor)) { $Executor } else { Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'codex' }
@@ -623,7 +648,7 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', (Join-Path $PSScriptRoot 'Run-ReplayLoop.ps1'),
-        '-ConfigPath', $configPathFull,
+        '-ConfigPath', $configPathForChild,
         '-StartRound', [string]$nextStartRound,
         '-Rounds', [string]$cycleRoundsActual,
         '-Executor', $executorActual
@@ -651,7 +676,7 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
     })
     Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_START cycle=$cycle version=$($beforeVersion.Version) start_round=$nextStartRound rounds=$cycleRoundsActual"
 
-    $exitCode = Invoke-CycleReplayLoop -ArgumentList $loopArgs -WorkingDirectory $scriptRoot -StdoutPath $cycleOut -StderrPath $cycleErr
+    $exitCode = Invoke-CycleReplayLoop -ArgumentList $loopArgs -WorkingDirectory $controlWorkingDirectory -StdoutPath $cycleOut -StderrPath $cycleErr
     Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_EXIT cycle=$cycle exit=$exitCode stdout=$cycleOut stderr=$cycleErr"
     if ($exitCode -ne 0) {
         $stopReason = "cycle_exit_code_$exitCode"

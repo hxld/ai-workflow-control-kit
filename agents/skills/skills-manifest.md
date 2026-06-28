@@ -41,6 +41,7 @@ Non-negotiables:
 11. Lossy handoffs must be explicit: cross-host conversion, compaction, summary, or replay evidence must disclose what was lost, inferred, or unverifiable.
 12. Project-derived lessons must be distilled before entering the foundation: no project names, repository paths, business classes, tables, fixed business copy, incident text, or team-only commands in core skills.
 13. Staging is explicit: `git add .` is never the default; generated/local artifacts require include / confirm / exclude classification and a cached-diff check before commit.
+14. User-facing delivery documents are Chinese-first: `tech-design.md`, `task_plan.md`, `code-change.md`, review reports, and generated matrices should use Chinese headings and table headers by default; English terms are aliases or internal codes, not the primary reading surface.
 
 ## Main Workflow Skills
 
@@ -55,7 +56,7 @@ Non-negotiables:
 | `deep-plan` | Produce technical design, OpenSpec, surface matrix, and expected diff matrix. |
 | `dev-workflow` | Implement only after planning, OpenSpec, TDD, isolation, and scope gates pass. |
 | `gen-tests` | Generate and verify tests from requirement and surface matrices. |
-| `deep-review` | Review implementation risks and regressions. |
+| `deep-review` | Review implementation risks and regressions, including pre-implementation plan review before high-risk coding. |
 | `sync-progress` | Final completeness gate and `.doc` / OpenSpec / memory synchronization. |
 
 ## Replay/Eval Specialist Skills
@@ -65,6 +66,7 @@ Non-negotiables:
 | `replay-pre-flight-check` | Validate test environment (JUnit/TestNG, compilation, smoke test) before Phase 1 execution. |
 | `replay-tdd-enforcer` | Force complete TDD cycle: RED-only is invalid progress, GREEN phase with production code required. |
 | `replay-test-charter-validator` | Require side-effect proof (DB/state/file/API) in tests, reject helper-only validations. |
+
 
 ## Repository-Only Extensions
 

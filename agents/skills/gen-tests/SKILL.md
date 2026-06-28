@@ -58,7 +58,7 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
     ↓
 [Phase 1.5] 识别构建拓扑与验证范围
     ↓
-[Phase 1.6] 读取 Test Design Control
+[Phase 1.6] 读取测试设计控制（Test Design Control）
     ↓
 [Phase 2] 扫描现有测试 → 提取模式（10项）
     ↓
@@ -107,26 +107,26 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 
 **稳定错误锚点：** 日志编码不稳定或输出很长时，先抽取 `phase / exit code / module / file path / class / method / exception type / first failing symbol`；中文错误文案只能辅助判断，不能作为唯一证据。
 
-## Phase 1.6: 读取 Test Design Control（Hard Gate）
+## Phase 1.6: 读取测试设计控制（Test Design Control，硬门禁）
 
 测试生成必须优先读取测试设计控制产物，再扫描现有测试模式。来源优先级：
 
-1. `.doc/<feature>/tech-design.md` 中的 `Test Design Control / 测试设计控制`。
+1. `.doc/<feature>/tech-design.md` 中的 `测试设计控制 / Test Design Control`。
 2. `.doc/<feature>/test-design.md` 或同等测试设计文档。
-3. `Branch Coverage Plan` 或上游 `Same Symptom Branch Matrix` 中的验证 / must-not 行。
+3. 分支覆盖计划或上游同症状分支矩阵中的验证 / must-not 行。
 4. 用户显式给出的最终测试范围与风险分级。
 
-命中以下任一情况时，若缺少 Test Design Control 或合法 mini form，输出 `test_design_gap` 并回到 `deep-plan`，不得自由生成一批测试后宣称覆盖完成：多 surface、状态流转、落库/事务、异步、外部接口、报表/导出、前端可见面、旧数据兼容、must-not 行为、明显高返工风险。
+命中以下任一情况时，若缺少测试设计控制或合法 mini form，输出 `test_design_gap` 并回到 `deep-plan`，不得自由生成一批测试后宣称覆盖完成：多 surface、状态流转、落库/事务、异步、外部接口、报表/导出、前端可见面、旧数据兼容、must-not 行为、明显高返工风险。
 
 消费规则：
 
-| Test Design Control 行 | 生成测试时必须使用 |
-|------------------------|--------------------|
-| Impact Scope | 最终测试范围与排除项，不能自行扩大或遗漏 surface |
-| Risk Grading | 每个接口/入口的测试深度与优先级 |
-| Decision Table | 最小 Case 组合；组合外新增用例必须说明原因 |
-| Executable Steps | Given / When / Then 操作步骤与多维断言 |
-| Coverage Check | 输出覆盖矩阵状态：`covered`、`partial`、`blocked:<reason>`、`not_applicable:<reason>` |
+| 测试设计控制行 | 生成测试时必须使用 |
+|----------------|--------------------|
+| 影响范围 | 最终测试范围与排除项，不能自行扩大或遗漏 surface |
+| 风险分级 | 每个接口/入口的测试深度与优先级 |
+| 判定表 | 最小 Case 组合；组合外新增用例必须说明原因 |
+| 可执行步骤 | Given / When / Then 操作步骤与多维断言 |
+| 覆盖校验 | 输出覆盖矩阵状态：`covered`、`partial`、`blocked:<reason>`、`not_applicable:<reason>` |
 
 小需求可使用 `references/test-design-control.md` 的 mini form；但仍必须有 scope、risk、case、assertion、coverage 五项最小闭环。
 ## Phase 2: 模式提取（10项）
@@ -146,7 +146,7 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 
 ## Phase 2.5: 需求风险转测试矩阵（Hard Gate）
 
-已有 Test Design Control 时，以其中的范围、风险、判定表和覆盖矩阵为主；本阶段只补充未显式覆盖的 must-not、副作用、异常和真实入口断言，不得改写已确认范围。
+已有测试设计控制时，以其中的范围、风险、判定表和覆盖矩阵为主；本阶段只补充未显式覆盖的 must-not、副作用、异常和真实入口断言，不得改写已确认范围。
 
 当需求或审查反馈命中以下任一信号时，补测试不能只覆盖 happy path，必须先生成风险矩阵：
 
@@ -165,7 +165,7 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 | 同症状多分支 / 生产热修 / 缓存修复 | 至少为目标分支和一个绕过目标修复的分支设计断言、静态 guard 或 blocker；证明本次覆盖范围与未覆盖范围 |
 
 **Hard Gate：** 如果测试计划里只有 `should happen`，没有 `must not happen`，而需求涉及失败、空值、禁止 fallback、副作用边界或多 surface，则不得进入 Phase 4。
-**Branch Gate：** 上游存在 Same Symptom Branch Matrix / Branch Coverage Plan 时，测试报告必须逐行映射 `covered / static_only / blocked / out_of_scope_confirmed`；缺映射时只能 `PARTIAL`，不得写“热修验证完成”。
+**分支门：** 上游存在同症状分支矩阵 / 分支覆盖计划时，测试报告必须逐行映射 `covered / static_only / blocked / out_of_scope_confirmed`；缺映射时只能 `PARTIAL`，不得写“热修验证完成”。
 
 **断言粒度：** guard 测试优先断言需求行为、数据流、持久化、展示、消息、状态和副作用边界；除非需求显式指定内部 API，否则不得把非必要方法名、私有 helper 名或临时实现结构写成完成标准。
 
@@ -175,19 +175,19 @@ allowed-tools: Bash,Read,Edit,Write,Glob,Grep,Skill
 
 ### Phase 2.6: 小 GREEN 防误判门禁
 
-当需求存在冻结表、surface 矩阵或 Expected Diff Matrix 时，测试通过不能只证明新增小测试通过。必须先建立完成覆盖表：
+当需求存在冻结表、surface 矩阵或预计变更矩阵时，测试通过不能只证明新增小测试通过。必须先建立完成覆盖表：
 
 覆盖表模板见：`../dev-workflow/references/complex-requirement-delivery-kit.md` 的 TDD Coverage Plan 与 Final Completion Check。
 
 | 来源 | 覆盖要求 |
 |------|----------|
-| Requirement Coverage Ledger / 90% Coverage Plan | `core_path` 行必须有优先 RED/GREEN 或等效 static guard；supporting surface 逐项验证；optional/deferred 不计入完成率 |
+| 需求覆盖账本 / 90% 覆盖计划 | `core_path` 行必须有优先 RED/GREEN 或等效 static guard；supporting surface 逐项验证；optional/deferred 不计入完成率 |
 | 显式需求冻结表 | 每行至少一个正向断言；涉及禁止行为时至少一个反向断言 |
 | 字段与数据来源冻结表 | 断言数据来源、落库字段、展示字段，不允许默认值/回退值替代 |
 | Exact Contract Freeze Gate | 断言 code symbol、DB/API/wire name、flag/type/enum、payload shape 或展示列精确匹配 |
 | Surface 覆盖矩阵 | 每个 surface 至少一个独立断言，不允许用同类入口代表 |
-| Expected Diff Matrix | 每个预计文件族至少有验证点，并在收口时标成 `changed+tested` / `changed+static_only+cap` / `deferred+reason+coverage_cap` / `blocker`；未预测文件需解释或回退规划 |
-| Critical Surface Allocation Plan | 每个高权重 deploy-facing family 至少有一个可执行最小切片：真实承载文件族 + RED/GREEN、可运行契约测试或真实输出验证 |
+| 预计变更矩阵 | 每个预计文件族至少有验证点，并在收口时标成 `changed+tested` / `changed+static_only+cap` / `deferred+reason+coverage_cap` / `blocker`；未预测文件需解释或回退规划 |
+| 关键 Surface 分配计划 | 每个高权重 deploy-facing family 至少有一个可执行最小切片：真实承载文件族 + RED/GREEN、可运行契约测试或真实输出验证 |
 
 **Hard Gate：** 只跑通自己新增的小测试，但覆盖表缺行时，结果只能是 `PARTIAL`，不得输出“测试完成”。
 **90% Gate：** 自主实现目标下，测试报告必须按覆盖账本标出 `DONE / PARTIAL / BLOCKED / DEFERRED`；核心主链缺少测试或验证锚点时，不得声称达到 90%。
@@ -322,4 +322,4 @@ Java: `src/test/**/*Test.java`；JS/TS: `**/*.test.ts`, `**/*.spec.ts`；Python:
 
 ## 输出格式
 
-默认输出：模式、验证范围、失败阶段、RED/GREEN 证据、Test Design Control 测试映射、Branch Coverage 测试映射、覆盖账本测试映射、遗留 blocker、下一步。完整模板见 `references/output-formats.md`。
+默认输出：模式、验证范围、失败阶段、RED/GREEN 证据、测试设计控制映射、分支覆盖测试映射、覆盖账本测试映射、遗留 blocker、下一步。完整模板见 `references/output-formats.md`。

@@ -24,18 +24,18 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 ## 工作流
 
 1. 加载需求来源。
-2. 命中开放式需求、多落点风险或用户已纠错时，先生成 Intent Alignment Gate；若属于纠错场景，还必须执行 User Correction Escalation Gate。
-3. 命中领域术语混用、跨上下文或业务口径不一致时，生成 Domain Language Ledger。
-4. 命中生产症状、热修、修数、缓存、外部接口、状态/数据链路或用户纠错时，生成 Same Symptom Branch Matrix。
+2. 命中开放式需求、多落点风险或用户已纠错时，先生成需求意图对齐门（Intent Alignment Gate）；若属于纠错场景，还必须执行用户纠错升级门。
+3. 命中领域术语混用、跨上下文或业务口径不一致时，生成领域语言账本。
+4. 命中生产症状、热修、修数、缓存、外部接口、状态/数据链路或用户纠错时，生成同症状分支矩阵。
 5. 分类 scope：范围内、前端-only、已有需证据、待确认、支撑工具、无关漂移。
-6. 用户要求自主实现或 90%+ 覆盖时，生成 Requirement Coverage Ledger，并标出核心主链优先级。
+6. 用户要求自主实现或 90%+ 覆盖时，生成需求覆盖账本，并标出核心主链优先级。
 7. 识别业务目标、范围内、范围外。
 8. 扫描隐藏需求与未决问题。
-9. 生成 Decision Ledger。
+9. 生成决策账本。
 10. 命中显式契约时生成冻结矩阵。
 11. 命中多 surface 时生成 Surface 覆盖矩阵。
 12. 输出 APPROVED / REJECTED / NEEDS_CLARIFICATION，并为非平凡需求交接 `ideate:planning-brainstorm` 后再进入 `deep-plan`。
-## Intent Alignment Gate
+## 需求意图对齐门（Intent Alignment Gate）
 当用户只描述现象、期望修复或改进方向，但没有明确“改哪个落点、保留哪个口径、谁能看到结果”时，先做轻量意图对齐。
 触发信号：
 - 需求可能落到多个层：服务、展示、日志、持久化、模板、helper、配置或共享入口。
@@ -59,12 +59,12 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 若“推荐改动落点”和“禁止改动落点”无法同时写清，状态必须是 `NEEDS_CLARIFICATION`。
 - 若用户/业务可见面与内部排障面混在同一 helper、模板或写入方法中，必须在技术方案里显式拆边界。
 - 这是轻量对齐，不要求完整创意发散；但非平凡需求在进入 `deep-plan` 前应交给 `ideate:planning-brainstorm` 做方案盘问。
-## User Correction Escalation Gate
+## 用户纠错升级门（User Correction Escalation Gate）
 用户指出一次遗漏、误解、原型不符、字段规则不符、提示文案不符或“你说完成但实际没完成”时，当前工作必须从单点补丁升级为全量再对齐；不得只修用户刚指出的一行。
 必须产出：
 ```markdown
-| correction | likely family | same-family scan | updated contract | verification | status |
-|------------|---------------|------------------|------------------|--------------|--------|
+| 纠错点 | 可能同类范围 | 同类扫描 | 更新后的契约 | 验证方式 | 状态 |
+|--------|--------------|----------|--------------|----------|------|
 ```
 规则：
 - `same-family scan` 必须覆盖同类字段、同类按钮/入口、同类错误提示、同类数据源、同类显示文案或同类运行时出口；不能只搜索当前报错行。
@@ -72,7 +72,7 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 纠错后重新输出 APPROVED 前，每个受影响 requirement 行都必须有代码落点和测试/静态/运行态验证计划。
 - 未完成本门禁时，状态最高只能是 `PARTIAL`，不得进入“已完成”或提交收口。
 
-## Same Symptom Branch Matrix
+## 同症状分支矩阵（Same Symptom Branch Matrix）
 
 当同一个用户可见或生产业务症状可能由多个入口、配置、缓存、异步任务、数据来源、外部系统或展示面造成时，必须先列分支，不能把目标 bug 分支等同于整个症状。
 
@@ -83,8 +83,8 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 用户已纠错，或之前的结论只覆盖了某个函数、日志、配置或下游响应。
 
 ```markdown
-| symptom | possible branch | entry / precondition | evidence to check | covered by this change? | must-not / regression | status |
-|---------|-----------------|----------------------|-------------------|-------------------------|-----------------------|--------|
+| 症状 | 可能分支 | 入口/前置条件 | 待核验证据 | 本次是否覆盖 | must-not / 回归风险 | 状态 |
+|------|----------|--------------|------------|--------------|----------------------|------|
 ```
 
 规则：
@@ -92,12 +92,12 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - `possible branch` 至少覆盖当前目标分支、绕过目标修复的入口、配置/缓存分支、异步/重试分支、外部/下游分支和展示/查询分支；确实不适用时写 `not_applicable:<reason>`。
 - `covered by this change? = no/partial` 的行必须进入范围外说明、后续采证或 `deep-plan` blocker；不能在最终回答中说整个症状已修复。
 - 同症状矩阵中的 `must-not / regression` 必须交给 `deep-plan` / `gen-tests`，至少形成一个反向断言、静态检查或明确 blocker。
-## Domain Language Ledger
+## 领域语言账本（Domain Language Ledger）
 需求、用户口述、代码注释、已有文档或界面文案对同一业务概念使用多个词，或同一词可能指向多个概念时，先冻结共享语言；不能让实现阶段靠猜测命名。
 
 ```markdown
-| raw term | canonical term | meaning | avoid/alias | source evidence | code/doc impact | unresolved? |
-|----------|----------------|---------|-------------|-----------------|-----------------|-------------|
+| 原始说法 | 统一术语 | 含义 | 避免/别名 | 来源证据 | 代码/文档影响 | 是否未决 |
+|----------|----------|------|-----------|----------|--------------|----------|
 ```
 
 规则：
@@ -106,20 +106,20 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 若术语冲突影响字段来源、状态含义、展示文案、报表列或测试命名，状态必须是 `NEEDS_CLARIFICATION`，不得继续编码。
 - 若仓库已有领域词表、上下文文档或 ADR/决策记录约定，必须优先读取并对齐；新增术语只写入仓库约定的文档位置，不在通用技能正文里固化项目词。
 
-## Imported Requirement Normalize Gate
+## 导入需求规范化门（Imported Requirement Normalize Gate）
 
 当需求源来自导出文档、网页复制、长表格、图片占位、单行 Markdown、混排更新记录或格式明显破碎的材料时，先规范化为：
 
 ```markdown
-| block | type | source location | normalized requirement | owner/surface | status |
-|-------|------|-----------------|------------------------|---------------|--------|
+| 块 | 类型 | 来源位置 | 规范化需求 | owner/surface | 状态 |
+|----|------|----------|------------|---------------|------|
 ```
 
 类型枚举：`business_goal`、`in_scope`、`out_of_scope`、`update_note`、`ui_reference`、`field_table`、`process_rule`、`acceptance_rule`、`non_requirement_context`。
 
 未完成 normalize 时，复杂需求不得直接生成冻结矩阵；图片、原型和更新记录只能作为线索，不能替代文字契约。
 
-## Decision Ledger
+## 决策账本（Decision Ledger）
 
 ```markdown
 | # | 类别 | 问题 | 阻断原因 | 建议决策 | 状态 |
@@ -134,7 +134,7 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - 多入口范围不清
 - 发布/配置/SQL ownership 不清
 
-## Scope 分类矩阵
+## 范围分类矩阵（Scope Classification Matrix）
 
 复杂需求必须先分类每个需求项：
 
@@ -154,13 +154,13 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 
 `FRONTEND_ONLY`、`OUT_OF_SCOPE_PENDING_CONFIRMATION`、`UNRELATED_DRIFT` 不得进入后端实现计划；`ALREADY_IMPLEMENTED_NEED_EVIDENCE` 必须追到可核验证据链。
 
-## Requirement Coverage Ledger
+## 需求覆盖账本（Requirement Coverage Ledger）
 
 当用户要求“基于需求文档自主实现 / 尽量少问 / 覆盖 90%+ / 完成大部分代码”时，必须把需求拆成覆盖账本。覆盖账本用于后续设计、实现、测试和收口，不得用文件命中率替代。
 
 ```markdown
-| Req ID | requirement item | priority | literal / wire fields | surface | expected files | verification | status |
-|--------|------------------|----------|-----------------------|---------|----------------|--------------|--------|
+| 需求ID | 需求项 | 优先级 | 字面量/协议字段 | surface | 预计文件 | 验证方式 | 状态 |
+|--------|--------|--------|----------------|---------|----------|----------|------|
 ```
 
 `priority` 只能使用：
@@ -177,7 +177,7 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - `core_path` 行存在数据来源、字段契约、DDL、外部 owner 或验收文案不清时，状态必须是 `NEEDS_CLARIFICATION` 或 `REJECTED`。
 - 90% 覆盖目标只统计 `core_path + supporting_surface` 的加权完成度；`optional_or_later`、`frontend_or_external`、`out_of_scope` 不得用来冲高覆盖率。
 
-### Deploy-facing Contract Gate
+### 对外交付契约门（Deploy-facing Contract Gate）
 
 凡需求会形成对外、跨模块或落库契约，必须先冻结精确名称和值；不能按中文大意自行命名后计入 `DONE`。
 
@@ -199,13 +199,13 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 - **Surface Family Disambiguation Gate：** 同一业务词同时可能指向查询、重试、上报、导出、展示、任务或回调等不同 file family 时，必须先列候选 family、runtime entry、payload/result owner 和排除理由；只按关键词命中一个相似文件族直接实现 = `REJECTED`。
 - **Exact Contract Freeze Gate：** 字段、列、flag、type、enum、payload shape 或展示列必须冻结成 `literal -> code symbol -> DB/API/wire name -> exact value/shape -> owner -> test assertion`；任一 `assumption` 行不得计入 `DONE`。
 
-### Observable Behavior Contract Gate
+### 可观察行为契约门（Observable Behavior Contract Gate）
 
 公共 API、跨模块接口、导出、页面展示、任务状态、日志/审计或外部集成一旦被消费者观察到，都按契约处理；不能只冻结字段名。必须补充：
 
 ```markdown
-| observable behavior | consumer | current/source evidence | preserve/change | compatibility risk | test assertion |
-|---------------------|----------|-------------------------|-----------------|--------------------|----------------|
+| 可观察行为 | 消费方 | 当前/来源证据 | 保持/改变 | 兼容风险 | 测试断言 |
+|------------|--------|--------------|----------|----------|----------|
 ```
 
 至少覆盖输出 shape、错误语义、排序/分页、空值行为、幂等/重试、状态码/状态流转、展示文案和兼容/废弃策略。未冻结时，涉及共享或对外 surface 的需求状态最多 `NEEDS_CLARIFICATION`。
@@ -215,8 +215,8 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 无 PRD 但用户提供分支、commit range、patch 或目标 diff 时，先做后验需求重建，状态只能是 `RECONSTRUCTED` / `NEEDS_CONFIRMATION` / `NEEDS_EVIDENCE`，不得直接写 `APPROVED`。
 
 ```markdown
-| 反推需求 | confidence | evidence | missing source | verification gap | next step |
-|----------|------------|----------|----------------|------------------|-----------|
+| 反推需求 | 置信度 | 证据 | 缺失来源 | 验证缺口 | 下一步 |
+|----------|--------|------|----------|----------|--------|
 ```
 
 规则：
@@ -243,8 +243,8 @@ allowed-tools: Bash,Read,Write,Glob,Grep,Task
 必须产出：
 
 ```markdown
-| 需求原文 | 顺序/优先级 | must happen | must not happen | ownership/surface | 代码落点 | 测试断言 | 状态 |
-|----------|-------------|-------------|-----------------|-------------------|----------|----------|------|
+| 需求原文 | 顺序/优先级 | 必须发生 | 禁止发生 | ownership/surface | 代码落点 | 测试断言 | 状态 |
+|----------|-------------|----------|----------|-------------------|----------|----------|------|
 ```
 
 Hard Gate：
@@ -267,8 +267,8 @@ Hard Gate：
 对 deploy-facing contract，表中还必须能回答：
 
 ```markdown
-| contract item | exact name/value | source quote/evidence | assumption? | owner | code location | test assertion | status |
-|---------------|------------------|-----------------------|-------------|-------|---------------|----------------|--------|
+| 契约项 | 精确名称/值 | 来源引用/证据 | 是否假设 | owner | 代码位置 | 测试断言 | 状态 |
+|--------|------------|-------------|----------|-------|----------|----------|------|
 ```
 
 `assumption? = yes` 时，该行不得计入 `DONE`。
@@ -307,16 +307,16 @@ Hard Gate：
 ## 需求对齐结果
 - 状态: APPROVED / REJECTED / NEEDS_CLARIFICATION
 - 阻断项:
-- Intent Alignment Gate:
-- User Correction Escalation Gate:
-- Domain Language Ledger:
-- Decision Ledger:
-- Scope 分类矩阵:
-- Requirement Coverage Ledger:
+- 需求意图对齐门:
+- 用户纠错升级门:
+- 领域语言账本:
+- 决策账本:
+- 范围分类矩阵:
+- 需求覆盖账本:
 - 显式需求冻结矩阵:
 - 字段与数据来源冻结表:
 - Surface 覆盖矩阵:
-- Same Symptom Branch Matrix:
+- 同症状分支矩阵:
 - 下一步补齐模板: dev-workflow/references/complex-requirement-delivery-kit.md
 - 下一步: ideate:planning-brainstorm / deep-plan / 用户确认 / 停止
 ```

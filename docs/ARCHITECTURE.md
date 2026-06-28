@@ -9,7 +9,7 @@
 - `agents/` 是自定义技能、hooks、规则和模板的规范源。
 - `codex/` 和 `claude/` 是宿主适配器，使同一工作流在 Codex 和 Claude Code 中可用。
 - `cc-switch/` 为使用 cc-switch 切换供应商的用户存储可移植的通用配置模板。
-- `replay-autopilot/` 是无人值守评估和控制平面。
+- `replay-autopilot/` 是无人值守评估、证据门禁、覆盖率核算和工作流演进控制平面。
 - `workflow-history/` 是仓库本地的变更日志，用于回放和工作流自动化。
 - `scripts/` 包含 Node 优先的安装、校验、cc-switch 更新和密钥扫描脚本。
 
@@ -367,25 +367,28 @@ node scripts/install-cc-switch-common-config.js
 
 ## 无人值守回放控制平面
 
-`replay-autopilot/` 是一个控制系统，用于评估工作流是否能通过可重复的门禁驱动 AI 编码任务。
+`replay-autopilot/` 是一个控制系统，用于评估工作流是否能通过可重复的门禁驱动 AI 编码任务。它现在的核心不是信任一次模型回答，而是把每个阶段的授权、执行、验证、覆盖率和演进原因写成结构化证据，再由后续门禁读取这些证据做调度和收口。
 
 该目录包含通用的控制平面脚本，以及来自基准测试的配置、需求和 fixture，用作回归测试用例。将这些基准测试文件视为控制平面的评估输入。它们不是已安装的凭证、运行时日志、私有的 oracle diff 或业务源代码，新项目应添加自己的本地配置，而不是将附带的基准测试用例当作默认项目。
 
 ```mermaid
 flowchart TD
     Input["需求、分支、commit 或回放用例"] --> Controller["Run-UnattendedReplayControl.ps1"]
-    Controller --> Preflight["前置检查"]
-    Preflight --> Plan["方案和契约生成"]
-    Plan --> Slice["切片选择"]
-    Slice --> TDD["TDD 周期强制"]
-    TDD --> Charter["Test-charter 验证"]
-    Charter --> Evidence["证据收集"]
-    Evidence --> Score["覆盖率、质量和失败评分"]
-    Score --> StopEvolve{"停止并演进？"}
-    StopEvolve -->|继续| Slice
-    StopEvolve -->|演进| Evolution["演进提案和验证"]
-    StopEvolve -->|完成| Report["回放报告"]
-    Report --> History["workflow-history"]
+    Controller --> Preflight["前置检查和运行环境探测"]
+    Preflight --> Plan["方案、oracle 对齐和机器契约"]
+    Plan --> Family["requirement family ledger 和 carrier lock"]
+    Family --> Slice["切片选择、forced family、sibling surface"]
+    Slice --> Authorization["pre-slice 可执行授权和 callable carrier 校验"]
+    Authorization --> TDD["RED/GREEN 与 test-charter 门禁"]
+    TDD --> Verifier["slice verifier、exact-contract、side-effect 和生产 diff 验证"]
+    Verifier --> Ledger["family ledger 吸收、family cap 和 stale artifact 归档"]
+    Ledger --> Snapshot["覆盖率 snapshot 和 control summary"]
+    Snapshot --> Stopline{"stopline / stop-and-evolve？"}
+    Stopline -->|继续| Slice
+    Stopline -->|演进| Evolution["演进提案、gate budget 和新门禁验证"]
+    Stopline -->|完成| Report["回放报告和失败审计包"]
+    Evolution --> History["workflow-history"]
+    Report --> History
 ```
 
 主要回放组件：
@@ -394,14 +397,29 @@ flowchart TD
 | --- | --- | --- |
 | 控制器 | `scripts/Run-UnattendedReplayControl.ps1`、`scripts/Start-UnattendedReplayControl.ps1` | 编排无人值守周期和停止条件。 |
 | 前置检查 | `scripts/Invoke-PreflightComprehensive.ps1`、`scripts/pre_flight_check.py` | 验证环境、项目状态和测试就绪性。 |
-| 方案规划 | `prompts/`、`scripts/generate_plan.ps1`、`scripts/plan_contract_verify.py` | 将回放目标转换为有边界的方案和机器可检查的契约。 |
-| 切片控制 | `scripts/Select-NextReplaySlice.ps1`、`scripts/Run-SliceLoop.ps1` | 选择下一个实现切片并执行。 |
+| 方案规划 | `prompts/`、`scripts/generate_plan.ps1`、`scripts/plan_contract_verify.py` | 将回放目标转换为有边界的方案、oracle 对齐证据和机器可检查的契约。 |
+| 切片控制 | `scripts/Select-NextReplaySlice.ps1`、`scripts/Run-SliceLoop.ps1` | 选择下一个实现切片，处理 resume/reuse，归档 stale slice artifact，并维护 slice progress。 |
+| 可执行授权 | `scripts/Prepare-SliceEvidenceContracts.ps1`、`scripts/Invoke-PreSliceExperimentContracts.ps1`、`scripts/Invoke-CallableCarrierAuthorization.ps1` | 在进入 agent 执行前绑定真实入口、forced family、sibling surface、测试选择器和 callable carrier。 |
 | TDD 门禁 | `replay-tdd-enforcer` 技能、`scripts/enforce_red_phase_gate.py` | 要求有意义的 RED 和 GREEN 阶段。 |
 | Test-charter 门禁 | `replay-test-charter-validator` 技能、`scripts/Invoke-TestCharterPrevalidator.ps1` | 要求测试证明副作用，而不仅仅是辅助行为。 |
-| 载波和 oracle 检查 | `scripts/*Carrier*`、`scripts/*Oracle*` | 将实现绑定到真实入口点和可信证据。 |
-| 评估 | `scripts/evaluate_slice_result.py`、`scripts/calculate-coverage-penalty.py` | 评分结果，限制过度宣称。 |
-| 演进 | `scripts/New-EvolutionProposal.ps1`、`scripts/Invoke-V419StopAndEvolveExperiments.ps1` | 将重复失败模式转化为工作流改进。 |
+| 载波和 oracle 检查 | `scripts/*Carrier*`、`scripts/*Oracle*` | 将实现绑定到真实入口点、真实方法签名和可信 oracle 证据。 |
+| Slice verifier | `scripts/Verify-SliceClosure.ps1`、`scripts/verify-slice.ps1` | 根据 slice result、测试命令、生产 diff、exact-contract、side-effect 和 blocker/gap flags 判断是否可继续、可综合或必须 fail closed。 |
+| Requirement family ledger | `scripts/Run-SliceLoop.ps1`、`scripts/verify_family_proof_ledger.ps1`、`scripts/verify-family-ledger-from-slice-verify.ps1` | 记录 requirement family 的 open/partial/closed 状态、proof 类型、cap 和可继续的下一切片目标。 |
+| 覆盖率核算 | `scripts/Enforce-RoundCoverageCap.ps1`、`scripts/recompute_round_coverage.py`、control summary 相关脚本 | 从结构化 slice/verifier/ledger 证据恢复真实覆盖率，限制自评膨胀，并在早停时保留已验证进展。 |
+| Stopline 和控制摘要 | `scripts/Invoke-ReplayStoplineGate.ps1`、`scripts/Write-ControlPlaneSummary.ps1` | 判断近期 round 是否真正无进展，避免旧 blocker 或旧 markdown 摘要覆盖后续 slice 证据。 |
+| 演进 | `scripts/New-EvolutionProposal.ps1`、`scripts/Invoke-V419StopAndEvolveExperiments.ps1`、`scripts/Validate-EvolutionResult.ps1` | 将重复失败模式转化为工作流改进，并用 gate budget、实验 ledger 和回归测试证明新增门禁确有必要。 |
 | 回归测试 | `scripts/Test-v*.ps1`、`test/`、`tests/` | 跨历史工作流变更验证回放控制行为。 |
+
+关键 artifact 类型：
+
+| Artifact | 作用 |
+| --- | --- |
+| `PLAN_RESULT.md`、`PLAN_CONTRACT_VERIFY.json` | 记录计划阶段的选择、阻断原因和机器契约验证。 |
+| `SLICE_RESULT_NN.json`、`SLICE_VERIFY_NN.json` | 记录每个切片的执行状态、测试证据、gap flags、授权状态、覆盖率增量和关闭的 requirement family。 |
+| `REQUIREMENT_FAMILY_LEDGER.json` | 记录 requirement family 状态、open sibling surfaces、proof 类型和 coverage cap。 |
+| `CARRIER_LOCK.json`、`RUNNABLE_SLICE_AUTHORIZATION_NN.json`、`PRE_SLICE_AUTHORIZATION_NN.json` | 记录真实 carrier、可执行入口和进入 slice agent 前的授权条件。 |
+| `ROUND_RESULT.md`、`AUTOPILOT_SUMMARY.md`、`AUTOPILOT_DECISION.md` | 汇总 round 结果、覆盖率和下一步控制决策；早停时应优先保留结构化证据中的覆盖率。 |
+| `EVOLUTION_RESULT.md`、`EVOLUTION_RESULT_VERIFY.json`、stop-and-evolve 实验 ledger | 记录演进是否真正通过验证，以及新增门禁是否有预算和必要性。 |
 
 回放目前仍保留许多 PowerShell 控制器脚本。它们不是默认的高频 prompt hook 路径。当可用时，手动回放验证推荐使用 PowerShell 7（`pwsh`）。
 

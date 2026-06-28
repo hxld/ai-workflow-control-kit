@@ -5123,6 +5123,11 @@ $planText
             'Review PLAN_RESULT.md, REPLAY_PLAN.md, and IMPLEMENTATION_CONTRACT.md. If rejection is valid, adjust the planning prompt or workflow gate before running Phase 1.'
         }
 
+        $proposalScript = Join-Path $PSScriptRoot 'New-EvolutionProposal.ps1'
+        if (Test-Path -LiteralPath $proposalScript) {
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $proposalScript -ReplayRoot $replayRoot | Out-Null
+        }
+
         $proposal = @"
 # Replay Evolution Proposal
 

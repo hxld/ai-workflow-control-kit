@@ -657,6 +657,96 @@ if (((@($missingCarrierFileVerify.issues) -join ' ') -notmatch 'first_slice_proo
     throw 'Expected missing carrier file proof issue'
 }
 
+$powerShellCarrierRoot = Join-Path $tempRoot 'powershell-control-plane-carrier'
+New-ValidReplayRoot -Root $powerShellCarrierRoot
+$powerShellCarrierWorktree = Join-Path $powerShellCarrierRoot 'worktree'
+$powerShellCarrierRel = 'replay-autopilot/scripts/Invoke-SliceSchemaFailFast.ps1'
+$powerShellCarrierFull = Join-Path $powerShellCarrierWorktree $powerShellCarrierRel
+Write-Text $powerShellCarrierFull 'function Invoke-SliceSchemaFailFast { return $true }'
+Write-Text (Join-Path $powerShellCarrierRoot 'PLAN_RESULT.md') @"
+# Plan Result
+
+- plan_status: PROCEED
+- selected_candidate: 1
+- selected_strategy: replay-autopilot-control-plane
+- first_slice: S1
+- first_red_test: Test-v687-ControlPlanePowerShellHarness
+- required_files: $powerShellCarrierRel
+- oracle_production_file_overlap: 100
+- oracle_high_weight_coverage: 1/1
+- carrier_search: performed
+- carrier_search_queries: rg "Invoke-SliceSchemaFailFast", rg "ControlPlanePowerShellHarness", rg "replay-autopilot/scripts"
+- existing_production_carriers: ${powerShellCarrierRel}:12 Invoke-SliceSchemaFailFast
+- selected_carrier_from_search: ${powerShellCarrierRel}:12 Invoke-SliceSchemaFailFast
+- new_service_proposed: false
+- new_service_justification: none
+"@
+Write-Text (Join-Path $powerShellCarrierRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
+# First Slice Proof Plan
+
+- first_slice: S1
+- first_red_test: Test-v687-ControlPlanePowerShellHarness
+- selected_real_entry: $powerShellCarrierRel
+- highest_weight_open_gate: automation_test_interface
+- target family: automation_test_interface
+- target_subsurface_or_carrier: replay-autopilot control-plane schema gate
+- selected_carrier: $powerShellCarrierRel
+- real_carrier_kind: production_entry_or_service
+- target_carrier_file_path: ${powerShellCarrierRel}:12
+- target_carrier_line_number: 12
+- expected_test_class: Test-v687-ControlPlanePowerShellHarness
+- expected_test_method: plan_verifier_accepts_powershell_control_plane_carrier
+- expected_assertions: PowerShell carrier path is accepted, non-production test script path is rejected, missing control-plane script is rejected
+- expected_side_effects: plan verifier allows replay-autopilot control-plane production script to advance to executable tests
+- minimum_side_effect_or_blocker: plan verifier accepts an existing replay-autopilot control-plane production script and keeps file existence checking active
+- forbidden_substitute_check: passed
+- production_boundary: $powerShellCarrierRel
+- public_entry_contract_coverage: replay-autopilot control-plane script is the real runner/verifier entry being evolved
+- expected_production_diff: update Verify-PlanContract.ps1 v457 target_carrier_file_path validation for replay-autopilot control-plane scripts
+- red_expectation: Test-v687-ControlPlanePowerShellHarness fails before the verifier accepts control-plane PowerShell carriers
+- green_minimum_implementation: Verify-PlanContract.ps1 accepts replay-autopilot/scripts/*.ps1 production carriers while rejecting scripts/tests/*.ps1
+- proof_kind: real_entry_behavior
+- forbidden substitute proof: helper_only static_presence dto_only compile_only
+- required_sibling_surfaces: none
+- fail_closed_condition: missing carrier file or test-script carrier path stops Plan
+- coverage cap if not closed: 60
+"@
+& powershell -NoProfile -ExecutionPolicy Bypass -File $script:contractVerifier -ReplayRoot $powerShellCarrierRoot -Stage Plan -Worktree $powerShellCarrierWorktree -SkipCarrierAndOracleChecks | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    $powerShellCarrierVerify = Get-Content -LiteralPath (Join-Path $powerShellCarrierRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    throw "Expected replay-autopilot PowerShell carrier path to pass v457 validation; issues=$(@($powerShellCarrierVerify.issues) -join ';')"
+}
+$powerShellCarrierVerify = Get-Content -LiteralPath (Join-Path $powerShellCarrierRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if (((@($powerShellCarrierVerify.issues) -join ' ') -match 'first_slice_proof_v457_(invalid_file_path|file_not_found)')) {
+    throw "PowerShell control-plane carrier should not trip v457 path issues; issues=$(@($powerShellCarrierVerify.issues) -join ';')"
+}
+
+$testScriptCarrierRoot = Join-Path $tempRoot 'powershell-test-script-not-carrier'
+New-ValidReplayRoot -Root $testScriptCarrierRoot
+$testScriptWorktree = Join-Path $testScriptCarrierRoot 'worktree'
+$testScriptRel = 'replay-autopilot/scripts/tests/Test-v687-ControlPlanePowerShellHarness.ps1'
+Write-Text (Join-Path $testScriptWorktree $testScriptRel) 'Write-Host "PASS"'
+$testScriptProof = (Get-Content -LiteralPath (Join-Path $testScriptCarrierRoot 'FIRST_SLICE_PROOF_PLAN.md') -Raw -Encoding UTF8) -replace 'src/main/java/sample/RealEntry\.java', $testScriptRel
+Set-Content -LiteralPath (Join-Path $testScriptCarrierRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8 -Value $testScriptProof
+& powershell -NoProfile -ExecutionPolicy Bypass -File $script:contractVerifier -ReplayRoot $testScriptCarrierRoot -Stage Plan -Worktree $testScriptWorktree -SkipCarrierAndOracleChecks | Out-Null
+$testScriptCarrierVerify = Get-Content -LiteralPath (Join-Path $testScriptCarrierRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if (((@($testScriptCarrierVerify.issues) -join ' ') -notmatch 'first_slice_proof_v457_invalid_file_path')) {
+    throw 'Expected replay-autopilot scripts/tests PowerShell path to remain invalid as a production carrier'
+}
+
+$missingPowerShellCarrierRoot = Join-Path $tempRoot 'missing-powershell-control-plane-carrier'
+New-ValidReplayRoot -Root $missingPowerShellCarrierRoot
+$missingPowerShellWorktree = Join-Path $missingPowerShellCarrierRoot 'worktree'
+New-Item -ItemType Directory -Force -Path (Join-Path $missingPowerShellWorktree 'replay-autopilot\scripts') | Out-Null
+$missingPowerShellRel = 'replay-autopilot/scripts/DoesNotExist.ps1'
+$missingPowerShellProof = (Get-Content -LiteralPath (Join-Path $missingPowerShellCarrierRoot 'FIRST_SLICE_PROOF_PLAN.md') -Raw -Encoding UTF8) -replace 'src/main/java/sample/RealEntry\.java', $missingPowerShellRel
+Set-Content -LiteralPath (Join-Path $missingPowerShellCarrierRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8 -Value $missingPowerShellProof
+& powershell -NoProfile -ExecutionPolicy Bypass -File $script:contractVerifier -ReplayRoot $missingPowerShellCarrierRoot -Stage Plan -Worktree $missingPowerShellWorktree -SkipCarrierAndOracleChecks | Out-Null
+$missingPowerShellCarrierVerify = Get-Content -LiteralPath (Join-Path $missingPowerShellCarrierRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if (((@($missingPowerShellCarrierVerify.issues) -join ' ') -notmatch 'first_slice_proof_v457_file_not_found')) {
+    throw 'Expected missing replay-autopilot PowerShell carrier file to fail closed'
+}
+
 $missingFirstSliceProofRoot = Join-Path $tempRoot 'missing-first-slice-proof'
 New-ValidReplayRoot -Root $missingFirstSliceProofRoot
 Remove-Item -LiteralPath (Join-Path $missingFirstSliceProofRoot 'FIRST_SLICE_PROOF_PLAN.md') -Force
@@ -714,7 +804,7 @@ Invoke-Contract -Root $substituteCarrierKindRoot -Stage Plan -ExpectedStatus FAI
 
 [ordered]@{
     status = 'PASS'
-    cases = @('plan_prompt_first_slice_schema_tokens', 'phase0_valid', 'plan_valid', 'phase0_expected_diff_deferred_to_plan', 'phase0_missing_family_contract_fails', 'plan_missing_first_red_fails', 'plan_missing_candidate_fails', 'plan_missing_carrier_search_fails', 'plan_unjustified_new_service_fails', 'plan_alternate_first_slice_proof_format_passes', 'plan_definition_list_first_slice_proof_format_passes', 'plan_conditional_blocker_phrase_passes', 'plan_policy_rebuild_source_chain_valid_passes', 'plan_policy_rebuild_source_chain_invalid_fails', 'plan_missing_carrier_file_fails', 'plan_missing_first_slice_proof_fails', 'plan_static_first_slice_proof_fails', 'plan_substitute_carrier_kind_fails')
+    cases = @('plan_prompt_first_slice_schema_tokens', 'phase0_valid', 'plan_valid', 'phase0_expected_diff_deferred_to_plan', 'phase0_missing_family_contract_fails', 'plan_missing_first_red_fails', 'plan_missing_candidate_fails', 'plan_missing_carrier_search_fails', 'plan_unjustified_new_service_fails', 'plan_alternate_first_slice_proof_format_passes', 'plan_definition_list_first_slice_proof_format_passes', 'plan_conditional_blocker_phrase_passes', 'plan_policy_rebuild_source_chain_valid_passes', 'plan_policy_rebuild_source_chain_invalid_fails', 'plan_missing_carrier_file_fails', 'plan_powershell_control_plane_carrier_passes', 'plan_powershell_test_script_carrier_fails', 'plan_missing_powershell_carrier_file_fails', 'plan_missing_first_slice_proof_fails', 'plan_static_first_slice_proof_fails', 'plan_substitute_carrier_kind_fails')
     temp_root = $tempRoot
 } | ConvertTo-Json -Depth 8
 

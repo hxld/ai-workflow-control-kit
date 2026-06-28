@@ -260,6 +260,23 @@ function Test-BusinessRedEvidence {
     return $text -match '(?i)\bfail(?:ed|ure|ures)?\b|missing|would\s+return\s+null|business\s+assertion|source-chain\s+assignment|assert(?:ion)?'
 }
 
+function Test-ClearRedFailureResult {
+    param($Test)
+
+    $result = Normalize-Result $Test.result
+    if ([string]::IsNullOrWhiteSpace($result)) { return $false }
+    if ($result -match 'pass|success|block|compile|error|inconclusive') { return $false }
+    return $result -match 'fail|failure|failed|assert'
+}
+
+function Test-PassWithBusinessRedEvidence {
+    param($Test)
+
+    $result = Normalize-Result $Test.result
+    if ($result -notmatch 'pass|success') { return $false }
+    return (Test-BusinessRedEvidence -Test $Test)
+}
+
 function Select-AuthoritativeRedPhaseTest {
     param([object[]]$Tests)
 
@@ -271,9 +288,26 @@ function Select-AuthoritativeRedPhaseTest {
         $assertionRedTests = @($redTests)
     }
 
-    $businessRedTests = @($assertionRedTests | Where-Object { Test-BusinessRedEvidence -Test $_ })
-    if ($businessRedTests.Count -gt 0) {
-        return ($businessRedTests | Select-Object -First 1)
+    $clearBusinessFailures = @($assertionRedTests | Where-Object {
+        (Test-ClearRedFailureResult -Test $_) -and (Test-BusinessRedEvidence -Test $_)
+    })
+    if ($clearBusinessFailures.Count -gt 0) {
+        return ($clearBusinessFailures | Select-Object -First 1)
+    }
+
+    $clearFailures = @($assertionRedTests | Where-Object { Test-ClearRedFailureResult -Test $_ })
+    if ($clearFailures.Count -gt 0) {
+        return ($clearFailures | Select-Object -First 1)
+    }
+
+    $businessPasses = @($assertionRedTests | Where-Object { Test-PassWithBusinessRedEvidence -Test $_ })
+    if ($businessPasses.Count -gt 0) {
+        return ($businessPasses | Select-Object -First 1)
+    }
+
+    $businessLikeRedTests = @($assertionRedTests | Where-Object { Test-BusinessRedEvidence -Test $_ })
+    if ($businessLikeRedTests.Count -gt 0) {
+        return ($businessLikeRedTests | Select-Object -First 1)
     }
 
     return ($assertionRedTests | Select-Object -First 1)

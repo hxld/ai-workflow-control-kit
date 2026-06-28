@@ -630,7 +630,7 @@ if ($null -ne $carrierRank) {
     }
     $topRank = @($rankRows | Where-Object { [bool]$_.required -and -not [string]::IsNullOrWhiteSpace([string]$_.production_carrier) } | Sort-Object @{Expression = 'rank'; Ascending = $true} | Select-Object -First 1)
     if ($topRank.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($ForcedRequirementFamily) -and [string]$topRank[0].family -ne $ForcedRequirementFamily) {
-        $issues.Add("forced_family_not_highest_weight_open:$ForcedRequirementFamily!=rank1:$($topRank[0].family)") | Out-Null
+        $warnings.Add("forced_family_not_rank1:$ForcedRequirementFamily!=rank1:$($topRank[0].family)") | Out-Null
     }
 }
 

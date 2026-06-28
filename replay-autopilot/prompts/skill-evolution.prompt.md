@@ -91,11 +91,14 @@
  
 Runner completion artifact:
 - After commit/push, no-version decision, or BLOCKED/NEEDS_EVIDENCE handling is complete, write `{{REPLAY_ROOT}}\EVOLUTION_RESULT.md`.
-- Include final_status, changed_files, verification_commands, verification_results, pushed_commit, current_knowledge_version, expected_knowledge_version, actual_knowledge_version_after_push.
+- Include final_status, gate_budget_decision, new_gate_artifacts, changed_files, verification_commands, verification_results, pushed_commit, current_knowledge_version, expected_knowledge_version, actual_knowledge_version_after_push.
 - Also include these machine-readable lines exactly when `STOP_AND_EVOLVE` or `NEXT_EXPERIMENT_PLAN.md` exists:
   - `- final_status: VALIDATED_TOOLING_EVOLUTION` or `- final_status: BLOCKED_NEEDS_EVIDENCE`
   - `- tooling_changes_applied: true` only after actual {{AUTOPILOT_ROOT}} script/prompt/verifier/test changes
   - `- stop_and_evolve_satisfied: true` only after the required experiments or equivalent enforcement are implemented and validated
+  - `- gate_budget_decision: regression_test` or `gate_consolidation` or `existing_gate_enforcement` or `new_gate_exception`
+  - `- new_gate_artifacts: none` unless a new verify_* script, carrier artifact, or machine_gate name was truly introduced
+  - `- new_gate_exception_rationale: ...` is required when `gate_budget_decision: new_gate_exception`; it must explain why existing gates cannot cover the failure class, name the regression test, and name the runner/verifier call chain that invokes it
   - `- verification_results: PASS` only after regression/eval commands pass
   - `- changed_files: ...` must list actual changed replay-autopilot files, not only knowledge repo history files
   - `- closed_machine_gates: ...` must list machine_gate values from verifiable rules that were actually closed
@@ -105,6 +108,8 @@ Runner completion artifact:
   - `- final_status: VALIDATED_TOOLING_EVOLUTION` or `- final_status: BLOCKED_NEEDS_EVIDENCE`
   - `- tooling_changes_applied: true`
   - `- stop_and_evolve_satisfied: true`
+  - `- gate_budget_decision: regression_test | gate_consolidation | existing_gate_enforcement | new_gate_exception`
+  - `- new_gate_artifacts: none` or the exact new gate artifacts
   - `- verification_results: PASS`
   - `- changed_files: <actual changed replay-autopilot files>`
   - `- closed_machine_gates: <machine_gate values>`

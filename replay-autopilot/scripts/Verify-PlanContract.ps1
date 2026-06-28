@@ -203,6 +203,35 @@ function Get-CarrierNameForExistenceCheck {
     return (($trimmed -split '[#(\s\.]')[0]).Trim()
 }
 
+function ConvertTo-PlanCarrierFilePathForValidation {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+
+    $cleanPath = ([string]$Path).Trim().Trim('`').Trim('*').Trim('"').Trim("'").Trim()
+    if ([string]::IsNullOrWhiteSpace($cleanPath)) { return '' }
+
+    $pathMatch = [regex]::Match($cleanPath, '^(?<path>.+?\.(?:java|ps1))(?:[:#]\d+)?$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($pathMatch.Success) {
+        return $pathMatch.Groups['path'].Value.Trim()
+    }
+
+    return $cleanPath
+}
+
+function Test-PlanCarrierFilePathAllowed {
+    param([string]$Path)
+
+    $normalizedPath = ConvertTo-PlanCarrierFilePathForValidation -Path $Path
+    if ([string]::IsNullOrWhiteSpace($normalizedPath)) { return $false }
+
+    if ($normalizedPath -match '(?i)\.java$') { return $true }
+
+    $slashPath = $normalizedPath.Replace('\', '/')
+    if ($slashPath -match '(?i)^replay-autopilot/scripts/tests/') { return $false }
+    return ($slashPath -match '(?i)^replay-autopilot/scripts/(?!tests/).+\.ps1$')
+}
+
 function Test-PolicySpringHarnessResidue {
     param([string]$Text)
 
@@ -1750,7 +1779,9 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v457: Validate target_carrier_file_path is a valid .java path
+    # v457/v716: Validate target_carrier_file_path is a real production carrier.
+    # Java business carriers remain valid; replay-autopilot may target its own
+    # PowerShell control-plane scripts when evolving the runner/verifiers.
     $carrierFilePathValue = Get-KeyValueField -Text $firstSliceProofText -Field 'target_carrier_file_path'
     if (-not [string]::IsNullOrWhiteSpace($carrierFilePathValue)) {
         $carrierFilePathCandidates = @(
@@ -1759,13 +1790,14 @@ if ($Stage -eq 'Phase0') {
                 Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         )
         foreach ($cleanPath in $carrierFilePathCandidates) {
-            if ($cleanPath -notmatch '\.java$') {
+            $pathForValidation = ConvertTo-PlanCarrierFilePathForValidation -Path $cleanPath
+            if (-not (Test-PlanCarrierFilePathAllowed -Path $pathForValidation)) {
                 $issues.Add("first_slice_proof_v457_invalid_file_path:$cleanPath") | Out-Null
             } elseif (-not [string]::IsNullOrWhiteSpace($worktreePath) -and (Test-Path -LiteralPath $worktreePath)) {
-                $carrierPathFull = if ([System.IO.Path]::IsPathRooted($cleanPath)) {
-                    [System.IO.Path]::GetFullPath($cleanPath)
+                $carrierPathFull = if ([System.IO.Path]::IsPathRooted($pathForValidation)) {
+                    [System.IO.Path]::GetFullPath($pathForValidation)
                 } else {
-                    [System.IO.Path]::GetFullPath((Join-Path $worktreePath $cleanPath))
+                    [System.IO.Path]::GetFullPath((Join-Path $worktreePath $pathForValidation))
                 }
                 if (-not (Test-Path -LiteralPath $carrierPathFull -PathType Leaf)) {
                     $issues.Add("first_slice_proof_v457_file_not_found:$cleanPath") | Out-Null

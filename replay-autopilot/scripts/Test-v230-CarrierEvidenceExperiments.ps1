@@ -12,8 +12,8 @@ $root = Join-Path ([System.IO.Path]::GetTempPath()) ('v230-carrier-evidence-{0}'
 $worktree = Join-Path $root 'worktree'
 New-Item -ItemType Directory -Force -Path $worktree | Out-Null
 & git -C $worktree init | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'src') | Out-Null
-Set-Content -LiteralPath (Join-Path $worktree 'src\Carrier.java') -Encoding UTF8 -Value 'class Carrier {}'
+New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'src\main\java\com\example\workflow') | Out-Null
+Set-Content -LiteralPath (Join-Path $worktree 'src\main\java\com\example\workflow\StatefulTaskProcessor.java') -Encoding UTF8 -Value 'package com.example.workflow; class StatefulTaskProcessor { void handleTaskResponse() {} }'
 
 $ledgerPath = Join-Path $root 'REQUIREMENT_FAMILY_LEDGER.json'
 [ordered]@{
@@ -28,20 +28,31 @@ $ledgerPath = Join-Path $root 'REQUIREMENT_FAMILY_LEDGER.json'
             weight = 95
             recommended_slice_type = 'stateful_success_slice'
             planned_slice = 'S2'
-            first_executable_carrier = 'src/Carrier.java#dispose'
+            first_executable_carrier = 'com.example.workflow.StatefulTaskProcessor.handleTaskResponse'
             proof_required = @('status transition writes expected side effect')
             forbidden_proof = @('mock_only')
-            open_sibling_surfaces = @('src/Carrier.java#dispose')
+            open_sibling_surfaces = @('com.example.workflow.StatefulTaskProcessor.handleTaskResponse')
             open_sibling_count = 1
         }
     )
     coverage_cap = 100
 } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ledgerPath -Encoding UTF8
 
+[ordered]@{
+    files = @(
+        [ordered]@{
+            path = 'sample/src/main/java/com/example/workflow/StatefulTaskProcessor.java'
+            is_production = $true
+            weight = 'HIGH'
+            layer = 'Service'
+        }
+    )
+} | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'ORACLE_DIFF_ANALYSIS.json') -Encoding UTF8
+
 Set-Content -LiteralPath (Join-Path $root 'REPLAY_PLAN.md') -Encoding UTF8 -Value @'
 | slice | requirement rows | surfaces | existing production carrier(s) | carrier_search_terms | files | tests | DoD | blocker / coverage cap |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| S2 | stateful transition side effect | service | `src/Carrier.java#dispose` | dispose | `src/Carrier.java` | `StatefulCarrierContractTest` | business RED then GREEN | cap if missing |
+| S2 | stateful transition side effect | service | `com.example.workflow.StatefulTaskProcessor.handleTaskResponse` | handleTaskResponse | `src/main/java/com/example/workflow/StatefulTaskProcessor.java` | `StatefulCarrierContractTest` | business RED then GREEN | cap if missing |
 '@
 Set-Content -LiteralPath (Join-Path $root 'TEST_CHARTER.md') -Encoding UTF8 -Value 'S2 uses `StatefulCarrierContractTest` for side-effect proof.'
 
@@ -55,7 +66,7 @@ Set-Content -LiteralPath (Join-Path $root 'TEST_CHARTER.md') -Encoding UTF8 -Val
             status = 'OPEN'
             rank = 1
             rank_score = 95
-            production_carrier = 'src/Carrier.java#dispose'
+            production_carrier = 'com.example.workflow.StatefulTaskProcessor.handleTaskResponse'
             required_assertion = 'status transition writes expected side effect'
             forbidden_substitute = 'mock_only'
         }
@@ -71,7 +82,7 @@ Set-Content -LiteralPath (Join-Path $root 'TEST_CHARTER.md') -Encoding UTF8 -Val
     -SliceIndex 2 `
     -ForcedRequirementFamily stateful_side_effect `
     -ForcedSliceType stateful_success_slice `
-    -ForcedSiblingSurface 'src/Carrier.java#dispose' | Out-Null
+    -ForcedSiblingSurface 'com.example.workflow.StatefulTaskProcessor.handleTaskResponse' | Out-Null
 Assert-True -Name 'Prepare-SliceEvidenceContracts exit code' -Condition ($LASTEXITCODE -eq 0)
 
 $side = Get-Content -LiteralPath (Join-Path $root 'SIDE_EFFECT_EVIDENCE_02.json') -Raw -Encoding UTF8 | ConvertFrom-Json

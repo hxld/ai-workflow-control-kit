@@ -11,12 +11,12 @@
 # Repo-relative resources (templates/, tools/, scripts/) resolve via
 # $PSScriptRoot automatically; they never need configuration.
 project_root: .
-feature_name: example-feature
-requirement_source: README.md
+feature_name: replay-autopilot
+requirement_source: replay-autopilot-goal.md
 base_commit: HEAD
 oracle_branch: main
 oracle_commit: HEAD
-replay_root_base: .\replay-evidence\example-feature\replay-v000
+replay_root_base: .\replay-evidence\replay-autopilot\replay-v000
 run_label: v000
 target_coverage: 90
 max_rounds: 3
@@ -44,6 +44,7 @@ executor_resource_preflight_bypass: false
 maven_settings:
 codex_sandbox: danger-full-access
 codex_approval: never
+codex_hooks_enabled: false
 codex_model:
 codex_reasoning_effort: medium
 claude_model:

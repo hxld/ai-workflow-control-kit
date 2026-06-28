@@ -118,11 +118,18 @@ foreach ($gap in @(Get-StringArray $(if ($null -ne $result -and $result.PSObject
 
 $proofMatchesFamily = $false
 if (-not [string]::IsNullOrWhiteSpace($declaredProofKind)) {
+    $familyProofText = @(
+        $declaredProofKind,
+        $entryCall,
+        (@($expectedOutputs) -join ' '),
+        (@(Get-StringArray $(if ($null -ne $family -and $family.PSObject.Properties['proof_required']) { $family.proof_required } else { @() })) -join ' ')
+    ) -join ' '
     $proofMatchesFamily = (
         $declaredProofKind -match [regex]::Escape($proofFamily) -or
         ($proofFamily -eq 'core_entry' -and $declaredProofKind -match '(?i)real_entry|entry_behavior') -or
         ($proofFamily -eq 'deploy_export_page' -and $declaredProofKind -match '(?i)export|page|route|output') -or
-        ($proofFamily -eq 'stateful_side_effect' -and $declaredProofKind -match '(?i)state|side_effect|transaction|persistence|status|task|log')
+        ($proofFamily -eq 'stateful_side_effect' -and $declaredProofKind -match '(?i)state|side_effect|transaction|persistence|status|task|log') -or
+        ($proofFamily -eq 'config_policy_threshold' -and $declaredProofKind -match '(?i)real_entry|entry_behavior|exact_contract|config|threshold|policy' -and $familyProofText -match '(?i)config|threshold|amount|free_review|auto_flow|clear|reject|persist|save')
     )
 }
 if (-not $proofMatchesFamily) { $issues.Add('proof_kind_does_not_match_family') | Out-Null }

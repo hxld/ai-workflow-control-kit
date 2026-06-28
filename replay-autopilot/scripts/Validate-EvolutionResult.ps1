@@ -192,6 +192,154 @@ function Test-EvolutionFieldValue {
     return (-not [string]::IsNullOrWhiteSpace($value) -and $value -match $Pattern)
 }
 
+function Convert-ToBoolValue {
+    param([object]$Value)
+    if ($null -eq $Value) { return $false }
+    if ($Value -is [bool]) { return [bool]$Value }
+    $text = ([string]$Value).Trim()
+    return ($text -match '^(?i:true|yes|1)$')
+}
+
+function Get-RequiredMachineGatesFromRules {
+    param([string]$RulesPath)
+
+    if (-not (Test-Path -LiteralPath $RulesPath -PathType Leaf)) { return @() }
+
+    try {
+        $raw = Get-Content -LiteralPath $RulesPath -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+        $json = $raw | ConvertFrom-Json
+    } catch {
+        return @('_invalid_verifiable_rules_json')
+    }
+
+    $rules = @()
+    if ($null -ne $json.rules) {
+        $rules = @($json.rules)
+    } else {
+        $rules = @($json)
+    }
+
+    $gates = New-Object System.Collections.Generic.List[string]
+    foreach ($rule in $rules) {
+        if ($null -eq $rule) { continue }
+        if (-not (Convert-ToBoolValue $rule.must_fix)) { continue }
+        $machineGate = ([string]$rule.machine_gate).Trim()
+        if ([string]::IsNullOrWhiteSpace($machineGate)) { continue }
+        $gates.Add($machineGate) | Out-Null
+    }
+    return @($gates | Select-Object -Unique)
+}
+
+function Test-ClosedMachineGateReported {
+    param(
+        [string]$ClosedMachineGatesValue,
+        [string]$MachineGate
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ClosedMachineGatesValue) -or [string]::IsNullOrWhiteSpace($MachineGate)) {
+        return $false
+    }
+    $reported = @($ClosedMachineGatesValue -split '[;,]' | ForEach-Object { ([string]$_).Trim().Trim('`') } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    foreach ($entry in $reported) {
+        if ($entry -eq $MachineGate) { return $true }
+    }
+    return $false
+}
+
+function Get-ChangedToolingPathEvidence {
+    param([string]$EvolutionText)
+
+    $scriptRoot = Split-Path -Parent $PSCommandPath
+    $autopilotRoot = Split-Path -Parent $scriptRoot
+    $evidence = [ordered]@{
+        Entries = @()
+        ExistingEntries = @()
+        MissingEntries = @()
+        ChangedEntries = @()
+        UnchangedEntries = @()
+    }
+
+    $changedFilesValue = Get-EvolutionFieldValue -Text $EvolutionText -Name 'changed_files'
+    if ([string]::IsNullOrWhiteSpace($changedFilesValue)) {
+        return [pscustomobject]$evidence
+    }
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($rawEntry in @($changedFilesValue -split '[;,]')) {
+        $entry = ([string]$rawEntry).Trim().Trim('`').Trim()
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        if ($entry -match '(?i)\bnone\b|^n/a$|^na$') { continue }
+        $entries.Add($entry) | Out-Null
+    }
+
+    $existingEntries = New-Object System.Collections.Generic.List[string]
+    $missingEntries = New-Object System.Collections.Generic.List[string]
+    $changedEntries = New-Object System.Collections.Generic.List[string]
+    $unchangedEntries = New-Object System.Collections.Generic.List[string]
+    $gitRoot = ''
+    try {
+        $gitRootText = git -C $autopilotRoot rev-parse --show-toplevel 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $gitRoot = ($gitRootText | Out-String).Trim()
+        }
+    } catch {
+        $gitRoot = ''
+    }
+    foreach ($entry in $entries) {
+        $candidate = $entry
+        if ($candidate -match '(?i)^replay-autopilot[/\\](.+)$') {
+            $candidate = Join-Path $autopilotRoot $matches[1]
+        } elseif ($candidate -match '^(?i)(scripts|prompts|contracts|tests)[/\\]') {
+            $candidate = Join-Path $autopilotRoot $candidate
+        }
+
+        if ([System.IO.Path]::IsPathRooted($candidate)) {
+            $path = $candidate
+        } else {
+            $path = Join-Path $autopilotRoot $candidate
+        }
+
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $existingEntries.Add($entry) | Out-Null
+            $isChanged = $false
+            if (-not [string]::IsNullOrWhiteSpace($gitRoot)) {
+                try {
+                    $fullPath = [System.IO.Path]::GetFullPath($path)
+                    $fullGitRoot = [System.IO.Path]::GetFullPath($gitRoot)
+                    if ($fullPath.StartsWith($fullGitRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $relativePath = $fullPath.Substring($fullGitRoot.Length).TrimStart([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+                        $statusText = git -C $gitRoot status --porcelain -- $relativePath 2>$null
+                        $isChanged = ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace(($statusText | Out-String).Trim()))
+                    }
+                } catch {
+                    $isChanged = $false
+                }
+            }
+            if ($isChanged) {
+                $changedEntries.Add($entry) | Out-Null
+            } else {
+                $unchangedEntries.Add($entry) | Out-Null
+            }
+        } else {
+            $missingEntries.Add($entry) | Out-Null
+        }
+    }
+
+    $evidence.Entries = @($entries)
+    $evidence.ExistingEntries = @($existingEntries)
+    $evidence.MissingEntries = @($missingEntries)
+    $evidence.ChangedEntries = @($changedEntries)
+    $evidence.UnchangedEntries = @($unchangedEntries)
+    return [pscustomobject]$evidence
+}
+
+function Test-NoneLikeEvolutionValue {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    return ($Value.Trim() -match '(?i)^(?:none|n/a|na|null|empty|no new gate artifacts|no_new_gate_artifacts)$')
+}
+
 function Write-Result {
     param(
         [string]$ReplayRootFull,
@@ -223,12 +371,15 @@ if ($ValidateOnly) {
             'STOP_AND_EVOLVE requires validated evolution result',
             'NO_SOURCE_CHANGE cannot satisfy required tooling experiments',
             'tooling_changes_applied and verification_results are required when stop-loss asks for experiments',
+            'gate_budget_decision is required so STOP_AND_EVOLVE prefers regression tests, gate consolidation, or existing-gate enforcement before new gates',
             'knowledge push failure is non-blocking only when the expected knowledge version is locally committed and the working tree is clean'
         )
         RequiredFieldsWhenStopAndEvolve = @(
             'final_status - VALIDATED_TOOLING_EVOLUTION or BLOCKED_NEEDS_EVIDENCE',
             'tooling_changes_applied - true',
             'stop_and_evolve_satisfied - true',
+            'gate_budget_decision - regression_test, gate_consolidation, existing_gate_enforcement, or new_gate_exception',
+            'new_gate_artifacts - none, or a list of new verify/carrier/machine_gate artifacts',
             'verification_results - PASS or VALIDATED',
             'changed_files - actual replay-autopilot files changed',
             'closed_machine_gates - machine_gate values from verifiable rules',
@@ -250,6 +401,8 @@ $stopLossText = Read-TextIfExists (Join-Path $replayRootFull 'STOP_LOSS_DECISION
 $autopilotDecisionText = Read-TextIfExists (Join-Path $replayRootFull 'AUTOPILOT_DECISION.md')
 $nextExperimentPlanText = Read-TextIfExists (Join-Path $replayRootFull 'NEXT_EXPERIMENT_PLAN.md')
 $evolutionPromptText = Read-TextIfExists (Join-Path $replayRootFull 'EVOLUTION_PROMPT.md')
+$verifiableRulesPath = Join-Path $replayRootFull 'VERIFIABLE_RULES.json'
+$requiredMachineGates = @(Get-RequiredMachineGatesFromRules -RulesPath $verifiableRulesPath)
 $warnings = New-Object System.Collections.Generic.List[string]
 
 $expectedKnowledgeVersion = ''
@@ -291,10 +444,20 @@ if ([string]::IsNullOrWhiteSpace($evolutionText)) {
     $hasStopSatisfied = Test-EvolutionFieldValue -Text $evolutionText -Name 'stop_and_evolve_satisfied' -Pattern '(?i)^true$'
     $hasValidatedStatus = Test-EvolutionFieldValue -Text $evolutionText -Name 'final_status' -Pattern '(?i)VALIDATED'
     $hasToolingChanges = Test-EvolutionFieldValue -Text $evolutionText -Name 'tooling_changes_applied' -Pattern '(?i)^true$'
+    $gateBudgetDecision = Get-EvolutionFieldValue -Text $evolutionText -Name 'gate_budget_decision'
+    $validGateBudgetDecisions = @('regression_test', 'gate_consolidation', 'existing_gate_enforcement', 'new_gate_exception')
+    $hasGateBudgetDecision = -not [string]::IsNullOrWhiteSpace($gateBudgetDecision)
+    $gateBudgetDecisionValid = $hasGateBudgetDecision -and ($validGateBudgetDecisions -contains $gateBudgetDecision.Trim().ToLowerInvariant())
+    $newGateArtifacts = Get-EvolutionFieldValue -Text $evolutionText -Name 'new_gate_artifacts'
+    $hasNewGateArtifactsField = -not [string]::IsNullOrWhiteSpace($newGateArtifacts)
+    $declaresNewGateArtifacts = $hasNewGateArtifactsField -and -not (Test-NoneLikeEvolutionValue -Value $newGateArtifacts)
+    $newGateExceptionRationale = Get-EvolutionFieldValue -Text $evolutionText -Name 'new_gate_exception_rationale'
+    $closedMachineGatesValue = Get-EvolutionFieldValue -Text $evolutionText -Name 'closed_machine_gates'
     $hasPassingVerification = Test-EvolutionFieldValue -Text $evolutionText -Name 'verification_results' -Pattern '(?i)(PASS|VALIDATED)'
     if (-not $hasPassingVerification) {
         $hasPassingVerification = Test-EvolutionFieldValue -Text $evolutionText -Name 'verification_result' -Pattern '(?i)(PASS|VALIDATED)'
     }
+    $changedToolingEvidence = Get-ChangedToolingPathEvidence -EvolutionText $evolutionText
     $pushedCommitValue = Get-EvolutionFieldValue -Text $evolutionText -Name 'pushed_commit'
     $hasPushedCommit = (-not [string]::IsNullOrWhiteSpace($pushedCommitValue) -and $pushedCommitValue -notmatch '(?i)^(?:none|n/a|blocked|not attempted|manual|local-only)\b')
     $mentionsToolingDiff = $evolutionText -match '(?i)(replay-autopilot[/\\](scripts|prompts|contracts)|scripts[/\\]|prompts[/\\]|contracts[/\\]|Run-ReplayLoop\.ps1|Run-SliceLoop\.ps1|Verify-|Validate-)'
@@ -358,9 +521,56 @@ if ([string]::IsNullOrWhiteSpace($evolutionText)) {
     if (-not $hasStopSatisfied) { $issues.Add('stop_and_evolve_satisfied_missing_or_false') }
     if (-not $hasValidatedStatus) { $issues.Add('final_status_not_validated') }
     if (-not $hasToolingChanges) { $issues.Add('tooling_changes_applied_missing_or_false') }
+    if (-not $hasGateBudgetDecision) {
+        $issues.Add('gate_budget_decision_missing')
+    } elseif (-not $gateBudgetDecisionValid) {
+        $issues.Add("gate_budget_decision_invalid:$gateBudgetDecision")
+    }
+    if (-not $hasNewGateArtifactsField) {
+        $issues.Add('new_gate_artifacts_missing')
+    }
+    if ($declaresNewGateArtifacts -and $gateBudgetDecision.Trim().ToLowerInvariant() -ne 'new_gate_exception') {
+        $issues.Add('new_gate_artifacts_require_new_gate_exception_decision')
+    }
+    if ($gateBudgetDecision.Trim().ToLowerInvariant() -eq 'new_gate_exception') {
+        if ([string]::IsNullOrWhiteSpace($newGateExceptionRationale)) {
+            $issues.Add('new_gate_exception_rationale_missing')
+        } else {
+            if ($newGateExceptionRationale -notmatch '(?i)(existing_gate|existing gate)') {
+                $issues.Add('new_gate_exception_existing_gate_gap_missing')
+            }
+            if ($newGateExceptionRationale -notmatch '(?i)(regression|Test-v)') {
+                $issues.Add('new_gate_exception_regression_test_missing')
+            }
+            if ($newGateExceptionRationale -notmatch '(?i)(runner|Run-ReplayLoop|Run-SliceLoop)') {
+                $issues.Add('new_gate_exception_runner_integration_missing')
+            }
+        }
+    }
     if (-not $hasPassingVerification) { $issues.Add('verification_results_missing_or_not_pass') }
+    foreach ($requiredMachineGate in $requiredMachineGates) {
+        if ($requiredMachineGate -eq '_invalid_verifiable_rules_json') {
+            $issues.Add('verifiable_rules_json_invalid')
+            continue
+        }
+        if (-not (Test-ClosedMachineGateReported -ClosedMachineGatesValue $closedMachineGatesValue -MachineGate $requiredMachineGate)) {
+            $issues.Add("closed_machine_gate_missing:$requiredMachineGate")
+        }
+    }
     if (-not $hasPushedCommit -and -not $localKnowledgeCommitAccepted) { $issues.Add('pushed_commit_missing_or_blocked') }
     if (-not $mentionsToolingDiff) { $issues.Add('tooling_changed_files_not_reported') }
+    if (@($changedToolingEvidence.ExistingEntries).Count -eq 0) {
+        $issues.Add('tooling_changed_files_no_existing_replay_autopilot_file')
+    }
+    if (@($changedToolingEvidence.ChangedEntries).Count -eq 0) {
+        $issues.Add('tooling_changed_files_no_git_diff_entry')
+    }
+    foreach ($unchangedChangedFile in @($changedToolingEvidence.UnchangedEntries)) {
+        $issues.Add("tooling_changed_file_not_in_git_diff:$unchangedChangedFile")
+    }
+    foreach ($missingChangedFile in @($changedToolingEvidence.MissingEntries)) {
+        $issues.Add("tooling_changed_file_missing:$missingChangedFile")
+    }
     if ($isNoSourceChange -and -not $hasToolingChanges) { $issues.Add('no_source_change_cannot_satisfy_stop_and_evolve') }
     if ($hasCommitOrPushFailure) {
         if ($localKnowledgeCommitAccepted) {
@@ -395,6 +605,8 @@ if ($issues.Count -gt 0) {
     Write-Host '  - final_status: VALIDATED_TOOLING_EVOLUTION (or BLOCKED_NEEDS_EVIDENCE)'
     Write-Host '  - tooling_changes_applied: true'
     Write-Host '  - stop_and_evolve_satisfied: true'
+    Write-Host '  - gate_budget_decision: regression_test | gate_consolidation | existing_gate_enforcement | new_gate_exception'
+    Write-Host '  - new_gate_artifacts: none (or list new gate artifacts with new_gate_exception_rationale)'
     Write-Host '  - verification_results: PASS (or VALIDATED)'
     Write-Host '  - changed_files: <actual replay-autopilot scripts/prompts/tests changed>'
     Write-Host '  - closed_machine_gates: <machine_gate values from verifiable rules>'

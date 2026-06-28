@@ -145,6 +145,48 @@ try {
     $familyProof = Get-Content -LiteralPath (Join-Path $replayRoot 'FAMILY_PROOF_LEDGER_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([bool]$familyProof.coverage_credit_authorized) 'family proof ledger must authorize coverage credit only after accepted proof'
 
+    @(
+        @{
+            id = 'config_policy_threshold'
+            required = $true
+            proof_required = @('persist_free_review_amount', 'clear_updates_database', 'reject_invalid_amounts', 'auto_flow_gate_reads_config')
+        }
+    ) | ForEach-Object {
+        @{ families = @($_) } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'REQUIREMENT_FAMILY_LEDGER.json') -Encoding UTF8
+    }
+    @{
+        schema = 'slice_execution_contract.v1'
+        family_id = 'config_policy_threshold'
+        production_entry_qn = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+        side_effect_or_output_probe = 'persist_free_review_amount; clear_updates_database; reject_invalid_amounts; auto_flow_gate_reads_config'
+        must_not_assertion = 'do not insert invalid zero-threshold config'
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $sliceExecutionContract -Encoding UTF8
+    @{
+        slice_index = 1
+        slice_status = 'DONE'
+        proof_kind = 'real_entry_behavior'
+        production_boundary = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+        side_effect_evidence = @{
+            status = 'CLOSED'
+            entry_call = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+            expected_writes_or_outputs = @('persist_free_review_amount', 'clear_updates_database', 'reject_invalid_amounts', 'auto_flow_gate_reads_config')
+        }
+        must_not_assertions = @('invalid zero-threshold request must not call mapper.insertSelective')
+        gap_flags = @()
+    } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRoot 'SLICE_RESULT_01.json') -Encoding UTF8
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'verify_family_proof_ledger.ps1') `
+        -FamilyLedger (Join-Path $replayRoot 'REQUIREMENT_FAMILY_LEDGER.json') `
+        -SliceContract $sliceExecutionContract `
+        -SliceResult (Join-Path $replayRoot 'SLICE_RESULT_01.json') | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'family proof ledger must accept config real-entry behavior proof with config outputs'
+    $configFamilyProof = Get-Content -LiteralPath (Join-Path $replayRoot 'FAMILY_PROOF_LEDGER_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([string]$configFamilyProof.proof_family -eq 'config_policy_threshold') 'config family proof ledger must keep config proof family'
+    Assert-True ([bool]$configFamilyProof.coverage_credit_authorized) 'config family proof ledger must authorize coverage credit after accepted config proof'
+
+    @{
+        families = @(@{ id = 'core_entry'; required = $true; proof_required = 'real_entry_behavior' })
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'REQUIREMENT_FAMILY_LEDGER.json') -Encoding UTF8
+    $execution | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $sliceExecutionContract -Encoding UTF8
     @{
         slice_index = 1
         slice_status = 'DONE'

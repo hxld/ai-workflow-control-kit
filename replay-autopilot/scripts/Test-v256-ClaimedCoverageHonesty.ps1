@@ -93,16 +93,17 @@ if ($LASTEXITCODE -ne 0) {
 
 $text = Get-Content -LiteralPath $roundResult -Raw -Encoding UTF8
 Assert-Contains $text 'blind_self_assessed_coverage: 10' 'blind self-assessed coverage was not capped to ledger cap'
-Assert-Contains $text 'verification_capped_coverage: 10' 'verification capped coverage was not capped to ledger cap'
+Assert-Contains $text 'verification_capped_coverage: 0' 'verification capped coverage was not capped to verifier-adjusted coverage'
 Assert-Contains $text 'coverage_cap: 10' 'coverage cap was not capped to ledger cap'
 Assert-Contains $text 'final_status: BLOCKED' 'final status was not blocked when final_pass_allowed=false'
 Assert-Contains $text 'original_blind_self_assessed_coverage: 90' 'runner enforcement did not preserve original blind coverage'
+Assert-Contains $text 'verifier_adjusted_coverage: 0' 'runner enforcement did not disclose verifier-adjusted coverage'
 Assert-Contains $text 'wrong_test_surface' 'runner enforcement did not disclose authorization blockers'
 Assert-NotContains $text 'final_status: PASS' 'PASS status leaked after enforcement'
 
 [ordered]@{
     status = 'PASS'
-    assertions = 10
+    assertions = 11
     temp_root = $tempRoot
 } | ConvertTo-Json -Depth 6
 

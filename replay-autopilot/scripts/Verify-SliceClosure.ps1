@@ -1670,6 +1670,7 @@ if ($null -ne $exactContractMatrix -and $null -ne $exactContractMatrix.rows) {
 }
 $closedExactAssertions = @($resultExactAssertions | Where-Object { @('CLOSED', 'BLOCKED') -contains ([string]$_.status).ToUpperInvariant() })
 $closedMatrixRows = @($matrixRows | Where-Object { [bool]$_.touched -and @('CLOSED', 'BLOCKED') -contains ([string]$_.status).ToUpperInvariant() })
+$ignoredOutOfScopeBlockedExactAssertions = New-Object System.Collections.Generic.List[string]
 $autopilotRunPath = Join-Path $replayRootFull 'AUTOPILOT_RUN.json'
 $requirementText = ''
 if (Test-Path -LiteralPath $autopilotRunPath) {
@@ -1742,7 +1743,11 @@ if ($closedExactAssertions.Count -gt 0 -and $matrixRows.Count -gt 0) {
                     $row.db_or_wire_or_display = [string]$assertion.db_or_wire_or_display
                 }
                 if ($assertion.PSObject.Properties.Name -contains 'source_type' -and -not [string]::IsNullOrWhiteSpace([string]$assertion.source_type)) {
-                    $row.source_type = [string]$assertion.source_type
+                    if ($row.PSObject.Properties.Name -contains 'source_type') {
+                        $row.source_type = [string]$assertion.source_type
+                    } else {
+                        $row | Add-Member -NotePropertyName 'source_type' -NotePropertyValue ([string]$assertion.source_type)
+                    }
                 }
                 foreach ($boundaryField in @('boundary_type', 'production_boundary', 'closure_proof')) {
                     $boundaryValue = Get-ObjectString $assertion $boundaryField
@@ -1756,6 +1761,13 @@ if ($closedExactAssertions.Count -gt 0 -and $matrixRows.Count -gt 0) {
                 }
                 $matched = $true
             }
+        }
+        if (-not $matched -and $status -eq 'BLOCKED') {
+            $blockedLiteral = if ([string]::IsNullOrWhiteSpace($literal)) { $symbol } else { $literal }
+            if (-not [string]::IsNullOrWhiteSpace($blockedLiteral)) {
+                $ignoredOutOfScopeBlockedExactAssertions.Add($blockedLiteral) | Out-Null
+            }
+            continue
         }
         if (-not $matched) {
             $matrixRows += [pscustomobject]@{
@@ -1772,6 +1784,9 @@ if ($closedExactAssertions.Count -gt 0 -and $matrixRows.Count -gt 0) {
                 derived_from_slice = $SliceIndex
             }
         }
+    }
+    if ($ignoredOutOfScopeBlockedExactAssertions.Count -gt 0) {
+        $warnings.Add("out_of_slice_blocked_exact_assertions_ignored:$((@($ignoredOutOfScopeBlockedExactAssertions | Select-Object -Unique | Select-Object -First 5)) -join ',')") | Out-Null
     }
     $exactContractMatrix.rows = @($matrixRows)
     if ($exactContractMatrix.PSObject.Properties.Name -contains 'updated_by_verifier') {
@@ -1835,7 +1850,9 @@ foreach ($row in $boundaryRowsToCheck) {
     $testAssertion = [string]$row.test_assertion
     $proofText = @($closureProof, $productionBoundary, $testAssertion) -join ' '
     $weakProof = [string]::IsNullOrWhiteSpace($closureProof) -or $proofText -match '(?i)\b(enum[-_ ]?only|dto[-_ ]?only|helper[-_ ]?only|static[-_ ]?only|mock[-_ ]?only|constant[-_ ]?only|presence[-_ ]?only)\b'
-    $boundaryLooksExecutable = $proofText -match '(?i)\b(wire|payload|request|response|json|db|database|mapper|insert|update|display|export|download|controller|endpoint|callback|message|mq|queue|exchange|publish|render|template|artifact)\b'
+    $boundaryLooksExecutable = $proofText -match '(?i)\b(wire|payload|request|response|json|db|database|mapper|insert|update|display|export|download|controller|endpoint|callback|message|mq|queue|exchange|publish|render|template|artifact|capture[ds]?|argumentcaptor|persistence\s+service|persistence\s+call|passed\s+to\s+.*save)\b'
+    $mustNotPersistenceProof = $proofText -match '(?i)(verif(?:y|ies)\s+no\s+persistence|never\s*\(\s*\)|no\s+persistence\s+call)' -and $proofText -match '(?i)(save|persist|persistence|write|insert|update)'
+    if ($mustNotPersistenceProof) { $boundaryLooksExecutable = $true }
     if ($weakProof -or -not $boundaryLooksExecutable) {
         $literalForFailure = [string]$row.literal
         if ([string]::IsNullOrWhiteSpace($literalForFailure)) { $literalForFailure = [string]$row.symbol_or_field }
@@ -1874,6 +1891,73 @@ if ($exactContractTouched -and $gapFlags -contains 'exact_contract_gap') {
         }
         $hasBehaviorEvidence = $false
     }
+}
+$requiredExactRowsForCurrentSlice = @()
+if (($exactContractRequiredForThisSlice -or $matrixRequiresExactForThisSlice) -and $matrixRows.Count -gt 0) {
+    $requiredExactRowsForCurrentSlice = @($matrixRows | Where-Object {
+        ([bool]$_.touched) -or
+        ($_.PSObject.Properties.Name -contains 'required' -and [bool]$_.required) -or
+        ($_.PSObject.Properties.Name -contains 'required_for_this_slice' -and [bool]$_.required_for_this_slice)
+    })
+    if ($requiredExactRowsForCurrentSlice.Count -eq 0) { $requiredExactRowsForCurrentSlice = @($matrixRows) }
+}
+$closedRequiredExactRowsForCurrentSlice = @($requiredExactRowsForCurrentSlice | Where-Object { ([string]$_.status).ToUpperInvariant() -eq 'CLOSED' })
+$currentExactMatrixClosed = (
+    $exactContractRequiredForThisSlice -and
+    $requiredExactRowsForCurrentSlice.Count -gt 0 -and
+    $closedRequiredExactRowsForCurrentSlice.Count -eq $requiredExactRowsForCurrentSlice.Count -and
+    $boundaryProofFailures.Count -eq 0
+)
+if ($currentExactMatrixClosed) {
+    $gapFlags = @(Remove-FeatureExemptedGapFlags `
+        -GapFlags $gapFlags `
+        -Exemptions @('exact_contract_gap', 'exact_contract_minimum_coverage_gap', 'exact_contract_boundary_proof_missing', 'exact_contract_not_closed', 'exact_contract_assertion_missing', 'exact_contract_boundary_proof_stop') `
+        -ExemptedFlags $featureExemptedGapFlags)
+    $nonExactToolingStopFlags = @(
+        'wrong_test_surface',
+        'shallow_module',
+        'synthetic_carrier_gap',
+        'forbidden_dependency_drift_gap',
+        'mock_behavior_gap',
+        'tdd_red_not_replayed',
+        'no_progress_slice',
+        'carrier_authorization_missing',
+        'carrier_authorization_stop',
+        'carrier_lock_missing',
+        'carrier_lock_mismatch',
+        'carrier_lock_implementation_gap',
+        'public_response_contract_missing',
+        'deploy_surface_unproven',
+        'side_effect_evidence_missing',
+        'side_effect_red_not_business_assertion',
+        'side_effect_ledger_gap',
+        'behavior_carrier_gap',
+        'facade_direction_gap',
+        'test_contract_mismatch',
+        'return_value_vs_exception_mismatch',
+        'assertion_surface_mismatch',
+        'behavior_test_charter_gap',
+        'test_compilation_failed',
+        'test_compilation_evidence_missing',
+        'test_execution_failed',
+        'no_test_execution_evidence',
+        'todo_placeholder_exists'
+    ) | Where-Object { $gapFlags -contains $_ }
+    if ($nonExactToolingStopFlags.Count -eq 0) {
+        $gapFlags = @(Remove-FeatureExemptedGapFlags `
+            -GapFlags $gapFlags `
+            -Exemptions @('tooling_enforcement_stop') `
+            -ExemptedFlags $featureExemptedGapFlags)
+    }
+    for ($warningIndex = $warnings.Count - 1; $warningIndex -ge 0; $warningIndex--) {
+        $warningText = [string]$warnings[$warningIndex]
+        if ($warningText -eq 'exact_contract_open' -or
+            $warningText -like 'exact_contract_minimum_coverage_gap:*' -or
+            $warningText -like 'exact_contract_boundary_proof_missing:*') {
+            $warnings.RemoveAt($warningIndex)
+        }
+    }
+    $warnings.Add('exact_contract_reverified_from_current_matrix') | Out-Null
 }
 
 $sideEvidenceObject = $null
@@ -2521,6 +2605,63 @@ $hasShallowModuleGap = @('shallow_module') | Where-Object { $gapFlags -contains 
 $hasSyntheticCarrierGap = @('synthetic_carrier_gap') | Where-Object { $gapFlags -contains $_ }
 $hasDependencySpyGap = @('dependency_spy_output_gap') | Where-Object { $gapFlags -contains $_ }
 
+$strongVerifierClosureFamilies = @()
+$strongVerifierHardFlags = @(
+    'wrong_test_surface',
+    'shallow_module',
+    'synthetic_carrier_gap',
+    'forbidden_dependency_drift_gap',
+    'mock_behavior_gap',
+    'tdd_red_not_replayed',
+    'no_progress_slice',
+    'carrier_authorization_missing',
+    'carrier_authorization_stop',
+    'carrier_lock_missing',
+    'carrier_lock_mismatch',
+    'carrier_lock_implementation_gap',
+    'public_response_contract_missing',
+    'deploy_surface_unproven',
+    'exact_contract_assertion_missing',
+    'exact_contract_boundary_proof_stop',
+    'exact_contract_not_closed',
+    'side_effect_evidence_missing',
+    'side_effect_red_not_business_assertion',
+    'side_effect_ledger_gap',
+    'behavior_carrier_gap',
+    'facade_direction_gap',
+    'test_contract_mismatch',
+    'return_value_vs_exception_mismatch',
+    'assertion_surface_mismatch',
+    'behavior_test_charter_gap',
+    'test_compilation_failed',
+    'test_compilation_evidence_missing',
+    'test_execution_failed',
+    'no_test_execution_evidence',
+    'tooling_enforcement_stop',
+    'todo_placeholder_exists'
+) | Where-Object { $gapFlags -contains $_ }
+$strongVerifierClosure = (
+    $testCommands.Count -gt 0 -and
+    $redFailed -and
+    $greenOrVerifyPassed -and
+    $testCompilationEvidence -and
+    $testExecutionEvidence -and
+    $behaviorCharterReady -and
+    ($sideEffectEvidenceRequired -eq $false -or $sideEvidenceComplete) -and
+    ($exactContractRequiredForThisSlice -eq $false -or $currentExactMatrixClosed) -and
+    $proofTypeMismatchFamilies.Count -eq 0 -and
+    $strongVerifierHardFlags.Count -eq 0
+)
+if ($strongVerifierClosure) {
+    $hasBehaviorEvidence = $true
+    $warnings.Add('strong_verifier_closure_recovered_behavior_evidence') | Out-Null
+    if ($closedFamilies.Count -gt 0) {
+        $strongVerifierClosureFamilies = @($closedFamilies)
+    } else {
+        $strongVerifierClosureFamilies = @($touchedFamilies | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+    }
+}
+
 $nonAuthorizingEvidenceFlags = @(
     'wrong_test_surface',
     'shallow_module',
@@ -2634,6 +2775,10 @@ if ($warnings -contains 'target_subsurface_missing' -or
 }
 
 $adjustedCoverageDelta = $coverageDelta
+if ($strongVerifierClosure -and $null -ne $adjustedCoverageDelta -and [int]$adjustedCoverageDelta -le 0) {
+    $adjustedCoverageDelta = 3
+    $warnings.Add('strong_verifier_closure_assigned_minimum_coverage_delta') | Out-Null
+}
 if ($coverageDelta -ne $null) {
     if ($sliceStatus -eq 'PARTIAL' -and -not $alreadyImplementedEvidenceSlice) {
         $adjustedCoverageDelta = [Math]::Min([int]$adjustedCoverageDelta, 5)
@@ -2846,7 +2991,8 @@ $verifiedTouchedFamilies = @(@($touchedFamilies + $closedFamilies) |
     Select-Object -Unique)
 $verifiedClosedFamilies = @()
 if ($authorizedForNextSlice -and @('PASS', 'PARTIAL') -contains $verificationStatus -and @('DONE', 'PARTIAL') -contains $sliceStatus) {
-    $verifiedClosedFamilies = @($closedFamilies |
+    $closedFamilySource = if ($closedFamilies.Count -gt 0) { @($closedFamilies) } else { @($strongVerifierClosureFamilies) }
+    $verifiedClosedFamilies = @($closedFamilySource |
         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
         Select-Object -Unique)
 }

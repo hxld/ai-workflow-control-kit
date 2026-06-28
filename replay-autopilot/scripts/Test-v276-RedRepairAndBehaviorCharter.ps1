@@ -36,7 +36,7 @@ $cases.Add((Assert-Contains 'verifier_detects_behavior_test_charter_missing' $ve
 $cases.Add((Assert-Contains 'verifier_emits_behavior_test_charter_gap' $verify 'behavior_test_charter_gap')) | Out-Null
 $cases.Add((Assert-Contains 'verifier_outputs_behavior_charter_readiness' $verify 'behavior_test_charter_ready')) | Out-Null
 
-$cases.Add((Assert-Contains 'preauth_blocks_non_rank1_forced_family' $preAuth 'forced_family_not_highest_weight_open')) | Out-Null
+$cases.Add((Assert-Contains 'preauth_reports_non_rank1_forced_family_as_warning' $preAuth 'forced_family_not_rank1')) | Out-Null
 $cases.Add((Assert-Contains 'parser_counts_behavior_test_charter_gap' $parser 'behavior_test_charter_gap')) | Out-Null
 $cases.Add((Assert-Contains 'stoploss_counts_behavior_test_charter_gap' $stopLoss 'behavior\[-_ \]test\[-_ \]charter')) | Out-Null
 

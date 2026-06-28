@@ -16,6 +16,9 @@ param(
     [int]$CompletionQuietSeconds = 90,
     [int]$SilentNoOutputTimeoutSeconds = 0,
     [string]$Name = 'agent',
+    [string]$CodexHooksEnabled = '',
+    [string]$SkillSourceRoot = '',
+    [string]$RuntimeSkillRoot = '',
     [switch]$ValidateOnly
 )
 
@@ -182,17 +185,47 @@ function Resolve-RequiredPath {
     return $full
 }
 
-function Get-ConfigProjectRoot {
+function Get-SimpleConfigValue {
+    param([string]$Key)
     $configPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\config.yaml'))
     if (-not (Test-Path -LiteralPath $configPath)) {
         return ''
     }
     foreach ($line in (Get-Content -LiteralPath $configPath -Encoding UTF8)) {
-        if ($line -match '^\s*project_root\s*:\s*(.+?)\s*$') {
-            return [System.IO.Path]::GetFullPath($matches[1].Trim().Trim('"').Trim("'"))
+        if ($line -match ('^\s*' + [regex]::Escape($Key) + '\s*:\s*(.*?)\s*$')) {
+            return $matches[1].Trim().Trim('"').Trim("'")
         }
     }
     return ''
+}
+
+function Get-ConfigProjectRoot {
+    $value = Get-SimpleConfigValue 'project_root'
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return ''
+    }
+    return [System.IO.Path]::GetFullPath($value)
+}
+
+function ConvertTo-BoolConfig {
+    param(
+        [string]$Value,
+        [bool]$Default = $false
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $Default }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    return @('1', 'true', 'yes', 'y', 'on') -contains $normalized
+}
+
+function Resolve-CodexHooksEnabled {
+    param([string]$ExplicitValue)
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitValue)) {
+        return ConvertTo-BoolConfig -Value $ExplicitValue -Default $false
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:REPLAY_CODEX_HOOKS_ENABLED)) {
+        return ConvertTo-BoolConfig -Value $env:REPLAY_CODEX_HOOKS_ENABLED -Default $false
+    }
+    return ConvertTo-BoolConfig -Value (Get-SimpleConfigValue 'codex_hooks_enabled') -Default $false
 }
 
 function Get-GitStatusText {
@@ -213,6 +246,139 @@ function Get-GitStatusText {
     } finally {
         $ErrorActionPreference = $oldErrorActionPreference
     }
+}
+
+function ConvertTo-GitStatusPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ''
+    }
+    $value = $Path.Trim()
+    if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
+        $value = $value.Substring(1, $value.Length - 2)
+    }
+    return (($value -replace '\\', '/') -replace '^\./', '')
+}
+
+function Convert-GitStatusTextToPathMap {
+    param([string]$StatusText)
+    $map = @{}
+    foreach ($line in @($StatusText -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.Length -lt 4) {
+            continue
+        }
+        $entry = $line.TrimEnd()
+        $pathText = $entry.Substring(3).Trim()
+        if ([string]::IsNullOrWhiteSpace($pathText)) {
+            continue
+        }
+        foreach ($pathPart in @($pathText -split '\s+->\s+')) {
+            $normalized = ConvertTo-GitStatusPath $pathPart
+            if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+                $map[$normalized] = $entry
+            }
+        }
+    }
+    return $map
+}
+
+function Get-GitStatusChangedPaths {
+    param([string]$Before, [string]$After)
+    $beforeMap = Convert-GitStatusTextToPathMap -StatusText $Before
+    $afterMap = Convert-GitStatusTextToPathMap -StatusText $After
+    $changed = @{}
+
+    foreach ($path in @($afterMap.Keys)) {
+        if (-not $beforeMap.ContainsKey($path) -or $beforeMap[$path] -ne $afterMap[$path]) {
+            $changed[$path] = $true
+        }
+    }
+    foreach ($path in @($beforeMap.Keys)) {
+        if (-not $afterMap.ContainsKey($path)) {
+            $changed[$path] = $true
+        }
+    }
+
+    return @($changed.Keys | Sort-Object)
+}
+
+function Test-ProtectedRootStatusChangeAllowed {
+    param(
+        [string]$Before,
+        [string]$After,
+        [string[]]$AllowedPrefixes = @()
+    )
+    if ($After -eq $Before) {
+        return $true
+    }
+
+    $directoryPrefixes = New-Object System.Collections.Generic.List[string]
+    $filePaths = New-Object System.Collections.Generic.List[string]
+    foreach ($allowedPrefix in @($AllowedPrefixes)) {
+        $normalizedAllowed = ConvertTo-GitStatusPath $allowedPrefix
+        if ([string]::IsNullOrWhiteSpace($normalizedAllowed)) {
+            continue
+        }
+        if ($normalizedAllowed.EndsWith('/')) {
+            [void]$directoryPrefixes.Add($normalizedAllowed)
+        } else {
+            [void]$filePaths.Add($normalizedAllowed)
+        }
+    }
+    if ($directoryPrefixes.Count -eq 0 -and $filePaths.Count -eq 0) {
+        return $false
+    }
+
+    $changedPaths = @(Get-GitStatusChangedPaths -Before $Before -After $After)
+    if ($changedPaths.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($path in $changedPaths) {
+        $normalizedPath = ConvertTo-GitStatusPath $path
+        $allowed = $false
+        foreach ($filePath in $filePaths) {
+            if ($normalizedPath.Equals($filePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $allowed = $true
+                break
+            }
+        }
+        if ($allowed) {
+            continue
+        }
+        foreach ($prefix in $directoryPrefixes) {
+            if ($normalizedPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $allowed = $true
+                break
+            }
+        }
+        if (-not $allowed) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-ToolingEvolutionStage {
+    param([string]$Name)
+    return ($Name -match '^(?i:evolution|evolution-repair)$')
+}
+
+function Get-ProtectedRootAllowedMutationPrefixes {
+    param([string]$Name)
+    if (Test-ToolingEvolutionStage -Name $Name) {
+        return @(
+            'replay-autopilot/',
+            'workflow-history/',
+            'agents/skills/',
+            'custom-skills-history/',
+            'custom-skills-zh/',
+            'guide-sections/',
+            'custom-skills-guide.md',
+            'CURRENT_VERSION.md'
+        )
+    }
+    return @()
 }
 
 function Resolve-ExecutorCommand {
@@ -448,7 +614,8 @@ function Receive-JobWithTimeout {
         [string]$StderrLogPath = '',
         [string]$LastMessagePath = '',
         [int]$SilentNoOutputTimeoutSeconds = 0,
-        [string]$GuardLogPath = ''
+        [string]$GuardLogPath = '',
+        [string[]]$ProtectedRootAllowedMutationPrefixes = @()
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -606,15 +773,18 @@ function Receive-JobWithTimeout {
         if (-not [string]::IsNullOrWhiteSpace($ProtectedRoot) -and $ProtectedRoot -ine $WorkDir) {
             $protectedRootStatusCurrent = Get-GitStatusText -Repo $ProtectedRoot
             if ($protectedRootStatusCurrent -ne $ProtectedRootStatusBefore) {
-                Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
-                Stop-Job -Job $Job | Out-Null
-                Remove-Job -Job $Job -Force | Out-Null
-                [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
-                return [pscustomobject]@{
-                    ExitCode = 92
-                    CompletionMode = 'protected_root_modified_during_execution'
-                    GuardReasons = 'protected_root_status_changed'
-                    GuardLogPath = $GuardLogPath
+                $protectedRootChangeAllowed = Test-ProtectedRootStatusChangeAllowed -Before $ProtectedRootStatusBefore -After $protectedRootStatusCurrent -AllowedPrefixes $ProtectedRootAllowedMutationPrefixes
+                if (-not $protectedRootChangeAllowed) {
+                    Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
+                    Stop-Job -Job $Job | Out-Null
+                    Remove-Job -Job $Job -Force | Out-Null
+                    [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+                    return [pscustomobject]@{
+                        ExitCode = 92
+                        CompletionMode = 'protected_root_modified_during_execution'
+                        GuardReasons = 'protected_root_status_changed'
+                        GuardLogPath = $GuardLogPath
+                    }
                 }
             }
         }
@@ -721,6 +891,8 @@ $protectedRootStatusBefore = ''
 if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and (Resolve-RequiredPath $protectedRoot 'ProtectedRoot') -ine $workDirFull) {
     $protectedRootStatusBefore = Get-GitStatusText -Repo $protectedRoot
 }
+$protectedRootAllowedMutationPrefixes = @(Get-ProtectedRootAllowedMutationPrefixes -Name $Name)
+$protectedRootMutationPolicy = if ($protectedRootAllowedMutationPrefixes.Count -gt 0) { 'allow_listed_tooling_changes' } else { 'fail_closed' }
 
 $stdoutLog = Join-Path $logDirFull "$Name.stdout.log"
 $stderrLog = Join-Path $logDirFull "$Name.stderr.log"
@@ -728,6 +900,7 @@ $lastMessage = Join-Path $logDirFull "$Name.last-message.md"
 $metaPath = Join-Path $logDirFull "$Name.exec.json"
 $goalSpecPath = Join-Path $logDirFull "$Name.goalspec.json"
 $proofSpecPath = Join-Path $logDirFull "$Name.proofspec.json"
+$workflowFidelityPath = Join-Path $logDirFull "$Name.workflow-fidelity.json"
 $commandGuardLog = Join-Path $logDirFull "$Name.command-guard.jsonl"
 $rgConfigPath = Join-Path $PSScriptRoot 'ripgrep-autopilot.config'
 $toolPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools'))
@@ -735,6 +908,58 @@ $commandSource = ''
 
 if ($Executor -ne 'manual') {
     $commandSource = Resolve-ExecutorCommand $Executor
+}
+
+$codexHooksEnabledActual = Resolve-CodexHooksEnabled -ExplicitValue $CodexHooksEnabled
+$workflowFidelityStatus = 'BLOCKED'
+try {
+    $workflowArgs = @(
+        '-OutputPath', $workflowFidelityPath,
+        '-Executor', $Executor,
+        '-CommandSource', $commandSource,
+        '-WorkDir', $workDirFull,
+        '-LogDir', $logDirFull,
+        '-Stage', $Name,
+        '-CodexHooksEnabled', $codexHooksEnabledActual
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SkillSourceRoot)) {
+        $workflowArgs += @('-SkillSourceRoot', $SkillSourceRoot)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeSkillRoot)) {
+        $workflowArgs += @('-RuntimeSkillRoot', $RuntimeSkillRoot)
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Write-WorkflowFidelityProof.ps1') @workflowArgs | Out-Null
+    $workflowFidelity = Get-Content -LiteralPath $workflowFidelityPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $workflowFidelityStatus = [string]$workflowFidelity.status
+} catch {
+    [ordered]@{
+        schema = 'workflow_fidelity_proof.v1'
+        status = 'BLOCKED'
+        stage = $Name
+        executor = $Executor
+        issues = @([ordered]@{ code = 'workflow_fidelity_exception'; diagnostic = $_.Exception.Message })
+        generated_at = (Get-Date).ToString('s')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $workflowFidelityPath -Encoding UTF8
+    $workflowFidelityStatus = 'BLOCKED'
+}
+if ($workflowFidelityStatus -ne 'PASS') {
+    [ordered]@{
+        Executor = $Executor
+        Command = $commandSource
+        PromptPath = $promptPathFull
+        WorkDir = $workDirFull
+        LogDir = $logDirFull
+        GoalSpecPath = $goalSpecPath
+        ProofSpecPath = $proofSpecPath
+        Model = $Model
+        ReasoningEffort = $ReasoningEffort
+        CompletionPath = $CompletionPath
+        CodexHooksEnabled = $codexHooksEnabledActual
+        WorkflowFidelityPath = $workflowFidelityPath
+        WorkflowFidelityStatus = $workflowFidelityStatus
+        Status = 'WORKFLOW_FIDELITY_BLOCKED'
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+    throw "Workflow fidelity gate failed for $Name. See $workflowFidelityPath"
 }
 
 $timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
@@ -766,6 +991,7 @@ $reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { '
 $completionArtifact = Get-AgentArtifactInfo -Path $CompletionPath
 $completionRequired = -not [string]::IsNullOrWhiteSpace($CompletionPath)
 $completionCriterion = if ($completionRequired) { 'required_completion_artifact_non_empty' } else { 'completion_artifact_not_required' }
+$protectedRootCriterion = if ($protectedRootAllowedMutationPrefixes.Count -gt 0) { 'protected_root_not_modified_or_allowlisted_tooling_mutation' } else { 'protected_root_not_modified' }
 $goalSpec = [ordered]@{
     schema = 'replay_agent_goal_spec.v1'
     stage = $Name
@@ -779,7 +1005,8 @@ $goalSpec = [ordered]@{
     success_criteria = @(
         'executor_exit_code_zero',
         $completionCriterion,
-        'protected_root_not_modified',
+        'workflow_fidelity_status_pass',
+        $protectedRootCriterion,
         'command_guard_has_no_violation'
     )
     stop_policy = [ordered]@{
@@ -790,9 +1017,12 @@ $goalSpec = [ordered]@{
         fail_closed_on_missing_completion = $completionRequired
         fail_closed_on_command_guard = $true
         fail_closed_on_protected_root_modified = $true
+        protected_root_mutation_policy = $protectedRootMutationPolicy
+        protected_root_allowed_prefixes = @($protectedRootAllowedMutationPrefixes)
     }
     proof_obligations = @(
         [ordered]@{ name = 'executor_exit'; required = $true; evidence_path = $metaPath },
+        [ordered]@{ name = 'workflow_fidelity'; required = $true; evidence_path = $workflowFidelityPath },
         [ordered]@{ name = 'completion_artifact'; required = $completionRequired; evidence_path = $completionArtifact.path },
         [ordered]@{ name = 'stdout_log'; required = $false; evidence_path = $stdoutLog },
         [ordered]@{ name = 'stderr_log'; required = $false; evidence_path = $stderrLog },
@@ -818,6 +1048,11 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         CompletionQuietSeconds = $CompletionQuietSeconds
         SilentNoOutputTimeoutSeconds = $effectiveSilentNoOutputTimeoutSeconds
         SilentNoOutputPolicyReason = $silentNoOutputPolicyReason
+        CodexHooksEnabled = $codexHooksEnabledActual
+        ProtectedRootMutationPolicy = $protectedRootMutationPolicy
+        ProtectedRootAllowedMutationPrefixes = @($protectedRootAllowedMutationPrefixes)
+        WorkflowFidelityPath = $workflowFidelityPath
+        WorkflowFidelityStatus = $workflowFidelityStatus
         Status = if ($Executor -eq 'manual') { 'MANUAL_PROMPT_READY' } else { 'VALID' }
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Get-Content -LiteralPath $metaPath -Encoding UTF8
@@ -859,7 +1094,7 @@ if ($Executor -eq 'codex') {
         '-c', 'model_context_window=1000000',
         '-c', 'model_auto_compact_token_limit=900000',
         '-c', ('model_reasoning_effort="{0}"' -f $reasoningEffortActual),
-        '-c', 'features.hooks=false',
+        '-c', ('features.hooks={0}' -f $(if ($codexHooksEnabledActual) { 'true' } else { 'false' })),
         '--cd', $workDirFull,
         '--output-last-message', $lastMessage
     )
@@ -912,7 +1147,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog -ProtectedRootAllowedMutationPrefixes $protectedRootAllowedMutationPrefixes
     $exitCode = $result.ExitCode
 } elseif ($Executor -eq 'claude') {
     $args = @('--print', '--permission-mode', 'bypassPermissions', '--output-format', 'text', '--max-turns', '200')
@@ -963,7 +1198,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog -ProtectedRootAllowedMutationPrefixes $protectedRootAllowedMutationPrefixes
     $exitCode = $result.ExitCode
 } else {
     throw "Unsupported executor: $Executor"
@@ -1007,6 +1242,10 @@ $executorProducedNoOutput = (
         (-not $lastMessageExists -or $lastMessageLength -le 8)
     )
 )
+$protectedRootStatusAfter = $protectedRootStatusBefore
+$protectedRootStatusChanged = $false
+$protectedRootStatusChangeAllowed = $false
+$protectedRootChangedPaths = @()
 $failureCategory = ''
 if ($result.CompletionMode -eq 'executor_timeout_exception') {
     $failureCategory = 'executor_timeout'
@@ -1045,14 +1284,21 @@ if ($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
 if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and $protectedRoot -ine $workDirFull) {
     $protectedRootStatusAfter = Get-GitStatusText -Repo $protectedRoot
     if ($protectedRootStatusAfter -ne $protectedRootStatusBefore) {
-        $violationPath = Join-Path $logDirFull "$Name.protected-root-violation.md"
+        $protectedRootStatusChanged = $true
+        $protectedRootChangedPaths = @(Get-GitStatusChangedPaths -Before $protectedRootStatusBefore -After $protectedRootStatusAfter)
+        $protectedRootStatusChangeAllowed = Test-ProtectedRootStatusChangeAllowed -Before $protectedRootStatusBefore -After $protectedRootStatusAfter -AllowedPrefixes $protectedRootAllowedMutationPrefixes
+        $rootStatusReportPath = Join-Path $logDirFull "$Name.protected-root-status.md"
+        $rootStatusTitle = if ($protectedRootStatusChangeAllowed) { '# Protected Root Allowlisted Status Change' } else { '# Protected Root Status Violation' }
         @(
-            '# Protected Root Status Violation',
+            $rootStatusTitle,
             '',
             "stage: $Name",
             "executor: $Executor",
             "protected_root: $protectedRoot",
             "work_dir: $workDirFull",
+            "mutation_policy: $protectedRootMutationPolicy",
+            "allowed_prefixes: $(@($protectedRootAllowedMutationPrefixes) -join ', ')",
+            "changed_paths: $(@($protectedRootChangedPaths) -join ', ')",
             '',
             '## Before',
             '```',
@@ -1063,9 +1309,13 @@ if (-not [string]::IsNullOrWhiteSpace($protectedRoot) -and $protectedRoot -ine $
             '```',
             $protectedRootStatusAfter,
             '```'
-        ) | Set-Content -LiteralPath $violationPath -Encoding UTF8
-        $exitCode = 92
-        $failureCategory = 'protected_root_modified'
+        ) | Set-Content -LiteralPath $rootStatusReportPath -Encoding UTF8
+        if (-not $protectedRootStatusChangeAllowed) {
+            $violationPath = Join-Path $logDirFull "$Name.protected-root-violation.md"
+            Copy-Item -LiteralPath $rootStatusReportPath -Destination $violationPath -Force
+            $exitCode = 92
+            $failureCategory = 'protected_root_modified'
+        }
     }
 }
 
@@ -1080,8 +1330,16 @@ $meta = [ordered]@{
     command_guard_log = $commandGuardLog
     goal_spec_path = $goalSpecPath
     proof_spec_path = $proofSpecPath
+    workflow_fidelity_path = $workflowFidelityPath
+    workflow_fidelity_status = $workflowFidelityStatus
+    protected_root_mutation_policy = $protectedRootMutationPolicy
+    protected_root_allowed_prefixes = @($protectedRootAllowedMutationPrefixes)
+    protected_root_status_changed = $protectedRootStatusChanged
+    protected_root_status_change_allowed = $protectedRootStatusChangeAllowed
+    protected_root_changed_paths = @($protectedRootChangedPaths)
     model = $Model
     reasoning_effort = $reasoningEffortActual
+    codex_hooks_enabled = $codexHooksEnabledActual
     started_at = $started.ToString('s')
     ended_at = $ended.ToString('s')
     timeout_minutes = $TimeoutMinutes
@@ -1110,6 +1368,12 @@ $validatedObligations = @(
         required = $true
         status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
         evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'workflow_fidelity'
+        required = $true
+        status = if ($workflowFidelityStatus -eq 'PASS') { 'PASS' } else { 'FAIL' }
+        evidence_path = $workflowFidelityPath
     },
     [ordered]@{
         name = 'completion_artifact'
@@ -1153,6 +1417,7 @@ $proofSpec = [ordered]@{
         stdout = Get-AgentArtifactInfo -Path $stdoutLog
         stderr = Get-AgentArtifactInfo -Path $stderrLog
         last_message = Get-AgentArtifactInfo -Path $lastMessage
+        workflow_fidelity = Get-AgentArtifactInfo -Path $workflowFidelityPath
         command_guard_log = Get-AgentArtifactInfo -Path $commandGuardLog
         exec_metadata = Get-AgentArtifactInfo -Path $metaPath
     }

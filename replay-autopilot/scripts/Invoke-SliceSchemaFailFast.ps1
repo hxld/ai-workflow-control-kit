@@ -1,8 +1,9 @@
 # Invoke-SliceSchemaFailFast.ps1 — S3 meta-logic de-bloat
 # Verifies slice result JSON schema before costly verification.
-# If the agent wrapped JSON in markdown fences or omitted required
-# fields, this gate rejects fast and prompts an agent re-write,
-# rather than normalizing malformed output downstream.
+# If the agent wrapped JSON in a single markdown fence, this gate
+# deterministically unwraps that syntactic shell once at the boundary.
+# Missing fields or non-JSON prose still fail fast before the costly
+# verifier runs.
 #
 # Only-additive: does not replace Read-JsonObject fallbacks (those
 # remain as defense-in-depth).  Once this gate has been stable across
@@ -36,7 +37,9 @@ function Read-TextIfExists {
 function Write-Result {
     param(
         [string]$Status,
-        [string[]]$Issues = @()
+        [string[]]$Issues = @(),
+        [bool]$Repaired = $false,
+        [string]$RepairAction = ''
     )
     $outPath = Join-Path $replayRootFull ("SLICE_SCHEMA_FAILFAST_{0:D2}.json" -f $SliceIndex)
     [ordered]@{
@@ -44,9 +47,20 @@ function Write-Result {
         slice_index = $SliceIndex
         status = $Status
         issues = @($Issues)
+        repaired = $Repaired
+        repair_action = $RepairAction
         generated_at = (Get-Date).ToString('s')
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $outPath -Encoding UTF8
     return $outPath
+}
+
+function Get-MarkdownFenceJsonCandidate {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    $match = [regex]::Match($Text.Trim(), '(?s)^\s*```(?:json)?\s*\r?\n(?<json>.+?)\r?\n```\s*$')
+    if (-not $match.Success) { return '' }
+    return $match.Groups['json'].Value.Trim()
 }
 
 $replayRootFull = Resolve-AbsolutePath $ReplayRoot
@@ -57,6 +71,7 @@ if ($ValidateOnly) {
         Script = $PSCommandPath
         Checks = @(
             'slice_result is valid pure JSON, not markdown-fenced',
+            'single markdown-fenced JSON wrapper is auto-unwrapped once before validation',
             'slice_index matches expected',
             'slice_status is present and one of DONE|PARTIAL|BLOCKED|INVALID_REPLAY',
             'slice_type is present (when slice_status != BLOCKED/INVALID_REPLAY)',
@@ -78,16 +93,28 @@ if ([string]::IsNullOrWhiteSpace($raw)) {
     exit 1
 }
 
-# Guard 1: pure JSON – no markdown fence prefix before opening brace
+# Guard 1: pure JSON. A single exact markdown-fenced JSON wrapper is
+# canonicalized once so a formatting shell does not burn another agent loop.
 $trimmed = $raw.TrimStart()
 if (-not ($trimmed.StartsWith('{') -or $trimmed.StartsWith('['))) {
-    $r = Write-Result -Status 'FAIL' -Issues @('slice_result_not_pure_json; agent wrote non-JSON prefix before opening brace')
-    exit 1
+    $fencedCandidate = Get-MarkdownFenceJsonCandidate -Text $raw
+    if (-not [string]::IsNullOrWhiteSpace($fencedCandidate)) {
+        $candidateTrimmed = $fencedCandidate.TrimStart()
+        if ($candidateTrimmed.StartsWith('{') -or $candidateTrimmed.StartsWith('[')) {
+            try {
+                $null = $candidateTrimmed | ConvertFrom-Json
+                Set-Content -LiteralPath $sliceResultPath -Value $candidateTrimmed -Encoding UTF8
+                $trimmed = $candidateTrimmed
+                $schemaRepairApplied = $true
+            } catch {
+                $r = Write-Result -Status 'FAIL' -Issues @("slice_result_fenced_json_parse_error: $([string]$_.Exception.Message)")
+                exit 1
+            }
+        }
+    }
 }
-$backtickInsideIndex = $trimmed.IndexOf('```')
-$braceIndex = $trimmed.IndexOf('{')
-if ($backtickInsideIndex -ge 0 -and $backtickInsideIndex -lt $braceIndex) {
-    $r = Write-Result -Status 'FAIL' -Issues @('slice_result_wrapped_in_markdown_fence; agent must write pure JSON without fence')
+if (-not ($trimmed.StartsWith('{') -or $trimmed.StartsWith('['))) {
+    $r = Write-Result -Status 'FAIL' -Issues @('slice_result_not_pure_json; agent wrote non-JSON prefix before opening brace')
     exit 1
 }
 
@@ -151,5 +178,9 @@ if ($issues.Count -gt 0) {
     exit 1
 }
 
-$r = Write-Result -Status 'PASS'
+$resultIssues = @()
+if ($schemaRepairApplied) {
+    $resultIssues = @('slice_result_markdown_fence_auto_unwrapped')
+}
+$r = Write-Result -Status 'PASS' -Issues $resultIssues -Repaired ([bool]$schemaRepairApplied) -RepairAction $(if ($schemaRepairApplied) { 'unwrap_single_markdown_json_fence' } else { '' })
 exit 0

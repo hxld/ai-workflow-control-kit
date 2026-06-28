@@ -194,6 +194,19 @@ function Get-TestHarnessModuleFromCommand {
     return ''
 }
 
+function Get-DefaultTestHarnessModule {
+    param([string]$Worktree)
+    if ([string]::IsNullOrWhiteSpace($Worktree) -or -not (Test-Path -LiteralPath $Worktree -PathType Container)) { return '' }
+    $claimServer = Join-Path $Worktree 'claim-server'
+    if (Test-Path -LiteralPath (Join-Path $claimServer 'src\test\java') -PathType Container) { return 'claim-server' }
+    $module = @(Get-ChildItem -LiteralPath $Worktree -Directory -ErrorAction SilentlyContinue | Where-Object {
+        Test-Path -LiteralPath (Join-Path $_.FullName 'src\test\java') -PathType Container
+    } | Select-Object -First 1)
+    if ($module.Count -gt 0) { return [string]$module[0].Name }
+    if (Test-Path -LiteralPath $claimServer -PathType Container) { return 'claim-server' }
+    return ''
+}
+
 function Get-TestClassFromTestName {
     param([string]$TestName)
     if ([string]::IsNullOrWhiteSpace($TestName)) { return '' }
@@ -218,6 +231,52 @@ function Get-TestMethodFromTestName {
         return $matches['method']
     }
     return ''
+}
+
+function Test-TestSelectorMatchesCarrier {
+    param([string]$Selector, [string]$Carrier)
+    if ([string]::IsNullOrWhiteSpace($Selector) -or [string]::IsNullOrWhiteSpace($Carrier)) { return $false }
+    $classLeaf = Get-TestClassLeafFromCarrier -Carrier $Carrier
+    if ([string]::IsNullOrWhiteSpace($classLeaf)) { return $false }
+    return $Selector -match [regex]::Escape($classLeaf)
+}
+
+function Get-ScopedTestSelector {
+    param([string]$Candidate, [string]$Carrier, [bool]$IsFirstSlice)
+    if ([string]::IsNullOrWhiteSpace($Candidate)) { return '' }
+    $trimmed = $Candidate.Trim()
+    if ($IsFirstSlice) { return $trimmed }
+    if (Test-TestSelectorMatchesCarrier -Selector $trimmed -Carrier $Carrier) { return $trimmed }
+    return ''
+}
+
+function Get-TestClassLeafFromCarrier {
+    param([string]$Carrier)
+    if ([string]::IsNullOrWhiteSpace($Carrier)) { return '' }
+    $head = @(([string]$Carrier -split '\s*->\s*') | Select-Object -First 1)[0]
+    $head = @(([string]$head -split '\(') | Select-Object -First 1)[0]
+    $typedMatches = @([regex]::Matches($head, '\b(?<class>[A-Z][A-Za-z0-9_]*(?:Service|Controller|Facade|Processor|Handler|Task|Client|Provider|Repository|Mapper|Dao|DAO))\b'))
+    if ($typedMatches.Count -gt 0) {
+        return [string]$typedMatches[$typedMatches.Count - 1].Groups['class'].Value
+    }
+    $methodMatches = @([regex]::Matches($head, '\b(?<class>[A-Z][A-Za-z0-9_]*)[.#][A-Za-z_][A-Za-z0-9_]*\b'))
+    if ($methodMatches.Count -gt 0) {
+        return [string]$methodMatches[$methodMatches.Count - 1].Groups['class'].Value
+    }
+    return ''
+}
+
+function Get-DefaultSliceTestName {
+    param([string]$Carrier, [string]$FamilyId)
+    $classLeaf = Get-TestClassLeafFromCarrier -Carrier $Carrier
+    if ([string]::IsNullOrWhiteSpace($classLeaf)) { return '' }
+    $familyToken = if ([string]::IsNullOrWhiteSpace($FamilyId)) { 'Slice' } else {
+        [regex]::Replace($FamilyId.ToLowerInvariant(), '(^|_)([a-z])', {
+            param($m)
+            $m.Groups[2].Value.ToUpperInvariant()
+        })
+    }
+    return "$classLeaf`Test#shouldCover$familyToken"
 }
 
 function Get-CommandMavenSettings {
@@ -378,7 +437,25 @@ $planInfra = if ($null -ne $planJson -and $planJson.PSObject.Properties['test_in
 $familyLedger = Read-JsonIfExists (Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json')
 $highestOpenFamily = Get-HighestOpenRequiredFamily -Ledger $familyLedger
 $highestOpenFamilyId = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['id']) { [string]$highestOpenFamily.id } else { '' }
-$selectedFamilyForSlice = if (-not [string]::IsNullOrWhiteSpace($ForcedRequirementFamily)) { $ForcedRequirementFamily } elseif (-not [string]::IsNullOrWhiteSpace($highestOpenFamilyId)) { $highestOpenFamilyId } else { 'core_entry' }
+$effectiveForcedRequirementFamily = Get-FirstNonEmpty @(
+    $ForcedRequirementFamily,
+    $(if ($null -ne $carrier) { [string]$carrier.forced_requirement_family } else { '' }),
+    $(if ($null -ne $preAuth) { [string]$preAuth.forced_requirement_family } else { '' }),
+    $(if ($null -ne $sideEffect) { [string]$sideEffect.forced_requirement_family } else { '' }),
+    $(if ($null -ne $callable) { [string]$callable.family_id } else { '' })
+)
+$effectiveForcedSliceType = Get-FirstNonEmpty @(
+    $ForcedSliceType,
+    $(if ($null -ne $carrier) { [string]$carrier.forced_slice_type } else { '' }),
+    $(if ($null -ne $preAuth) { [string]$preAuth.forced_slice_type } else { '' })
+)
+$effectiveForcedSiblingSurface = Get-FirstNonEmpty @(
+    $ForcedSiblingSurface,
+    $(if ($null -ne $carrier) { [string]$carrier.forced_sibling_surface } else { '' }),
+    $(if ($null -ne $preAuth) { [string]$preAuth.forced_sibling_surface } else { '' }),
+    $(if ($null -ne $sideEffect) { [string]$sideEffect.entry_call } else { '' })
+)
+$selectedFamilyForSlice = if (-not [string]::IsNullOrWhiteSpace($effectiveForcedRequirementFamily)) { $effectiveForcedRequirementFamily } elseif (-not [string]::IsNullOrWhiteSpace($highestOpenFamilyId)) { $highestOpenFamilyId } else { 'core_entry' }
 $highestOpenFamilyWeight = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['weight']) { Get-NumericOrDefault $highestOpenFamily.weight 0 } else { 0 }
 
 $planText = @(
@@ -387,53 +464,87 @@ $planText = @(
     (Read-TextIfExists (Join-Path $replayRootFull 'TEST_CHARTER.md'))
 ) -join "`n"
 
-$selectedCarrier = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'selected_carrier'),
-    $(if ($null -ne $carrier) { [string]$carrier.selected_carrier } else { '' }),
-    $(if ($null -ne $callable) { [string]$callable.selected_carrier } else { '' })
-)
-$selectedEntry = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'selected_real_entry'),
-    (Get-PlanField -Text $planText -Name 'real_entry_method'),
-    $(if ($null -ne $carrier) { [string]$carrier.real_entry } else { '' }),
-    $(if ($null -ne $callable) { [string]$callable.selected_real_entry } else { '' })
-)
-$redTestName = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'first_red_test'),
-    (Get-PlanField -Text $planText -Name 'expected_test_class'),
-    (Get-ObjectString -Object $planJson -Names @('first_red_test', 'expected_test_class')),
-    $(if ($null -ne $sideEffect) { [string]$sideEffect.test_name } else { '' })
-)
+$isFirstSlice = $SliceIndex -eq 1
+$selectedCarrier = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'selected_carrier'),
+        $(if ($null -ne $carrier) { [string]$carrier.selected_carrier } else { '' }),
+        $(if ($null -ne $callable) { [string]$callable.selected_carrier } else { '' }),
+        $effectiveForcedSiblingSurface
+    )
+} else {
+    Get-FirstNonEmpty @(
+        $(if ($null -ne $carrier) { [string]$carrier.selected_carrier } else { '' }),
+        $effectiveForcedSiblingSurface,
+        $(if ($null -ne $callable) { [string]$callable.selected_carrier } else { '' })
+    )
+}
+$selectedEntry = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'selected_real_entry'),
+        (Get-PlanField -Text $planText -Name 'real_entry_method'),
+        $(if ($null -ne $carrier) { [string]$carrier.real_entry } else { '' }),
+        $(if ($null -ne $callable) { [string]$callable.selected_real_entry } else { '' }),
+        $selectedCarrier
+    )
+} else {
+    Get-FirstNonEmpty @(
+        $(if ($null -ne $carrier) { [string]$carrier.real_entry } else { '' }),
+        $effectiveForcedSiblingSurface,
+        $(if ($null -ne $callable) { [string]$callable.selected_real_entry } else { '' }),
+        $selectedCarrier
+    )
+}
+$redTestName = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'first_red_test'),
+        (Get-PlanField -Text $planText -Name 'expected_test_class'),
+        (Get-ObjectString -Object $planJson -Names @('first_red_test', 'expected_test_class')),
+        $(if ($null -ne $sideEffect) { [string]$sideEffect.test_name } else { '' }),
+        (Get-DefaultSliceTestName -Carrier $selectedEntry -FamilyId $selectedFamilyForSlice)
+    )
+} else {
+    Get-FirstNonEmpty @(
+        $(if ($null -ne $sideEffect) { Get-ScopedTestSelector -Candidate ([string]$sideEffect.test_name) -Carrier $selectedEntry -IsFirstSlice:$false } else { '' }),
+        (Get-DefaultSliceTestName -Carrier $selectedEntry -FamilyId $selectedFamilyForSlice)
+    )
+}
 $downstream = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'downstream_output_or_side_effect'),
     $(if ($null -ne $carrier) { [string]$carrier.downstream_side_effect_or_output } else { '' }),
-    $(if ($null -ne $sideEffect) { (@(Get-StringArray $sideEffect.expected_writes_or_outputs) -join '; ') } else { '' })
+    $(if ($null -ne $sideEffect) { (@(Get-StringArray $sideEffect.expected_writes_or_outputs) -join '; ') } else { '' }),
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'downstream_output_or_side_effect' } else { '' })
 )
 $productionBoundary = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'production_boundary'),
     $(if ($null -ne $carrier) { [string]$carrier.production_boundary } else { '' }),
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'production_boundary' } else { '' }),
     $selectedCarrier
 )
 $redAssertion = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'red_assertion'),
-    $(if ($null -ne $carrier) { [string]$carrier.red_expectation } else { '' })
+    $(if ($null -ne $carrier) { [string]$carrier.red_expectation } else { '' }),
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'red_assertion' } else { '' })
 )
 $greenBoundary = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'green_change_boundary'),
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'green_change_boundary' } else { '' }),
     $productionBoundary
 )
-$validationCommand = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'validation_command'),
-    (Get-PlanField -Text $planText -Name 'green_command')
-)
-$redCommand = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'red_command'),
-    $validationCommand
-)
-$greenCommand = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'green_command'),
-    $validationCommand
-)
+$validationCommand = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'validation_command'),
+        (Get-PlanField -Text $planText -Name 'green_command')
+    )
+} else { '' }
+$redCommand = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'red_command'),
+        $validationCommand
+    )
+} else { '' }
+$greenCommand = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'green_command'),
+        $validationCommand
+    )
+} else { '' }
 $selectedSignature = Get-FirstNonEmpty @(
     $(if ($null -ne $callable -and $null -ne $callable.resolved_signature -and $null -ne $callable.resolved_signature.selected_carrier) { [string]$callable.resolved_signature.selected_carrier.formatted } else { '' }),
     $selectedCarrier,
@@ -452,26 +563,44 @@ $selectedModule = Get-FirstNonEmpty @(
     (Get-PlanField -Text $planText -Name 'test_module')
 )
 $expectedRedFailure = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'expected_red_failure'),
-    $redAssertion
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'expected_red_failure' } else { '' }),
+    $redAssertion,
+    "business assertion should fail before $selectedEntry satisfies $selectedFamilyForSlice"
 )
 $expectedGreenAssertion = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'expected_green_assertion'),
-    (Get-PlanField -Text $planText -Name 'green_assertion'),
-    $downstream
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'expected_green_assertion' } else { '' }),
+    $(if ($isFirstSlice) { Get-PlanField -Text $planText -Name 'green_assertion' } else { '' }),
+    $downstream,
+    "$selectedFamilyForSlice behavior is asserted through $selectedEntry"
 )
 $testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand
 if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = $selectedModule }
-$testClass = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'test_class'),
-    (Get-ObjectString -Object $planJson -Names @('expected_test_class', 'test_class')),
-    (Get-TestClassFromTestName -TestName $redTestName)
-)
-$testMethod = Get-FirstNonEmpty @(
-    (Get-PlanField -Text $planText -Name 'test_method'),
-    (Get-ObjectString -Object $planJson -Names @('expected_test_method', 'test_method')),
-    (Get-TestMethodFromTestName -TestName $redTestName)
-)
+if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = Get-DefaultTestHarnessModule -Worktree $worktreeFull }
+if ([string]::IsNullOrWhiteSpace($selectedModule)) { $selectedModule = $testHarnessModule }
+$testClass = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'test_class'),
+        (Get-ObjectString -Object $planJson -Names @('expected_test_class', 'test_class')),
+        (Get-TestClassFromTestName -TestName $redTestName)
+    )
+} else {
+    Get-FirstNonEmpty @(
+        (Get-TestClassFromTestName -TestName (Get-ScopedTestSelector -Candidate $redTestName -Carrier $selectedEntry -IsFirstSlice:$false)),
+        (Get-TestClassFromTestName -TestName (Get-DefaultSliceTestName -Carrier $selectedEntry -FamilyId $selectedFamilyForSlice))
+    )
+}
+$testMethod = if ($isFirstSlice) {
+    Get-FirstNonEmpty @(
+        (Get-PlanField -Text $planText -Name 'test_method'),
+        (Get-ObjectString -Object $planJson -Names @('expected_test_method', 'test_method')),
+        (Get-TestMethodFromTestName -TestName $redTestName)
+    )
+} else {
+    Get-FirstNonEmpty @(
+        (Get-TestMethodFromTestName -TestName (Get-ScopedTestSelector -Candidate $redTestName -Carrier $selectedEntry -IsFirstSlice:$false)),
+        (Get-TestMethodFromTestName -TestName (Get-DefaultSliceTestName -Carrier $selectedEntry -FamilyId $selectedFamilyForSlice))
+    )
+}
 if ([string]::IsNullOrWhiteSpace($selectedModule)) { $selectedModule = $testHarnessModule }
 if ([string]::IsNullOrWhiteSpace($validationCommand)) {
     $validationCommand = New-MavenTestCommand -Worktree $worktreeFull -Module $testHarnessModule -TestClass $testClass -TestMethod $testMethod -Settings $MavenSettings
@@ -482,7 +611,7 @@ $validationCommand = Add-MavenStopParsingIfNeeded -Command $validationCommand
 $redCommand = Add-MavenStopParsingIfNeeded -Command $redCommand
 $greenCommand = Add-MavenStopParsingIfNeeded -Command $greenCommand
 if ([string]::IsNullOrWhiteSpace($testHarnessModule)) { $testHarnessModule = Get-TestHarnessModuleFromCommand -Command $greenCommand }
-$selectedProofType = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
+$selectedProofType = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $effectiveForcedSliceType
 
 $runnableIssues = New-Object System.Collections.Generic.List[string]
 $redUsesIsolatedPom = Test-CommandUsesIsolatedPom -Command $redCommand -Worktree $worktreeFull
@@ -749,7 +878,7 @@ $sideEffectProofFamilies = @(
     'external_integration',
     'lifecycle_cleanup_retention'
 )
-$requiresSideEffect = $sideEffectProofFamilies -contains $ForcedRequirementFamily
+$requiresSideEffect = $sideEffectProofFamilies -contains $effectiveForcedRequirementFamily
 if ($requiresSideEffect -and ([string]::IsNullOrWhiteSpace($downstream) -or (Test-ForbiddenProofText $downstream))) {
     $planBlockers.Add('required_side_effect_or_output_proof_missing') | Out-Null
 }
@@ -852,16 +981,16 @@ $slicePlan = [ordered]@{
     schema_version = 1
     experiment = 'high_weight_family_proof_router'
     slice_index = $SliceIndex
-    forced_requirement_family = $ForcedRequirementFamily
-    forced_slice_type = $ForcedSliceType
-    forced_sibling_surface = $ForcedSiblingSurface
+    forced_requirement_family = $effectiveForcedRequirementFamily
+    forced_slice_type = $effectiveForcedSliceType
+    forced_sibling_surface = $effectiveForcedSiblingSurface
     selected_family = $selectedFamilyForSlice
     highest_weight_open_family = $highestOpenFamilyId
     highest_weight_open_family_weight = $highestOpenFamilyWeight
     family_id = $selectedFamilyForSlice
     selected_carrier = $selectedCarrier
-    required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
-    expected_actual_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
+    required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $effectiveForcedSliceType
+    expected_actual_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $effectiveForcedSliceType
     coverage_cap_if_open = if ($null -ne $highestOpenFamily -and $highestOpenFamily.PSObject.Properties['coverage_cap_if_open']) { Get-NumericOrDefault $highestOpenFamily.coverage_cap_if_open 0 } else { 0 }
     forbidden_proof = @('helper_only', 'static_only', 'mock_only', 'dto_only', 'compile_only', 'file_presence_only')
     real_entry_method = $selectedEntry
@@ -884,7 +1013,7 @@ $slicePlan = [ordered]@{
     replay_context_index_validation = if (Test-Path -LiteralPath $contextValidationPath) { $contextValidationPath } else { '' }
     blockers = @($planBlockers | Select-Object -Unique)
     authorization = if ($planBlockers.Count -eq 0) { 'ALLOW' } else { 'STOP' }
-    router_status = if ($planBlockers.Count -eq 0 -and ([string]::IsNullOrWhiteSpace($highestOpenFamilyId) -or $selectedFamilyForSlice -eq $highestOpenFamilyId)) { 'PASS' } else { 'STOP' }
+    router_status = if ($planBlockers.Count -eq 0 -and (-not [string]::IsNullOrWhiteSpace($effectiveForcedRequirementFamily) -or [string]::IsNullOrWhiteSpace($highestOpenFamilyId) -or $selectedFamilyForSlice -eq $highestOpenFamilyId)) { 'PASS' } else { 'STOP' }
 }
 Write-JsonFile -Value $slicePlan -Path $slicePlanPath
 $planContractIssues = New-Object System.Collections.Generic.List[string]
@@ -979,7 +1108,7 @@ if ($SliceIndex -eq 1) {
         existing_entry_qn = $selectedEntry
         entry_file = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'entry_file'), $(if ($null -ne $carrier) { [string]$carrier.entry_file } else { '' }))
         method_signature = Get-FirstNonEmpty @((Get-PlanField -Text $planText -Name 'method_signature'), $selectedCarrier)
-        required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $ForcedSliceType
+        required_proof_type = Get-ProofTypeForFamily -FamilyId $selectedFamilyForSlice -PlanText $planText -ForcedSliceType $effectiveForcedSliceType
         side_effect_or_output = $downstream
         must_not_behavior = $slicePlan.must_not_behavior
         forbidden_substitute_surfaces = @('new_helper_only', 'new_service_without_existing_entry_call', 'dto_only', 'static_contract', 'mock_only', 'test_only')

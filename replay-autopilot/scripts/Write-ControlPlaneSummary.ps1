@@ -374,6 +374,91 @@ function Get-ExecutorFailureEvidenceText {
     return (@($evidence.ToArray()) -join "`n")
 }
 
+function Get-SliceProgressInfo {
+    param([string]$Root)
+
+    $progress = Read-JsonIfExists (Join-Path $Root 'SLICE_PROGRESS.json')
+    if ($null -eq $progress) {
+        return [pscustomobject]@{
+            exists = $false
+            completed_count = 0
+            stopped = $false
+        }
+    }
+
+    return [pscustomobject]@{
+        exists = $true
+        completed_count = @($progress.completed).Count
+        stopped = [bool]$progress.stopped
+    }
+}
+
+function Test-Phase1BlockerSuperseded {
+    param([string]$Root)
+
+    $blockerPath = Join-Path $Root 'AUTOPILOT_BLOCKER.md'
+    if (-not (Test-Path -LiteralPath $blockerPath)) { return $false }
+
+    $progress = Get-SliceProgressInfo -Root $Root
+    if (-not $progress.exists -or [int]$progress.completed_count -le 0 -or [bool]$progress.stopped) {
+        return $false
+    }
+
+    $blockerTime = (Get-Item -LiteralPath $blockerPath).LastWriteTime
+    $logsRoot = Join-Path $Root 'logs'
+    if (-not (Test-Path -LiteralPath $logsRoot)) { return $false }
+
+    $successAfterBlocker = @(Get-ChildItem -LiteralPath $logsRoot -Recurse -File -Filter '*.exec.json' -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.LastWriteTime -gt $blockerTime -and
+            ($_.FullName -match '[\\/]phase1-slices[\\/]|[\\/]phase1-synthesis[\\/]')
+        } |
+        ForEach-Object {
+            $meta = Read-JsonIfExists $_.FullName
+            if ($null -ne $meta -and "$($meta.executor_exit_code)" -eq '0') { $_ }
+        })
+
+    return $successAfterBlocker.Count -gt 0
+}
+
+function Test-Phase1BlockerSupersededBySliceStop {
+    param([string]$Root)
+
+    $blockerPath = Join-Path $Root 'AUTOPILOT_BLOCKER.md'
+    if (-not (Test-Path -LiteralPath $blockerPath)) { return $false }
+
+    $progress = Read-JsonIfExists (Join-Path $Root 'SLICE_PROGRESS.json')
+    if ($null -eq $progress -or @($progress.completed).Count -le 0 -or -not [bool]$progress.stopped) {
+        return $false
+    }
+
+    $stopReason = [string]$progress.stop_reason
+    if ($stopReason -notmatch '(?i)(slice_verifier|side_effect_ledger|family_ledger|verifier_stop|authorization|schema_fail_fast|green_phase|red_phase|contract_verification|todo_detector|checkpoint|precheck)') {
+        return $false
+    }
+
+    $blockerTime = (Get-Item -LiteralPath $blockerPath).LastWriteTime
+    $newerSliceEvidence = @(Get-ChildItem -LiteralPath $Root -File -Filter 'SLICE_VERIFY_*.json' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -gt $blockerTime })
+    return $newerSliceEvidence.Count -gt 0
+}
+
+function Get-RoundCoverageSnapshot {
+    param([string]$Root)
+
+    $snapshotScript = Join-Path $PSScriptRoot 'Get-RoundCoverageSnapshot.ps1'
+    if (-not (Test-Path -LiteralPath $snapshotScript)) { return $null }
+    try {
+        $snapshotJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $snapshotScript -ReplayRoot $Root
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($snapshotJson | Out-String))) {
+            return $null
+        }
+        return ($snapshotJson | Out-String) | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
 function Read-ControlReplay {
     param(
         [string]$EvidenceRootFull,
@@ -392,7 +477,19 @@ function Read-ControlReplay {
     $verificationIssues = Get-VerificationIssues -Root $Root
     $verificationIssueText = @($verificationIssues) -join "`n"
     $executorFailureText = Get-ExecutorFailureEvidenceText -Root $Root
+    $phase1BlockerSupersededBySuccess = Test-Phase1BlockerSuperseded -Root $Root
+    $phase1BlockerSupersededBySliceStop = Test-Phase1BlockerSupersededBySliceStop -Root $Root
+    $phase1BlockerSuperseded = $phase1BlockerSupersededBySuccess -or $phase1BlockerSupersededBySliceStop
     $combined = "$summaryText`n$decisionText`n$roundText`n$finalText`n$stopLossText`n$deepReviewText`n$evolutionVerifyText`n$blockerText`n$verificationIssueText`n$executorFailureText"
+    $fingerprintText = $combined
+    if ($phase1BlockerSuperseded) {
+        $fingerprintText = $fingerprintText -replace 'executor_failed_without_result', 'executor_failure_superseded'
+        $fingerprintText = $fingerprintText -replace 'executor crash', 'executor failure superseded'
+        $verificationIssues += 'AUTOPILOT_BLOCKER.md:superseded_by_later_phase1_success'
+        if ($phase1BlockerSupersededBySliceStop) {
+            $verificationIssues += 'AUTOPILOT_BLOCKER.md:superseded_by_later_slice_gate_stop'
+        }
+    }
     $executorAudit = Read-JsonIfExists (Join-Path $Root 'EXECUTOR_AUDIT.json')
     $item = Get-Item -LiteralPath $Root
 
@@ -411,10 +508,16 @@ function Read-ControlReplay {
         '(?m)^\s*-\s*decision\s*:\s*`?([A-Z0-9_]+)`?'
     )
 
-    $fingerprints = Get-FingerprintsFromText -Text $combined -ExecutorAudit $executorAudit -RequiredExecutor $RequiredExecutor
+    $fingerprints = Get-FingerprintsFromText -Text $fingerprintText -ExecutorAudit $executorAudit -RequiredExecutor $RequiredExecutor
     $oracle = Get-MetricNumber $combined @('oracle_adjusted_coverage', 'oracle-adjusted coverage', 'oracle adjusted coverage', 'Oracle Coverage (Post-Hoc)')
-    $cap = Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage', 'Replay Coverage (Verification Capped)')
-    $blind = Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind coverage', 'Replay Coverage (Self-Assessed)')
+    $snapshot = Get-RoundCoverageSnapshot -Root $Root
+    $snapshotHasCoverage = $null -ne $snapshot -and (
+        [bool]$snapshot.round_result_exists -or
+        @('round_result', 'slice_artifacts') -contains ([string]$snapshot.coverage_source)
+    )
+    $cap = if ($snapshotHasCoverage) { [int]$snapshot.verification_capped_coverage } else { Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage', 'Replay Coverage (Verification Capped)') }
+    $blind = if ($snapshotHasCoverage) { [int]$snapshot.blind_self_assessed_coverage } else { Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind coverage', 'Replay Coverage (Self-Assessed)') }
+    $snapshotFinalStatus = if ($snapshotHasCoverage) { [string]$snapshot.final_status } else { '' }
 
     return [pscustomobject]@{
         feature = Get-FeatureName -EvidenceRootFull $EvidenceRootFull -Root $Root
@@ -424,13 +527,15 @@ function Read-ControlReplay {
         updated_text = $item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
         phase0_status = Get-FirstText $summaryText @('(?m)^\s*-\s*phase0_status\s*:\s*`?([A-Z0-9_]+)`?')
         plan_status = Get-FirstText (Read-TextIfExists (Join-Path $Root 'PLAN_RESULT.md')) @('(?m)^\s*-\s*plan_status\s*:\s*`?([A-Z0-9_]+)`?', '(?m)^\s*plan_status\s*[:=]\s*`?([A-Z0-9_]+)`?')
-        final_status = Get-FirstText $combined @('(?m)^\s*-\s*final_status\s*:\s*`?([A-Z0-9_]+)`?', '(?m)^\s*-\s*final(?: post-hoc)? status\s*:\s*`?([A-Z0-9_]+)`?')
+        final_status = if (-not [string]::IsNullOrWhiteSpace($snapshotFinalStatus)) { $snapshotFinalStatus } else { Get-FirstText $combined @('(?m)^\s*-\s*final_status\s*:\s*`?([A-Z0-9_]+)`?', '(?m)^\s*-\s*final(?: post-hoc)? status\s*:\s*`?([A-Z0-9_]+)`?') }
+        coverage_source = if ($snapshotHasCoverage) { [string]$snapshot.coverage_source } else { 'text_parse' }
         blind_self_assessed_coverage = $blind
         verification_capped_coverage = $cap
         oracle_adjusted_coverage = $oracle
         autopilot_decision = $decision
         stop_loss_decision = $stopLossDecision
-        blocker_file = [bool](Test-Path -LiteralPath (Join-Path $Root 'AUTOPILOT_BLOCKER.md'))
+        blocker_file = [bool]((Test-Path -LiteralPath (Join-Path $Root 'AUTOPILOT_BLOCKER.md')) -and -not $phase1BlockerSuperseded)
+        blocker_file_superseded = [bool]$phase1BlockerSuperseded
         executor = if ($executorAudit) { [string]$executorAudit.executor } else { '' }
         require_executor = if ($executorAudit) { [string]$executorAudit.require_executor } else { '' }
         allow_codex_executor = if ($executorAudit) { [string]$executorAudit.allow_codex_executor } else { '' }

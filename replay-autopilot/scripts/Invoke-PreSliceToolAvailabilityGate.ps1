@@ -3,6 +3,9 @@ param(
     [string]$ReplayRoot,
     [Parameter(Mandatory = $true)]
     [string]$Worktree,
+    [string]$Executor = 'codex',
+    [string]$SkillSourceRoot = '',
+    [string]$RuntimeSkillRoot = '',
     [switch]$PassThru
 )
 
@@ -59,6 +62,37 @@ $scriptsRoot = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) { $PSScript
 
 New-Item -ItemType Directory -Force -Path $replayRootFull | Out-Null
 $outputPath = Join-Path $replayRootFull 'PRE_SLICE_TOOL_AVAILABILITY.json'
+$workflowFidelityPath = Join-Path $replayRootFull 'WORKFLOW_FIDELITY_PROOF.json'
+
+$workflowFidelityStatus = 'BLOCKED'
+$workflowFidelityIssues = @()
+$workflowSkillChecks = @()
+try {
+    $workflowArgs = @(
+        '-OutputPath', $workflowFidelityPath,
+        '-Executor', $Executor,
+        '-WorkDir', $worktreeFull,
+        '-Stage', 'pre-slice-tool-availability'
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SkillSourceRoot)) {
+        $workflowArgs += @('-SkillSourceRoot', $SkillSourceRoot)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeSkillRoot)) {
+        $workflowArgs += @('-RuntimeSkillRoot', $RuntimeSkillRoot)
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptsRoot 'Write-WorkflowFidelityProof.ps1') @workflowArgs | Out-Null
+    if (Test-Path -LiteralPath $workflowFidelityPath -PathType Leaf) {
+        $workflowFidelity = Get-Content -LiteralPath $workflowFidelityPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $workflowFidelityStatus = [string]$workflowFidelity.status
+        $workflowFidelityIssues = @($workflowFidelity.issues)
+        $workflowSkillChecks = @($workflowFidelity.skill_checks)
+    } else {
+        $workflowFidelityIssues = @([ordered]@{ code = 'workflow_fidelity_missing_output'; path = $workflowFidelityPath })
+    }
+} catch {
+    $workflowFidelityStatus = 'BLOCKED'
+    $workflowFidelityIssues = @([ordered]@{ code = 'workflow_fidelity_exception'; diagnostic = $_.Exception.Message; path = $workflowFidelityPath })
+}
 
 $mandatory = @(
     [pscustomobject]@{ name = 'Invoke-PreSliceExperimentContracts'; path = Join-Path $scriptsRoot 'Invoke-PreSliceExperimentContracts.ps1'; kind = 'powershell'; args = @('-ReplayRoot', $replayRootFull, '-Worktree', $worktreeFull, '-SliceIndex', '1', '-ValidateOnly'); probe = $true },
@@ -94,7 +128,7 @@ foreach ($script in $mandatory) {
     $checks.Add([ordered]@{ name = $script.name; path = $scriptPath; exists = $true; runnable = [bool]$probe.ok; exit_code = $probe.exit_code; diagnostic = [string]$probe.diagnostic }) | Out-Null
 }
 
-$status = if ($missing.Count -eq 0 -and $unrunnable.Count -eq 0) { 'PASS' } else { 'BLOCKED' }
+$status = if ($missing.Count -eq 0 -and $unrunnable.Count -eq 0 -and $workflowFidelityStatus -eq 'PASS') { 'PASS' } else { 'BLOCKED' }
 $missingArray = @($missing.ToArray())
 $unrunnableArray = @($unrunnable.ToArray())
 $checksArray = @($checks.ToArray())
@@ -103,6 +137,10 @@ $result = [ordered]@{
     status = $status
     replay_root = $replayRootFull
     worktree = $worktreeFull
+    workflow_fidelity_path = $workflowFidelityPath
+    workflow_fidelity_status = $workflowFidelityStatus
+    workflow_fidelity_issues = @($workflowFidelityIssues)
+    skill_checks = @($workflowSkillChecks)
     missing_scripts = $missingArray
     unrunnable_scripts = $unrunnableArray
     retry_allowed = $false

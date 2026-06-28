@@ -44,6 +44,7 @@ executor_resource_preflight_bypass: false
 maven_settings:
 codex_sandbox: danger-full-access
 codex_approval: never
+codex_hooks_enabled: false
 codex_model:
 codex_reasoning_effort: medium
 claude_model:

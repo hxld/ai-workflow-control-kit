@@ -16,6 +16,9 @@ param(
     [int]$CompletionQuietSeconds = 90,
     [int]$SilentNoOutputTimeoutSeconds = 0,
     [string]$Name = 'agent',
+    [string]$CodexHooksEnabled = '',
+    [string]$SkillSourceRoot = '',
+    [string]$RuntimeSkillRoot = '',
     [switch]$ValidateOnly
 )
 
@@ -182,17 +185,47 @@ function Resolve-RequiredPath {
     return $full
 }
 
-function Get-ConfigProjectRoot {
+function Get-SimpleConfigValue {
+    param([string]$Key)
     $configPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\config.yaml'))
     if (-not (Test-Path -LiteralPath $configPath)) {
         return ''
     }
     foreach ($line in (Get-Content -LiteralPath $configPath -Encoding UTF8)) {
-        if ($line -match '^\s*project_root\s*:\s*(.+?)\s*$') {
-            return [System.IO.Path]::GetFullPath($matches[1].Trim().Trim('"').Trim("'"))
+        if ($line -match ('^\s*' + [regex]::Escape($Key) + '\s*:\s*(.*?)\s*$')) {
+            return $matches[1].Trim().Trim('"').Trim("'")
         }
     }
     return ''
+}
+
+function Get-ConfigProjectRoot {
+    $value = Get-SimpleConfigValue 'project_root'
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return ''
+    }
+    return [System.IO.Path]::GetFullPath($value)
+}
+
+function ConvertTo-BoolConfig {
+    param(
+        [string]$Value,
+        [bool]$Default = $false
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $Default }
+    $normalized = $Value.Trim().ToLowerInvariant()
+    return @('1', 'true', 'yes', 'y', 'on') -contains $normalized
+}
+
+function Resolve-CodexHooksEnabled {
+    param([string]$ExplicitValue)
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitValue)) {
+        return ConvertTo-BoolConfig -Value $ExplicitValue -Default $false
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:REPLAY_CODEX_HOOKS_ENABLED)) {
+        return ConvertTo-BoolConfig -Value $env:REPLAY_CODEX_HOOKS_ENABLED -Default $false
+    }
+    return ConvertTo-BoolConfig -Value (Get-SimpleConfigValue 'codex_hooks_enabled') -Default $false
 }
 
 function Get-GitStatusText {
@@ -728,6 +761,7 @@ $lastMessage = Join-Path $logDirFull "$Name.last-message.md"
 $metaPath = Join-Path $logDirFull "$Name.exec.json"
 $goalSpecPath = Join-Path $logDirFull "$Name.goalspec.json"
 $proofSpecPath = Join-Path $logDirFull "$Name.proofspec.json"
+$workflowFidelityPath = Join-Path $logDirFull "$Name.workflow-fidelity.json"
 $commandGuardLog = Join-Path $logDirFull "$Name.command-guard.jsonl"
 $rgConfigPath = Join-Path $PSScriptRoot 'ripgrep-autopilot.config'
 $toolPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools'))
@@ -735,6 +769,58 @@ $commandSource = ''
 
 if ($Executor -ne 'manual') {
     $commandSource = Resolve-ExecutorCommand $Executor
+}
+
+$codexHooksEnabledActual = Resolve-CodexHooksEnabled -ExplicitValue $CodexHooksEnabled
+$workflowFidelityStatus = 'BLOCKED'
+try {
+    $workflowArgs = @(
+        '-OutputPath', $workflowFidelityPath,
+        '-Executor', $Executor,
+        '-CommandSource', $commandSource,
+        '-WorkDir', $workDirFull,
+        '-LogDir', $logDirFull,
+        '-Stage', $Name,
+        '-CodexHooksEnabled', $codexHooksEnabledActual
+    )
+    if (-not [string]::IsNullOrWhiteSpace($SkillSourceRoot)) {
+        $workflowArgs += @('-SkillSourceRoot', $SkillSourceRoot)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RuntimeSkillRoot)) {
+        $workflowArgs += @('-RuntimeSkillRoot', $RuntimeSkillRoot)
+    }
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Write-WorkflowFidelityProof.ps1') @workflowArgs | Out-Null
+    $workflowFidelity = Get-Content -LiteralPath $workflowFidelityPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $workflowFidelityStatus = [string]$workflowFidelity.status
+} catch {
+    [ordered]@{
+        schema = 'workflow_fidelity_proof.v1'
+        status = 'BLOCKED'
+        stage = $Name
+        executor = $Executor
+        issues = @([ordered]@{ code = 'workflow_fidelity_exception'; diagnostic = $_.Exception.Message })
+        generated_at = (Get-Date).ToString('s')
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $workflowFidelityPath -Encoding UTF8
+    $workflowFidelityStatus = 'BLOCKED'
+}
+if ($workflowFidelityStatus -ne 'PASS') {
+    [ordered]@{
+        Executor = $Executor
+        Command = $commandSource
+        PromptPath = $promptPathFull
+        WorkDir = $workDirFull
+        LogDir = $logDirFull
+        GoalSpecPath = $goalSpecPath
+        ProofSpecPath = $proofSpecPath
+        Model = $Model
+        ReasoningEffort = $ReasoningEffort
+        CompletionPath = $CompletionPath
+        CodexHooksEnabled = $codexHooksEnabledActual
+        WorkflowFidelityPath = $workflowFidelityPath
+        WorkflowFidelityStatus = $workflowFidelityStatus
+        Status = 'WORKFLOW_FIDELITY_BLOCKED'
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+    throw "Workflow fidelity gate failed for $Name. See $workflowFidelityPath"
 }
 
 $timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
@@ -779,6 +865,7 @@ $goalSpec = [ordered]@{
     success_criteria = @(
         'executor_exit_code_zero',
         $completionCriterion,
+        'workflow_fidelity_status_pass',
         'protected_root_not_modified',
         'command_guard_has_no_violation'
     )
@@ -793,6 +880,7 @@ $goalSpec = [ordered]@{
     }
     proof_obligations = @(
         [ordered]@{ name = 'executor_exit'; required = $true; evidence_path = $metaPath },
+        [ordered]@{ name = 'workflow_fidelity'; required = $true; evidence_path = $workflowFidelityPath },
         [ordered]@{ name = 'completion_artifact'; required = $completionRequired; evidence_path = $completionArtifact.path },
         [ordered]@{ name = 'stdout_log'; required = $false; evidence_path = $stdoutLog },
         [ordered]@{ name = 'stderr_log'; required = $false; evidence_path = $stderrLog },
@@ -818,6 +906,9 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         CompletionQuietSeconds = $CompletionQuietSeconds
         SilentNoOutputTimeoutSeconds = $effectiveSilentNoOutputTimeoutSeconds
         SilentNoOutputPolicyReason = $silentNoOutputPolicyReason
+        CodexHooksEnabled = $codexHooksEnabledActual
+        WorkflowFidelityPath = $workflowFidelityPath
+        WorkflowFidelityStatus = $workflowFidelityStatus
         Status = if ($Executor -eq 'manual') { 'MANUAL_PROMPT_READY' } else { 'VALID' }
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Get-Content -LiteralPath $metaPath -Encoding UTF8
@@ -859,7 +950,7 @@ if ($Executor -eq 'codex') {
         '-c', 'model_context_window=1000000',
         '-c', 'model_auto_compact_token_limit=900000',
         '-c', ('model_reasoning_effort="{0}"' -f $reasoningEffortActual),
-        '-c', 'features.hooks=false',
+        '-c', ('features.hooks={0}' -f $(if ($codexHooksEnabledActual) { 'true' } else { 'false' })),
         '--cd', $workDirFull,
         '--output-last-message', $lastMessage
     )
@@ -1080,8 +1171,11 @@ $meta = [ordered]@{
     command_guard_log = $commandGuardLog
     goal_spec_path = $goalSpecPath
     proof_spec_path = $proofSpecPath
+    workflow_fidelity_path = $workflowFidelityPath
+    workflow_fidelity_status = $workflowFidelityStatus
     model = $Model
     reasoning_effort = $reasoningEffortActual
+    codex_hooks_enabled = $codexHooksEnabledActual
     started_at = $started.ToString('s')
     ended_at = $ended.ToString('s')
     timeout_minutes = $TimeoutMinutes
@@ -1110,6 +1204,12 @@ $validatedObligations = @(
         required = $true
         status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
         evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'workflow_fidelity'
+        required = $true
+        status = if ($workflowFidelityStatus -eq 'PASS') { 'PASS' } else { 'FAIL' }
+        evidence_path = $workflowFidelityPath
     },
     [ordered]@{
         name = 'completion_artifact'
@@ -1153,6 +1253,7 @@ $proofSpec = [ordered]@{
         stdout = Get-AgentArtifactInfo -Path $stdoutLog
         stderr = Get-AgentArtifactInfo -Path $stderrLog
         last_message = Get-AgentArtifactInfo -Path $lastMessage
+        workflow_fidelity = Get-AgentArtifactInfo -Path $workflowFidelityPath
         command_guard_log = Get-AgentArtifactInfo -Path $commandGuardLog
         exec_metadata = Get-AgentArtifactInfo -Path $metaPath
     }

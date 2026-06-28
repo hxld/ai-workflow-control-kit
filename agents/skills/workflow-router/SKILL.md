@@ -57,7 +57,33 @@ allowed-tools: Read,Glob
 - 这只提高证据标准，不默认扩大产物数量、不默认生成第二套方案、不默认进入 replay/eval。
 - 如果当前任务是代码、方案、技能或知识库审查，路由到 `deep-review`，并按任务类型读取 `references/review-lens-templates.md`。
 - 如果用户已经给出 Claude Code/Codex/人工 reviewer 的反馈，路由到 `resolve-feedback`，先验证再接受。
+- 如果用户明确要求“只用 Codex / 不用外部模型 / 模拟交叉审查”，设置 `review_mode=codex_only_cross_review`，路由到 `deep-review` 并读取 `references/codex-only-cross-review.md`。
 - 如果任务仍在实现链路中，保持原技能链，但把 `CONTRACT` 标为 `review_pressure`，`VERIFY` 必须包含证据来源、确定性、验证方式和无法验证的假设。
+
+Codex-only 选择规则：默认 `single_context_lens`；若宿主支持只读 Codex 线程/分叉，且任务为 L3、review pressure、大 diff 或多 surface，可升级为 `codex_thread_isolated`。不允许把同一上下文多镜头说成外部独立审查。
+
+## Adaptive Review Tier Router
+
+进入非简单问答后先给出 `review_tier`，让多轮审查按风险触发，而不是所有任务机械十轮。
+
+| Tier | 触发信号 | 路由 / 验证 |
+|------|----------|-------------|
+| `L0` | 纯问答、单命令、查枚举/路径、无写入无生产风险 | 直接答复或轻量自检，不强制 `deep-review` |
+| `L1` | 小代码改动、普通 SQL、单 surface、局部文档/配置 | 目标技能 + 定向验证；收口说明验证范围 |
+| `L2` | 生产/线上结论、热修、修数、缓存刷新、外部接口、跨组件归因、状态/数据链路 | `log-investigator` 或 `req-alignment-check` 先建证据链与同症状分支矩阵；修复前进入 `deep-plan` 或轻量 hotfix |
+| `L3` | 发布/提交前高风险、批量数据影响、资金/状态推进、用户已纠错、曾提前完成、review pressure + 多 surface | 必须有反证挑战、`deep-review` 多镜头或等效审查账本，`sync-progress` 缺审查闭环时只能 `PARTIAL` |
+
+升级规则：从 L1 以后，只要出现“同一个业务症状可能来自多个入口/配置/缓存/异步/下游分支”，必须要求 `Same Symptom Branch Matrix`；只修目标分支不能宣称整个症状已闭环。
+
+## Subagent Eligibility Gate
+
+路由层只判断子 agent 是否适合，不在路由层内联派遣。输出三态：`no` / `optional-readonly` / `optional-write-isolated`。
+
+- 默认 `no`：quick/small、单命令、用户决策、pre-flight、发布/提交、生产操作、权限或密钥相关事项。
+- `optional-readonly`：large、多 surface、review pressure、技术方案/技能/知识库审查、跨上下文证据采集，且宿主支持并允许并行代理。
+- `optional-write-isolated`：只有用户明确授权，且写入范围互不重叠或位于隔离 worktree / 临时目录时才允许。
+
+合并门禁必须写清：允许角色、只读/隔离边界、主会话如何复核 P0/P1 与核心事实、最终唯一产物落点。子 agent 不能替代用户审批、需求冻结、OpenSpec、收口验证或 Git/发布确认。
 
 ## Size / Brake Gate
 
@@ -162,7 +188,7 @@ allowed-tools: Read,Glob
 6. 技术设计：非平凡实现 → `deep-plan`。
 7. TDD：行为变更、bugfix、新功能 → `dev-workflow` / `gen-tests`，在对应技能内执行 RED/GREEN 门禁。
 8. 实现：方案通过 → `dev-workflow`。
-9. Bug / Debug：先按证据分型；测试红灯 → `gen-tests` FIX；生产日志/事故 → `log-investigator`；无复现/无日志 → 先采证或静态假设，不直接修。跨组件问题先追数据流，三次修复/查询仍无闭环 → `deep-plan`。
+9. Bug / Debug：先按证据分型；测试红灯 → `gen-tests` FIX；生产日志/事故，或“生产环境/线上环境 + 业务 selector + 排查现象” → `log-investigator`；无复现/无日志 → 先采证或静态假设，不直接修。跨组件问题先追数据流，三次修复/查询仍无闭环 → `deep-plan`。
 10. 收口：实现后 → `gen-tests` → `deep-review` → `sync-progress`。
 
 ## 高风险路由
@@ -177,7 +203,7 @@ allowed-tools: Read,Glob
 | 领域术语混用、同词多义、代码词和业务词冲突 | `pre-flight-check` → `req-alignment-check` Domain Language Ledger → `deep-plan` | 先统一 canonical term，避免实现和测试命名漂移 |
 | 多入口/接口/页面/导出/任务/日志/展示面 | `pre-flight-check` → `req-alignment-check` | 先建 Surface 矩阵 |
 | 跨模块/报表/异步/外部集成/落库 | `pre-flight-check` → `deep-plan` | 先建 Expected Diff Matrix |
-| 跨边界、不可逆、状态/事务、外部协议或高置信但证据不足的决策 | `pre-flight-check` → `deep-plan` Decision Doubt Checkpoint，必要时 `deep-review` | 先把 claim、contract 和反证问题写清，避免自信推进错误方向 |
+| 跨边界、不可逆、状态/事务、外部协议或高置信但证据不足的决策 | `pre-flight-check` → `deep-plan` Decision Doubt Checkpoint，必要时 `deep-review` | 先把 assertion、contract 和反证问题写清，避免自信推进错误方向 |
 | 新增抽象、重构模块、接口/adapter/seam 设计 | `pre-flight-check` → `deep-plan` Architecture Depth Gate，必要时 `deep-review` | 用 deletion test、adapter count 和 interface-as-test-surface 防浅模块 |
 | 复杂状态机、数据模型或 UI 方案不确定但可低成本验证 | `pre-flight-check` → `deep-plan` Throwaway Prototype Plan | 原型只回答问题，收口必须删除或吸收 |
 | 小需求/简单接口/字段透传/单规则判断 | `pre-flight-check` → `dev-workflow` 小需求轻量档 | 压缩表达，不取消门禁 |
@@ -189,7 +215,9 @@ allowed-tools: Read,Glob
 | replay/eval/技能实测/历史提交重跑 | `pre-flight-check` → `skill-audit` 或显式 replay/eval 流程 | 只做验证/审计，必须隔离 worktree；不进入普通开发主链 |
 | 构建失败/测试失败/Maven 报错 | `pre-flight-check` → `gen-tests` FIX | 先定位失败阶段并复跑原失败命令 |
 | 有失败测试或可写复现断言的 bug | `pre-flight-check` → `gen-tests` FIX / `dev-workflow` | 先复现 RED，再最小修复 |
-| 有日志/trace/生产现象的 bug | `pre-flight-check` → `log-investigator` | 先代码链路 + 日志证据 + 假设表 |
+| 有日志/trace/生产现象的 bug，或生产环境/线上环境 + 业务 selector + 排查/为什么/异常现象 | `pre-flight-check` → `log-investigator` | 先冻结五元组，再查代码链路 + 日志证据 + 假设表 |
+| 生产结论、热修、修数、缓存刷新、外部接口或跨组件归因 | `review_tier=L2`；必要时 `log-investigator` → `req-alignment-check` Same Symptom Branch Matrix → `deep-plan` / `deep-review` | 防止局部日志或单个修复分支被误报为整体根因闭环 |
+| 发布、批量数据影响、资金/状态推进、用户纠错后继续、曾提前宣称完成 | `review_tier=L3`；`deep-review` 多镜头 + `sync-progress` Review Closure Ledger | 需要前置反证和完成态门禁 |
 | 明确异常堆栈/NPE/类型转换/空值转换 bug，且已有失败测试或可写 RED | `pre-flight-check` → `gen-tests` FIX / `dev-workflow` 轻量档 | 先用 RED 锁最小修复面，日志调查只补缺失证据 |
 | 明确异常堆栈/NPE/类型转换/空值转换 bug，但缺复现 | `pre-flight-check` → `log-investigator` → `gen-tests` FIX | 先锁第一业务首帧、异常变量来源和最小复现输入 |
 | 外部接口/第三方协议/加密报文/响应错误 | `pre-flight-check` → `log-investigator` → `deep-plan`（如需改契约） | 先冻结 request/response/config/幂等和责任边界 |
@@ -247,6 +275,9 @@ allowed-tools: Read,Glob
 - VERIFY:
 - EXIT:
 - SYNC:
+- Review Tier:
+- Review Mode:
+- Subagent Eligible:
 - 推荐技能链:
 - 升级条件:
 - 下一步:

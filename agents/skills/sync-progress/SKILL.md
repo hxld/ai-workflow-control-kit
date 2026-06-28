@@ -47,6 +47,39 @@ review-only: findings / severity / evidence / verification gap / follow-up
 
 只有 `planned-dev`、`hotfix` 和 `tooling` 需要 Proof Ledger 或等效完成证据。
 
+## Review Tier Closure Ledger
+
+收口前必须消费 `workflow-router` 或当前任务事实推导出的 `review_tier`。缺少显式 tier 时按风险补判，不能用未声明规避审查。
+
+```markdown
+| review tier | trigger evidence | review lenses executed | counter-evidence checked | same-symptom branches | unresolved gaps | final cap |
+|-------------|------------------|------------------------|--------------------------|-----------------------|-----------------|-----------|
+```
+
+规则：
+
+- `L0/L1`：可用轻量自检，写明验证范围即可。
+- `L2`：生产结论、热修、修数、缓存、外部接口或跨组件归因必须至少有证据链、同症状分支矩阵或反证检查；缺失时最终状态最高 `PARTIAL`。
+- `L3`：发布、批量数据影响、资金/状态推进、用户纠错后继续、曾提前完成或多 surface review pressure，必须有 `deep-review` 多镜头或等效审查账本；缺失时不得提交、推送或宣称完成。
+- `same-symptom branches` 不能只写“无”；必须说明查过哪些入口、配置、缓存、异步、下游或展示分支，或写 `not_applicable:<reason>`。
+
+## Review Independence Disclosure
+
+当本轮存在多轮审查、第二视角、子 agent、Codex 线程隔离或外部 reviewer 信号时，按 `references/review-independence-disclosure.md` 填写 `Review Independence`，避免把同一上下文多镜头误写成外部独立复核。
+
+最低门禁：`single_context_lens` 只能披露为 `same_context_lens`；未被主会话复核的隔离线程、子 agent 或外部结果不得支撑 `DONE`；没有真实外部 reviewer 时必须写 `external model used=no`。
+
+## Subagent Intake Ledger
+
+`sync-progress` 只消费子 agent 结果，不负责派遣。若本轮使用过子 agent，收口必须把结果并入主会话证据账本：
+
+```markdown
+| subagent result | accepted rows | rejected rows | main verification | final status impact |
+|-----------------|---------------|---------------|-------------------|---------------------|
+```
+
+子 agent 输出不能单独支撑 `DONE`、提交、发布或“验证通过”。未被主会话复核的 P0/P1、核心事实、需求 literal、DB/API/wire contract 和测试证据必须降为 `verification_gap`；若这些缺口影响核心交付，最终状态最高只能是 `PARTIAL` 或 `BLOCKED`。
+
 ## Ignore / Ownership Gate
 
 `.doc/`、`openspec/`、`.memory/` 命中 ignore 时：
@@ -257,6 +290,8 @@ review-only: findings / severity / evidence / verification gap / follow-up
 | 90% 自主覆盖 | 覆盖账本已计算加权完成度；核心主链、关键 surface、literal 和 must-not 均有证据 |
 | 真实入口覆盖 | core_path 不是仅 helper/service/mock-only，至少一个真实入口或承载点有行为证据或 blocker |
 | 纠错闭环账本 | 用户纠错项已映射到同类扫描、更新后的需求合同、代码落点和验证证据 |
+| Review Tier Closure | L2/L3 风险任务有审查镜头、反证检查、同症状分支和 unresolved gap；缺失则最高 `PARTIAL` |
+| Review Independence Disclosure | 多轮/第二视角/隔离线程/外部 reviewer 已披露 review mode、independence level、外部模型使用和主会话复核 |
 | 完成态表述门禁 | “完成 / 全部完成 / 已按需求完成 / 可以提交”有 Proof Ledger 支撑；否则只能写 `PARTIAL` 或 blocker |
 | 可见 Surface 证据 | UI、表单、下拉、错误提示、接口出参、数据来源、落库、导出等用户可见或业务可见 surface 有静态/运行时证据 |
 
@@ -285,36 +320,7 @@ branch/commit-derived 报告必须附 `Inferred Requirement Matrix`、`Diff Role
 
 ## Phase 4: Git 边界
 
-提交前：
-
-- 不混合多个任务。
-- 不把功能、重构、测试修复、文档大包混成一个提交。
-- 不把 generated artifacts 和 effective diff 混进同一提交。
-- 如不能频繁提交，输出 atomic commit plan。
-- 用户未要求发布时，不自动 push。
-- 不使用 `git add .` 作为默认动作；只暂存已确认的 effective diff、测试、文档和规格文件。
-- 若用户或仓库要求慧择/RDC Git 规范，路由到公司技能 `rdc-git`；否则仍按本技能完成收口，再进入 `ship-release`。
-
-### Intelligent Staging Gate
-
-提交或发布前按文件角色分类：
-
-| class | examples | action |
-|-------|----------|--------|
-| `include` | 本轮有效业务代码、测试、规格、必要文档 | 可暂存 |
-| `confirm` | lockfile、批量格式化、生成文档/截图、脚本、跨模块配置 | 说明原因，必要时让用户确认 |
-| `exclude` | secrets、本地配置、缓存、日志、构建产物、临时 harness、无关漂移 | 不暂存 |
-
-同时输出 test focus：`changed surface -> required verification -> executed/missing -> risk`。缺少关键 surface 验证时，不得把 Git 边界标 `DONE`。
-
-### Staged Artifact Guard
-
-进入 commit / push / PR 前必须基于暂存区再检查一次：
-
-- `git diff --cached --name-status` 必须可解释为本轮 effective diff、测试、规格或已确认文档。
-- local docs、规格草稿、记忆、生成物、截图、日志、缓存、临时 harness、replay 输出、评审包或大批量格式化默认 `confirm` 或 `exclude`，不能被 `git add .` 顺带纳入。
-- ignore 边界内文件默认只作为本地真值；除非用户明确要求版本化，否则不得 `git add -f`。
-- 若发现误暂存，先 unstaged 并重新输出 staging plan；不能用“后续再清理”进入提交。
+提交、推送或 PR 前读取 `references/pre-commit-check-rules.md` 的 Git Boundary / Staging Guard。最低门禁：不混合任务、不自动 push、不用 `git add .`、不把 generated artifacts 混入 effective diff，暂存区必须能由 `git diff --cached --name-status` 解释。
 
 ## 输出
 
@@ -324,9 +330,12 @@ branch/commit-derived 报告必须附 `Inferred Requirement Matrix`、`Diff Role
 - 变更范围:
 - 三路同步账本:
 - Proof Ledger:
+- Review Tier Closure:
+- Review Independence:
 - Correction Closure Ledger:
 - Planning Brainstorm Trace:
 - Weighted Coverage Ledger:
+- Subagent Intake:
 - 验证:
 - Final Completeness Gate:
 - Replay/Eval Disclosure:

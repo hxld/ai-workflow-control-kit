@@ -1,0 +1,45 @@
+# 发布流水线 Goal 模板
+
+适用于 main → release 的自动化发布，含 CHANGELOG 与制品。
+
+```yaml
+title: "发布 v<版本号>"
+description: "将 main 分支发布为 release v<版本号>，更新 CHANGELOG，构建制品"
+
+inputs:
+  repo_url: "<仓库 URL>"
+  source_branch: "main"
+  release_tag: "v<major>.<minor>.<patch>"
+  changelog_path: "CHANGELOG.md"
+  release_notes_template: "<发布说明模板路径（可选）>"
+
+constraints:
+  - "只从 main 分支发布"
+  - "发布前必须确保所有 CI 检查通过"
+  - "不得覆盖已存在的 tag 和 release"
+  - "CHANGELOG 必须归类（feat/fix/docs/refactor/chore）"
+  - "发布后通知相关方（看板 / IM 群消息）"
+
+success_criteria:
+  - "Git tag <release_tag> 已落地并推送"
+  - "GitHub/GitLab Release 已创建（含发布说明）"
+  - "CHANGELOG 已更新并提交"
+  - "构建制品已上传（如有）"
+  - "CI 对 tag 的流水线通过"
+
+common_failure_modes:
+  - "忘记推送 tag — tag 创建后未 push，其他人看不到"
+  - "CHANGELOG 漏项 — 有未记录的重要变更"
+  - "发布说明与变更内容不匹配"
+  - "制品未上传或上传路径与预期不一致"
+  - "发布后发现遗漏的提交"
+
+short_test: |
+  git tag --list 'v*' | grep '<release_tag>'
+  git ls-remote --tags origin '<release_tag>' | grep '<release_tag>'
+
+deliverables:
+  - "Release: <release_tag>（含 Release Notes）"
+  - "更新的 CHANGELOG.md"
+  - "构建制品（如适用）"
+```

@@ -155,7 +155,7 @@
       "scope_tier": "generic",
       "scope_note": "日志排查与事故定位是通用运行时分析方法，可跨项目使用。",
       "triggers": {
-        "keywords": ["查日志", "search logs", "investigate logs", "日志调查", "排查日志", "查生产", "生产问题", "pod crash", "跨组件字段丢失", "单点日志解释不了", "状态链路", "数据链路"]
+        "keywords": ["查日志", "search logs", "investigate logs", "日志调查", "排查日志", "查生产", "生产环境", "线上环境", "线上问题", "生产问题", "排查问题", "排查一下", "运行时证据", "pod crash", "跨组件字段丢失", "单点日志解释不了", "状态链路", "数据链路"]
       }
     },
     "retro": {
@@ -210,6 +210,15 @@
       "scope_note": "依赖当前知识库目录、文档治理链路与维护习惯，属于宿主知识治理技能。",
       "triggers": {
         "keywords": ["刷新知识", "知识维护", "refresh knowledge", "knowledge maintenance", "知识过期", "知识刷新"]
+      }
+    },
+    "project-context-compiler": {
+      "description": "在为本地项目创建或刷新 AI 可读上下文、项目根 AGENTS/CLAUDE 指引、.doc system-context 包时使用",
+      "priority": "high",
+      "scope_tier": "host-workflow",
+      "scope_note": "依赖项目根指令、.doc 上下文和当前本地仓库结构；方法通用，项目事实必须下沉到项目本地上下文。",
+      "triggers": {
+        "keywords": ["项目上下文", "项目AI上下文", "AI上下文指南", "上下文包", "system-context", "project context", "编译上下文", "刷新项目上下文", "创建AGENTS.md", "创建CLAUDE.md", ".doc上下文"]
       }
     },
     "ship-release": {

@@ -53,6 +53,8 @@
     "knownEndpointFirst": true,
     "useWhen": "Kibana URL is available, a Discover URL is provided, or direct ES URL/credentials are not configured",
     "discoverUrlInput": "extract _a.index and _g.time when a Discover URL is provided",
+    "normalizeBaseUrlToOrigin": true,
+    "stripFrontendPathBeforeBackendApi": true,
     "statusPath": "/api/status",
     "indexPatternObjectPath": "/api/saved_objects/index-pattern/{indexPatternId}",
     "msearchPath": "/elasticsearch/_msearch",
@@ -65,6 +67,7 @@
     "requestBodyFormat": "NDJSON: {index:<resolvedIndexPattern>,ignore_unavailable:true}\\n{searchBody}\\n",
     "fallbackIndexPatternSource": "project container indexPattern",
     "preflightProbe": "skip status/UI/endpoint exploration until the first configured _msearch request fails with auth, version, path, or index-pattern resolution error",
+    "path404Fallback": "retry normalized origin + msearchPath once before reporting backend unavailable",
     "fallbackAfterKnownEndpointFailure": ["saved object index-pattern resolution", "statusPath", "browser authenticated UI", "link-only output"]
   },
 

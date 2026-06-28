@@ -13,18 +13,23 @@ Elasticsearch query templates for log-investigator. See SKILL.md Query Degradati
 When a user provides a Kibana Discover URL and direct Elasticsearch settings are missing, query through Kibana's backend before falling back to browser/manual search.
 
 1. Confirm the environment gate first. Production still requires explicit confirmation and a bounded selector/time window.
-2. Parse the Discover URL:
+2. Normalize the Kibana base URL before appending backend paths:
+   - Treat configured `KIBANA_*_URL` values as possibly copied from the browser.
+   - Parse the URL and keep only `scheme://host[:port]`; strip `/app/...`, query string, and hash fragments such as `#/discover`.
+   - Build backend URLs as `{normalizedOrigin}{msearchPath}`. Do not append `/elasticsearch/_msearch` to a frontend `/app/kibana` URL.
+   - If the backend call returns 404, retry once with the normalized origin before reporting `path/version` failure.
+3. Parse the Discover URL:
    - `_a.index` is the Kibana index-pattern saved object id.
    - `_g.time` is the Discover time range when present.
    - `_a.query` is a useful starting query, but rebuild a safer DSL query from the selector, app, and time range.
-3. Resolve the physical index pattern:
-   - `GET {kibanaBase}/api/saved_objects/index-pattern/{indexPatternId}`
+4. Resolve the physical index pattern:
+   - `GET {normalizedOrigin}/api/saved_objects/index-pattern/{indexPatternId}`
    - Use `attributes.title` as the `_msearch` header `index`.
    - If the saved object is unavailable, fall back to the project/container configured index pattern.
-4. Execute backend search:
+5. Execute backend search:
 
 ```http
-POST {kibanaBase}/elasticsearch/_msearch
+POST {normalizedOrigin}/elasticsearch/_msearch
 Content-Type: application/x-ndjson
 kbn-xsrf: kibana
 
@@ -32,7 +37,7 @@ kbn-xsrf: kibana
 {"size":100,"sort":[{"@timestamp":{"order":"desc","unmapped_type":"boolean"}}],"_source":{"includes":["@timestamp","message","kubernetes.labels.app","level","logger_name"]},"query":{"bool":{"filter":[{"range":{"@timestamp":{"gte":"{start}","lte":"{end}","format":"strict_date_optional_time"}}},{"match_phrase":{"{appField}":"{appName}"}},{"match_phrase":{"message":"{selector}"}}],"must_not":[{"match_phrase":{"message":"apm"}}]}}}
 ```
 
-5. Pivot after the first useful hit:
+6. Pivot after the first useful hit:
    - Use the trace id from the hit to reconstruct the full call chain.
    - Sort trace reconstruction ascending by `@timestamp`.
    - Search known code log anchors, such as request, response, generated rule, final payload, and downstream send/submit logs.

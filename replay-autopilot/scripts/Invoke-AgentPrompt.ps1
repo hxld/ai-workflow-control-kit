@@ -312,18 +312,20 @@ function Test-ProtectedRootStatusChangeAllowed {
         return $true
     }
 
-    $prefixes = New-Object System.Collections.Generic.List[string]
+    $directoryPrefixes = New-Object System.Collections.Generic.List[string]
+    $filePaths = New-Object System.Collections.Generic.List[string]
     foreach ($allowedPrefix in @($AllowedPrefixes)) {
-        $prefix = ConvertTo-GitStatusPath $allowedPrefix
-        if ([string]::IsNullOrWhiteSpace($prefix)) {
+        $normalizedAllowed = ConvertTo-GitStatusPath $allowedPrefix
+        if ([string]::IsNullOrWhiteSpace($normalizedAllowed)) {
             continue
         }
-        if (-not $prefix.EndsWith('/')) {
-            $prefix = "$prefix/"
+        if ($normalizedAllowed.EndsWith('/')) {
+            [void]$directoryPrefixes.Add($normalizedAllowed)
+        } else {
+            [void]$filePaths.Add($normalizedAllowed)
         }
-        [void]$prefixes.Add($prefix)
     }
-    if ($prefixes.Count -eq 0) {
+    if ($directoryPrefixes.Count -eq 0 -and $filePaths.Count -eq 0) {
         return $false
     }
 
@@ -335,7 +337,16 @@ function Test-ProtectedRootStatusChangeAllowed {
     foreach ($path in $changedPaths) {
         $normalizedPath = ConvertTo-GitStatusPath $path
         $allowed = $false
-        foreach ($prefix in $prefixes) {
+        foreach ($filePath in $filePaths) {
+            if ($normalizedPath.Equals($filePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $allowed = $true
+                break
+            }
+        }
+        if ($allowed) {
+            continue
+        }
+        foreach ($prefix in $directoryPrefixes) {
             if ($normalizedPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
                 $allowed = $true
                 break

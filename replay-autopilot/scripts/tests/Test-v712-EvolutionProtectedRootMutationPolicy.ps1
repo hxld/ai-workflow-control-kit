@@ -56,6 +56,7 @@ Assert-True ($evolutionPrefixes -contains 'replay-autopilot/') 'evolution-repair
 Assert-True ($evolutionPrefixes -contains 'workflow-history/') 'evolution-repair should allow workflow history updates'
 Assert-True ($evolutionPrefixes -contains 'custom-skills-history/') 'evolution-repair should allow knowledge history updates required by evolution prompts'
 Assert-True ($evolutionPrefixes -contains 'custom-skills-guide.md') 'evolution-repair should allow knowledge guide updates required by evolution prompts'
+Assert-True ($evolutionPrefixes -contains 'CURRENT_VERSION.md') 'evolution-repair should allow exact root version file updates required by evolution prompts'
 
 $before = @'
  M README.md
@@ -70,6 +71,8 @@ $allowlistedAfter = @'
 ?? replay-autopilot/scripts/tests/Test-v712-EvolutionProtectedRootMutationPolicy.ps1
 ?? workflow-history/changes/v712-evolution-protected-root-policy.md
 ?? custom-skills-history/v687-replay-control-plane-powershell-harness.md
+?? CURRENT_VERSION.md
+ M workflow-history/latest.json
 '@
 
 $forbiddenAfter = @'
@@ -83,6 +86,8 @@ $changedPaths = @(Get-GitStatusChangedPaths -Before $before -After $allowlistedA
 Assert-True ($changedPaths -contains 'replay-autopilot/scripts/tests/Test-v712-EvolutionProtectedRootMutationPolicy.ps1') 'status delta should include newly added replay-autopilot test'
 Assert-True ($changedPaths -contains 'workflow-history/changes/v712-evolution-protected-root-policy.md') 'status delta should include newly added workflow history file'
 Assert-True ($changedPaths -contains 'custom-skills-history/v687-replay-control-plane-powershell-harness.md') 'status delta should include newly added knowledge history file'
+Assert-True ($changedPaths -contains 'CURRENT_VERSION.md') 'status delta should include exact root version file'
+Assert-True ($changedPaths -contains 'workflow-history/latest.json') 'status delta should include exact workflow latest file under allowed directory'
 Assert-True (-not ($changedPaths -contains 'README.md')) 'unchanged dirty protected-root files should not be treated as new agent mutations'
 Assert-True (Test-ProtectedRootStatusChangeAllowed -Before $before -After $allowlistedAfter -AllowedPrefixes $evolutionPrefixes) 'evolution-repair should allow only allowlisted protected-root deltas'
 Assert-True (-not (Test-ProtectedRootStatusChangeAllowed -Before $before -After $forbiddenAfter -AllowedPrefixes $evolutionPrefixes)) 'evolution-repair should reject protected-root deltas outside allowlist'

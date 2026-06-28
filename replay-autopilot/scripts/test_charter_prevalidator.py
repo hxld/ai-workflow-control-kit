@@ -32,9 +32,9 @@ class TestCharterValidator:
 
     # Required section patterns
     ENTRY_POINT_PATTERNS = [
-        MARKDOWN_LABEL_PREFIX + r'(?:Entry Point|Target Entry|Testing Entry|测试入口)' + MARKDOWN_LABEL_SUFFIX,
+        MARKDOWN_LABEL_PREFIX + r'(?:Entry(?: Point)?|Target Entry|Testing Entry|测试入口|entry_point)' + MARKDOWN_LABEL_SUFFIX,
         MARKDOWN_LABEL_PREFIX + r'(?:Method to Test|Target Method)' + MARKDOWN_LABEL_SUFFIX,
-        r'Entry Point:|Target Entry:|Testing Entry:|测试入口:',
+        r'Entry(?:\s+Point)?:|Target Entry:|Testing Entry:|测试入口:|entry_point:',
         r'Method to Test:|Target Method:',
     ]
     DB_VERIFICATION_PATTERNS = [
@@ -68,6 +68,50 @@ class TestCharterValidator:
         r'terminal\s+payload',
         r'getter/setter',
         r'field\s+existence',
+        r'assertTrue\s*\(\s*true\s*\)|assertTrue\s*\((?:(?!;).)*,\s*true\s*\)',
+        r'(?m)^\s*//\s*assert(?:Equals|That|True|False|Null|NotNull|Same)',
+        r'test\s+documents\s+expected\s+behavior',
+        r'documentation[-\s]?only',
+        r'for\s+now,\s*this\s+test\s+documents',
+        r'would\s+properly\s+propagate',
+    ]
+    SYNTHETIC_SOURCE_CHAIN_CLASSIFIERS = [
+        ('synthetic_carrier', [
+            r'return\s+new\s+\w*Request\s*\(',
+            r'terminal\s+payload',
+            r'getter/setter',
+            r'field\s+existence',
+        ]),
+        ('synthetic_data_setup', [
+            r'new\s+\w*TaskData\s*\(',
+            r'hand[-\s]?built',
+            r'manual(?:ly)?\s+injected',
+        ]),
+        ('mocked_collaborator', [
+            r'\bmock(?:ed|ito)?\b',
+            r'\bwhen\s*\(',
+            r'\bthenAnswer\s*\(',
+            r'\bArgumentCaptor\b',
+            r'\bAtomicReference\b',
+            r'buildRequestCommon',
+            r'RequestBuildFunction',
+        ]),
+        ('wrong_assertion_surface', [
+            r'assertTrue\s*\(\s*true\s*\)|assertTrue\s*\((?:(?!;).)*,\s*true\s*\)',
+            r'(?m)^\s*//\s*assert(?:Equals|That|True|False|Null|NotNull|Same)',
+            r'test\s+documents\s+expected\s+behavior',
+            r'documentation[-\s]?only',
+            r'for\s+now,\s*this\s+test\s+documents',
+            r'would\s+properly\s+propagate',
+        ]),
+    ]
+    REAL_SOURCE_CHAIN_INVOCATION_PATTERNS = [
+        r'\.invoke\s*\(',
+        r'\bRequestBuildFunction\b',
+        r'\bbuildRequestCommon\b',
+        r'\bRequestBuildContext\b',
+        r'\bArgumentCaptor\b',
+        r'\bAtomicReference\b',
     ]
 
     def __init__(self, charter_path: Path):
@@ -75,6 +119,8 @@ class TestCharterValidator:
         self.content = charter_path.read_text(encoding='utf-8', errors='ignore') if charter_path.exists() else ""
         self.failures = []
         self.warnings = []
+        self.source_chain_classifications = []
+        self.repairable_charter_failure = False
 
     def validate(self) -> bool:
         """Run all validation checks."""
@@ -113,8 +159,8 @@ class TestCharterValidator:
         """Check if test surface is at correct layer (Facade/Controller, not Service)."""
         # Extract test class pattern
         test_class_match = re.search(
-            self.MARKDOWN_LABEL_PREFIX + r'(?:Test Class|测试类|Target Test|test class)' + self.MARKDOWN_LABEL_SUFFIX
-            + r'|Test Class:|测试类:|Target Test:|test class:',
+            self.MARKDOWN_LABEL_PREFIX + r'(?:Test Class|测试类|Target Test|test class|test_class)' + self.MARKDOWN_LABEL_SUFFIX
+            + r'|Test Class:|测试类:|Target Test:|test class:|test_class:',
             self.content,
             re.IGNORECASE
         )
@@ -220,18 +266,65 @@ class TestCharterValidator:
         if not requires_source_chain:
             return
 
-        synthetic_hits = []
-        for pattern in self.SYNTHETIC_SOURCE_CHAIN_PATTERNS:
-            if re.search(pattern, self.content, re.IGNORECASE):
-                synthetic_hits.append(pattern)
+        classified_hits = []
+        classification_names = set()
+        for classification, patterns in self.SYNTHETIC_SOURCE_CHAIN_CLASSIFIERS:
+            matched_patterns = [
+                pattern for pattern in patterns
+                if re.search(pattern, self.content, re.IGNORECASE)
+            ]
+            if matched_patterns:
+                classification_names.add(classification)
+                classified_hits.append({
+                    'classification': classification,
+                    'patterns': matched_patterns,
+                })
 
-        if synthetic_hits:
+        has_real_invocation_signal = any(
+            re.search(pattern, self.content, re.IGNORECASE | re.DOTALL)
+            for pattern in self.REAL_SOURCE_CHAIN_INVOCATION_PATTERNS
+        )
+        if has_real_invocation_signal and 'mocked_collaborator' in classification_names:
+            self.source_chain_classifications.append({
+                'classification': 'mocked_collaborator',
+                'allowed': True,
+                'message': 'Mocked collaborators are allowed when the charter still invokes the real production entry/builder.'
+            })
+
+        blocking_classifications = sorted(
+            classification for classification in classification_names
+            if classification != 'mocked_collaborator'
+        )
+        if blocking_classifications:
+            self.source_chain_classifications.extend(classified_hits)
+            self.repairable_charter_failure = (
+                set(blocking_classifications).issubset({'synthetic_data_setup'}) or
+                (set(blocking_classifications).issubset({'synthetic_data_setup', 'wrong_assertion_surface'}) and has_real_invocation_signal)
+            )
             self.failures.append({
                 'code': 'SYNTHETIC_SOURCE_CHAIN_CHARTER',
                 'message': 'Source-chain test charter plans a synthetic or hand-built carrier',
-                'detail': 'Source-chain tests must exercise the real production builder/carrier path; do not return hand-built Request/TaskData objects or assert terminal DTO fields only.',
-                'patterns': synthetic_hits
+                'detail': 'Source-chain tests must exercise the real production builder/carrier path; do not return hand-built Request/TaskData objects, use tautological assertions, comment out assertions, or assert terminal DTO fields only.',
+                'classifications': blocking_classifications,
+                'patterns': [pattern for hit in classified_hits for pattern in hit['patterns']],
+                'repairable_charter_failure': self.repairable_charter_failure
             })
+
+        if re.search(r'getDeclaredMethod\s*\(\s*["\']rebuildTaskData["\']', self.content, re.IGNORECASE | re.DOTALL):
+            if not re.search(r'\.invoke\s*\(', self.content, re.IGNORECASE):
+                self.source_chain_classifications.append({
+                    'classification': 'ambiguous_real_entry_no_spring',
+                    'allowed': False,
+                    'message': 'Charter reflects the real rebuildTaskData method but does not state the no-Spring invocation.'
+                })
+                self.repairable_charter_failure = True
+                self.failures.append({
+                    'code': 'SOURCE_CHAIN_CARRIER_NOT_INVOKED',
+                    'message': 'Source-chain charter reflects rebuildTaskData but does not invoke the carrier',
+                    'detail': 'A valid source-chain charter must describe executing the real carrier and capturing its output, not merely locating a method by reflection.',
+                    'classifications': ['ambiguous_real_entry_no_spring'],
+                    'repairable_charter_failure': True
+                })
 
     def report(self) -> Dict:
         """Generate validation report."""
@@ -243,6 +336,8 @@ class TestCharterValidator:
             'warnings': self.warnings,
             'failure_count': len(self.failures),
             'warning_count': len(self.warnings),
+            'source_chain_classifications': self.source_chain_classifications,
+            'repairable_charter_failure': self.repairable_charter_failure,
         }
 
         # Add remediation guidance

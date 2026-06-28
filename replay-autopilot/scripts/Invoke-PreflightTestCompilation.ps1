@@ -15,6 +15,53 @@ function Resolve-AbsolutePath {
     return [System.IO.Path]::GetFullPath($Path)
 }
 
+function Resolve-MavenSettingsPath {
+    param([string]$ConfiguredValue)
+
+    $script:ResolvedMavenSettingsSource = 'none'
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($ConfiguredValue)) {
+        $candidates += [pscustomobject]@{ Source = 'profile:maven_settings'; Path = $ConfiguredValue }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:AI_WORKFLOW_MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:AI_WORKFLOW_MAVEN_SETTINGS'; Path = $env:AI_WORKFLOW_MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_SETTINGS)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_SETTINGS'; Path = $env:MAVEN_SETTINGS }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $candidates += [pscustomobject]@{ Source = 'userprofile:.m2/settings.xml'; Path = (Join-Path $env:USERPROFILE '.m2\settings.xml') }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:MAVEN_HOME)) {
+        $candidates += [pscustomobject]@{ Source = 'env:MAVEN_HOME'; Path = (Join-Path $env:MAVEN_HOME 'conf\settings.xml') }
+    }
+    $mvnCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
+    if ($null -eq $mvnCommand) {
+        $mvnCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $mvnCommand) {
+        $mavenHome = Split-Path -Parent (Split-Path -Parent $mvnCommand.Source)
+        if (-not [string]::IsNullOrWhiteSpace($mavenHome)) {
+            $candidates += [pscustomobject]@{ Source = 'maven-home-from-path'; Path = (Join-Path $mavenHome 'conf\settings.xml') }
+        }
+    }
+    foreach ($candidate in $candidates) {
+        $pathText = [string]$candidate.Path
+        if ([string]::IsNullOrWhiteSpace($pathText)) { continue }
+        try {
+            $full = [System.IO.Path]::GetFullPath($pathText)
+        } catch {
+            continue
+        }
+        if (Test-Path -LiteralPath $full -PathType Leaf) {
+            $script:ResolvedMavenSettingsSource = [string]$candidate.Source
+            return $full
+        }
+    }
+
+    return ''
+}
+
 function Read-TextIfExists {
     param([string]$Path)
     if (Test-Path -LiteralPath $Path) {
@@ -175,8 +222,10 @@ if (-not [string]::IsNullOrWhiteSpace($rootPom)) {
     }
 }
 
+$mavenSettings = Resolve-MavenSettingsPath -ConfiguredValue $mavenSettings
+
 # Build Maven argument list
-$mavenArgs = @('test-compile', '-q', '-DskipTests')
+$mavenArgs = @('-Dproject.build.sourceEncoding=UTF-8', '-Dfile.encoding=UTF-8', 'test-compile', '-q', '-DskipTests')
 
 if (-not [string]::IsNullOrWhiteSpace($mavenSettings)) {
     $mavenArgs = @('-s', $mavenSettings) + $mavenArgs
@@ -202,6 +251,7 @@ Write-Host "  Error Log: $testCompileErrorLog"
 
 # Record the actual Maven arguments used in the result
 $result.maven_settings_used = if ($mavenSettings) { $mavenSettings } else { '(not specified)' }
+$result.maven_settings_source = $script:ResolvedMavenSettingsSource
 $result.root_pom_used = if ($rootPom) { $rootPom } else { '(default)' }
 $result.maven_command_args = $mavenArgs -join ' '
 

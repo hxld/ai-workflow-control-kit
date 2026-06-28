@@ -66,13 +66,14 @@ If `verify-carrier.ps1` returns WARN and you cannot justify the carrier selectio
 | claim, 记录 | ClaimService, ClaimFlowService |
 | ai, AI处理 | ExampleService, ExampleFlowService |
 
-## Domain Compatibility Check (v347)
+## Domain Compatibility Check (v347/v578)
 
 Before finalizing carrier selection, verify oracle and requirement domains are compatible.
 
 1. Read `{{ORACLE_DIFF_ANALYSIS}}` to extract oracle file domains
 2. Check `domain_compatibility` in PLAN_RESULT.md
-3. If MISMATCH, planning is BLOCKED
+3. If primary oracle and requirement domains are clearly different, MISMATCH blocks planning
+4. If primary domains match but supporting-domain ratio is high, continue planning with domain-filtered oracle overlap plus a supporting-domain ledger; high foreign ratio alone must not block planning
 
 See `phase-plan-tournament.prompt.md` for full v347 domain compatibility rules.
 

@@ -27,6 +27,11 @@ function Get-StringArray {
     return @([string]$Value)
 }
 
+function New-FocusedMavenCommand {
+    param([string]$TestFilter = 'SampleCarrierTest#sampleBehavior')
+    return "mvn --% -s D:\maven\settings\settings.xml -Dproject.build.sourceEncoding=UTF-8 -Dfile.encoding=UTF-8 -f `"$script:worktree\pom.xml`" -pl sample-module -am -Dtest=$TestFilter -Dsurefire.failIfNoSpecifiedTests=false test"
+}
+
 function New-SliceResultObject {
     param(
         [string]$Status = 'DONE',
@@ -60,9 +65,9 @@ function New-SliceResultObject {
             production_entry = 'SampleCarrier.execute'
             state_or_output = 'sample state write and sample output'
             must_not = 'no unrelated write'
-            RED_command = 'mvn -Dtest=SampleCarrierTest test'
+            RED_command = New-FocusedMavenCommand
             expected_RED_failure = 'business assertion fails before production behavior is present'
-            GREEN_command = 'mvn -Dtest=SampleCarrierTest test'
+            GREEN_command = New-FocusedMavenCommand
             evidence_file = 'src/test/java/SampleCarrierTest.java'
         }
         remaining_gaps = @()
@@ -204,6 +209,36 @@ function Invoke-VerifierCase {
         Write-JsonFile -Object $SourceChainContractObject -Path (Join-Path $caseRoot 'SOURCE_CHAIN_CONTRACT.json')
     }
 
+    $carrierLockPath = Join-Path $caseRoot 'CARRIER_LOCK.json'
+    if (-not (Test-Path -LiteralPath $carrierLockPath)) {
+        $implementedPaths = @(Get-StringArray $sliceObject.implemented_files)
+        $productionPaths = @(
+            $implementedPaths | Where-Object {
+                $pathText = ([string]$_) -replace '\\', '/'
+                $pathText -match '(?i)(^|/)src/main/java/.+' -and $pathText -notmatch '(?i)(^|/)src/test/'
+            }
+        )
+        $sourceFile = [string](@($productionPaths | Where-Object { [string]$_ -match '(?i)\.java$' } | Select-Object -First 1)[0])
+        if ([string]::IsNullOrWhiteSpace($sourceFile)) {
+            $sourceFile = [string](@($productionPaths | Select-Object -First 1)[0])
+        }
+        $qualifiedEntry = [string]$sliceObject.target_subsurface_or_carrier
+        if ([string]::IsNullOrWhiteSpace($qualifiedEntry)) { $qualifiedEntry = [string]$sliceObject.production_boundary }
+        if ([string]::IsNullOrWhiteSpace($qualifiedEntry)) { $qualifiedEntry = 'SampleCarrier.execute' }
+        Write-JsonFile -Object ([ordered]@{
+            schema = 'carrier_lock.v1'
+            experiment = 'verifier_contract_fixture'
+            status = 'LOCKED'
+            carrier_lock_status = 'PASS'
+            family_id = [string](@($families | Select-Object -First 1)[0])
+            qualified_entry = $qualifiedEntry
+            selected_carrier = $qualifiedEntry
+            source_file = $sourceFile
+            expected_production_files = @($productionPaths)
+            production_boundary = [string]$sliceObject.production_boundary
+        }) -Path $carrierLockPath
+    }
+
     & powershell -NoProfile -ExecutionPolicy Bypass -File $script:verifier `
         -ReplayRoot $caseRoot `
         -Worktree $script:worktree `
@@ -337,32 +372,32 @@ class DependencySpyTest {
     }
 }
 "@
-New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task') | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
-Set-Content -LiteralPath (Join-Path $script:worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessorTest.java') -Encoding UTF8 -Value @"
-class AiApplyClaimApiTaskProcessorTest {
-    void testTaskData_hasPolicyNumAndInsureNumFields() {
+New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'demo-harness\src\test\java\demo') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $script:worktree 'demo-core\src\main\java\demo') | Out-Null
+Set-Content -LiteralPath (Join-Path $script:worktree 'demo-harness\src\test\java\demo\ApplyTaskProcessorTest.java') -Encoding UTF8 -Value @"
+class ApplyTaskProcessorTest {
+    void testTaskData_hasPrimaryIdAndSecondaryIdFields() {
         Long testCaseId = 12345L;
         Object result = null;
         if (result != null) {
             // DTO getter/setter field existence only.
         }
         // thenAnswer direct request bypass:
-        // return new AiApplyClaimRequest();
+        // return new ApplyRequest();
         // createMockRequest("P", "I");
     }
 }
 "@
-Set-Content -LiteralPath (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') -Encoding UTF8 -Value 'class AiApplyClaimApiTaskProcessor {}'
-Set-Content -LiteralPath (Join-Path $script:worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiCalculateLossApiTaskProcessor.java') -Encoding UTF8 -Value 'class AiCalculateLossApiTaskProcessor {}'
-& git -C $script:worktree add README.md src/main/java/SampleCarrier.java src/main/java/SampleProcessor.java src/main/java/DependencyEvent.java src/test/java/SampleProcessorTest.java src/test/java/SampleCarrierTest.java src/test/java/DependencySpyTest.java claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java | Out-Null
+Set-Content -LiteralPath (Join-Path $script:worktree 'demo-core\src\main\java\demo\ApplyTaskProcessor.java') -Encoding UTF8 -Value 'class ApplyTaskProcessor {}'
+Set-Content -LiteralPath (Join-Path $script:worktree 'demo-core\src\main\java\demo\CalculateTaskProcessor.java') -Encoding UTF8 -Value 'class CalculateTaskProcessor {}'
+& git -C $script:worktree add README.md src/main/java/SampleCarrier.java src/main/java/SampleProcessor.java src/main/java/DependencyEvent.java src/test/java/SampleProcessorTest.java src/test/java/SampleCarrierTest.java src/test/java/DependencySpyTest.java demo-harness/src/test/java/demo/ApplyTaskProcessorTest.java demo-core/src/main/java/demo/ApplyTaskProcessor.java demo-core/src/main/java/demo/CalculateTaskProcessor.java | Out-Null
 & git -C $script:worktree -c user.name='Replay Test' -c user.email='replay-test@example.local' commit -m 'init' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "git commit failed for $script:worktree" }
 
-$redFail = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'RED'; result = 'fail'; evidence = 'Tests run: 1, Failures: 1; business assertion failed as expected' }
-$redBlocked = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'RED'; result = 'blocked'; evidence = 'red command was blocked and did not prove failure' }
-$greenPass = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'GREEN'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
-$verifyPass = [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'VERIFY'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
+$redFail = [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#sampleBehavior'); phase = 'RED'; result = 'fail'; evidence = 'Tests run: 1, Failures: 1; business assertion failed as expected' }
+$redBlocked = [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#sampleBehavior'); phase = 'RED'; result = 'blocked'; evidence = 'red command was blocked and did not prove failure' }
+$greenPass = [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#sampleBehavior'); phase = 'GREEN'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
+$verifyPass = [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#sampleBehavior'); phase = 'VERIFY'; result = 'pass'; evidence = 'BUILD SUCCESS; Tests run: 1, Failures: 0, Errors: 0' }
 
 $plannedClassDotBindingCase = New-SliceResultObject `
     -Status 'DONE' `
@@ -372,8 +407,8 @@ $plannedClassDotBindingCase = New-SliceResultObject `
     -TouchedFamilies @('core_entry') `
     -ClosedFamilies @('core_entry') `
     -Tests @(
-        [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'RED'; result = 'fail'; evidence = 'planned class red failed' },
-        [ordered]@{ command = 'mvn -Dtest=SampleCarrierTest test'; phase = 'GREEN'; result = 'pass'; evidence = 'planned class green passed' }
+        [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#shouldCallCarrier'); phase = 'RED'; result = 'fail'; evidence = 'planned class red failed' },
+        [ordered]@{ command = (New-FocusedMavenCommand 'SampleCarrierTest#shouldCallCarrier'); phase = 'GREEN'; result = 'pass'; evidence = 'planned class green passed' }
     )
 $plannedClassDotBindingCase.target_subsurface_or_carrier = 'SampleCarrier.execute'
 $plannedClassDotBindingCase.production_boundary = 'SampleCarrier.execute'
@@ -935,31 +970,31 @@ $progressiveCoreSlice = New-SliceResultObject `
     -Tests @($redFail, $greenPass) `
     -TouchedFamilies @('core_entry') `
     -ClosedFamilies @('core_entry') `
-    -GapFlags @('tracer_bullet_only', 'side_effect_ledger_gap', 'deploy_surface_contract_gap') `
+    -GapFlags @('tracer_bullet_only', 'deploy_surface_contract_gap') `
     -CoverageDelta 8
-$progressiveCoreSlice.target_subsurface_or_carrier = 'OpenClaimService.parseDangerInfo -> ReportService.createReport -> ClaimNotifyEvent.pushMsgToMQ'
-$progressiveCoreSlice.production_boundary = 'XmlpOpenClaimController.reportCase -> OpenClaimService.parseDangerInfo -> ReportService.createReport'
+$progressiveCoreSlice.target_subsurface_or_carrier = 'SampleIntakeService.parseDangerInfo -> SampleReportService.createReport -> SampleNotifyEvent.pushMsgToMQ'
+$progressiveCoreSlice.production_boundary = 'SampleIntakeController.reportCase -> SampleIntakeService.parseDangerInfo -> SampleReportService.createReport'
 $progressiveCoreSlice.implemented_files = @(
     'src/main/java/SampleCarrier.java',
     'src/test/java/SampleCarrierTest.java'
 )
 $progressiveCoreSlice.next_recommended_slice_type = 'stateful_success_slice'
 $progressiveCoreSlice.exact_contract_assertions = @([ordered]@{
-    literal = 'OpenReportDto.wxId'
-    symbol_or_field = 'CaseInfoParam.wxId'
+    literal = 'SampleReportDto.externalId'
+    symbol_or_field = 'SamplePayloadParam.externalId'
     db_or_wire_or_display = 'wire'
-    production_predicate = 'OpenClaimService copies wxId into CaseInfoParam'
+    production_predicate = 'SampleIntakeService copies externalId into SamplePayloadParam'
     forbidden_extra_predicate = 'none'
-    test_assertion = 'request wxId reaches payload wxId'
+    test_assertion = 'request externalId reaches payload externalId'
     source_type = 'requirement'
     status = 'CLOSED'
 })
 $progressiveCoreSlice.side_effect_evidence = [ordered]@{
     status = 'CLOSED'
-    entry_call = 'XmlpOpenClaimController.reportCase'
-    expected_writes_or_outputs = @('Report wxId is written', 'MQ payload wxId is emitted')
+    entry_call = 'SampleIntakeController.reportCase'
+    expected_writes_or_outputs = @('Report externalId is written', 'MQ payload externalId is emitted')
     must_not_writes = @('no rabbit topology change')
-    test_name = 'OpenClaimWxIdContractTest'
+    test_name = 'SampleExternalIdContractTest'
     red_result = 'BUSINESS_ASSERTION_FAILED'
     green_result = 'PASS'
 }
@@ -968,9 +1003,9 @@ $progressiveCoreCarrier = [ordered]@{
     slice_index = 1
     forced_requirement_family = 'core_entry'
     authorization = 'ALLOW'
-    real_entry = 'XmlpOpenClaimController.reportCase'
-    selected_carrier = 'XmlpOpenClaimController.reportCase -> OpenClaimService.parseDangerInfo -> ReportService.createReport'
-    downstream_side_effect_or_output = 'Report wxId and MQ payload wxId'
+    real_entry = 'SampleIntakeController.reportCase'
+    selected_carrier = 'SampleIntakeController.reportCase -> SampleIntakeService.parseDangerInfo -> SampleReportService.createReport'
+    downstream_side_effect_or_output = 'Report externalId and MQ payload externalId'
     requires_side_effect_evidence = $true
     requires_exact_contract_assertions = $false
     forbidden_synthetic_carrier = $false
@@ -1034,7 +1069,7 @@ $syntheticCarrierCase = New-SliceResultObject `
     -TouchedFamilies @('stateful_side_effect') `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 10
-$syntheticCarrierCase.implemented_files = @('claim-core/src/main/java/example/AutoFlowNoop.java', 'claim-server/src/test/java/example/AutoFlowNoopTest.java')
+$syntheticCarrierCase.implemented_files = @('demo-core/src/main/java/example/AutoFlowNoop.java', 'demo-harness/src/test/java/example/AutoFlowNoopTest.java')
 $syntheticCarrierCase.target_subsurface_or_carrier = 'AutoFlowNoop.orchestrate'
 $syntheticCarrierCase.production_boundary = 'real entry -> AutoFlowNoop substitute carrier'
 $syntheticCarrierCase.closed_assertions = @('asserted transaction rollback, commit order, task update, state transition, and progress log')
@@ -1050,13 +1085,13 @@ Invoke-VerifierCase `
 $policySourceChainContract = [ordered]@{
     required_source_chain = $true
     next_required_slice = [ordered]@{
-        entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-        carrier = 'RequestBuildContext.policyNum/insureNum -> RequestBuildFunction -> request -> taskData'
+        entry = 'ApplyTaskProcessor.rebuildTaskData(Long caseId) and CalculateTaskProcessor.rebuildTaskData(Long caseId)'
+        carrier = 'RequestBuildContext.primaryId/secondaryId -> RequestBuildFunction -> request -> taskData'
         slice_type = 'exact_contract_slice'
-        test_name = 'AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
+        test_name = 'ApplyTaskProcessorTest.testRebuildTaskData_PreservesPrimaryIdAndSecondaryId'
         must_touch_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            'demo-core/src/main/java/demo/ApplyTaskProcessor.java',
+            'demo-core/src/main/java/demo/CalculateTaskProcessor.java'
         )
     }
 }
@@ -1068,13 +1103,13 @@ $policySourceChainDtoOnlyCase = New-SliceResultObject `
     -TouchedFamilies @('core_entry') `
     -ClosedFamilies @('core_entry') `
     -CoverageDelta 100
-$policySourceChainDtoOnlyCase.implemented_files = @('claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java')
-$policySourceChainDtoOnlyCase.target_subsurface_or_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)'
+$policySourceChainDtoOnlyCase.implemented_files = @('demo-harness/src/test/java/demo/ApplyTaskProcessorTest.java')
+$policySourceChainDtoOnlyCase.target_subsurface_or_carrier = 'ApplyTaskProcessor.rebuildTaskData(Long caseId)'
 $policySourceChainDtoOnlyCase.production_boundary = 'TaskProcessor rebuild source-chain'
 $policySourceChainDtoOnlyCase.closed_assertions = @(
     'DTO getter/setter field existence',
-    'hasPolicyNumAndInsureNumFields',
-    'taskData.setPolicyNum(request.getPolicyNum()) line exists'
+    'hasPrimaryIdAndSecondaryIdFields',
+    'taskData.setPrimaryId(request.getPrimaryId()) line exists'
 )
 Invoke-VerifierCase `
     -Name 'policy_rebuild_source_chain_dto_only_is_synthetic' `
@@ -1095,17 +1130,17 @@ $createdOnlyCoverageCase = New-SliceResultObject `
     -SliceType 'exact_contract_slice' `
     -ProofKind 'real_entry_behavior' `
     -Tests @(
-        [ordered]@{ command = 'Created AiApplyClaimApiTaskProcessorTest with scenarios'; phase = 'RED'; result = 'pass'; evidence = 'test file created only' },
+        [ordered]@{ command = 'Created ApplyTaskProcessorTest with scenarios'; phase = 'RED'; result = 'pass'; evidence = 'test file created only' },
         [ordered]@{ command = 'Applied GREEN fix and checked git diff'; phase = 'GREEN'; result = 'pass'; evidence = 'Git diff shows expected production lines' }
     ) `
     -TouchedFamilies @('core_entry') `
     -ClosedFamilies @('core_entry') `
     -CoverageDelta 100
 $createdOnlyCoverageCase.implemented_files = @(
-    'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-    'claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java'
+    'demo-core/src/main/java/demo/ApplyTaskProcessor.java',
+    'demo-harness/src/test/java/demo/ApplyTaskProcessorTest.java'
 )
-$createdOnlyCoverageCase.target_subsurface_or_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)'
+$createdOnlyCoverageCase.target_subsurface_or_carrier = 'ApplyTaskProcessor.rebuildTaskData(Long caseId)'
 $createdOnlyCoverageCase.production_boundary = 'TaskProcessor rebuild source-chain'
 $createdOnlyCoverageCase.closed_assertions = @('production diff exists but tests were not executed')
 Invoke-VerifierCase `
@@ -1163,10 +1198,10 @@ Invoke-VerifierCase `
     -ExpectedAuthorizedNextSlice $true `
     -ExpectedAuthorizedSynthesis $true
 
-$newStatefulDir = Join-Path $script:worktree 'claim-core\src\main\java\com\example\ai'
+$newStatefulDir = Join-Path $script:worktree 'demo-core\src\main\java\demo\stateful'
 New-Item -ItemType Directory -Force -Path $newStatefulDir | Out-Null
-Set-Content -LiteralPath (Join-Path $newStatefulDir 'AiAutoClaimFlowService.java') -Encoding UTF8 -Value @"
-class AiAutoClaimFlowService {
+Set-Content -LiteralPath (Join-Path $newStatefulDir 'AutoWorkflowService.java') -Encoding UTF8 -Value @"
+class AutoWorkflowService {
     private CompensateInfoMapper compensateInfoMapper;
     private CompensateDetailMapper compensateDetailMapper;
     private CaseFlowStatusService caseFlowStatusService;
@@ -1195,10 +1230,10 @@ $statefulNewDomainCarrierCase = New-SliceResultObject `
     -ClosedFamilies @('stateful_side_effect') `
     -CoverageDelta 12
 $statefulNewDomainCarrierCase.implemented_files = @(
-    'claim-core/src/main/java/com/example/ai/AiAutoClaimFlowService.java',
-    'claim-server/src/test/java/com/example/ai/AiAutoClaimFlowServiceTest.java'
+    'demo-core/src/main/java/demo/stateful/AutoWorkflowService.java',
+    'demo-harness/src/test/java/demo/stateful/AutoWorkflowServiceTest.java'
 )
-$statefulNewDomainCarrierCase.production_boundary = 'real entry -> AiAutoClaimFlowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
+$statefulNewDomainCarrierCase.production_boundary = 'real entry -> AutoWorkflowService#handle -> CompensateInfoMapper/CompensateDetailMapper + CaseFlowStatusService + CaseProgressService + TaskService + ExamineLogService'
 $statefulNewDomainCarrierCase.closed_assertions = @(
     'writes compensate info/detail mapper rows',
     'updates status 35',
@@ -1209,7 +1244,7 @@ $statefulNewDomainCarrierCase.closed_assertions = @(
 )
 $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
     status = 'CLOSED'
-    entry_call = 'AiAutoClaimFlowService#handle'
+    entry_call = 'AutoWorkflowService#handle'
     expected_writes_or_outputs = @(
         'valid path writes t_compensate_info and t_compensate_detail',
         'valid path updates status 35 and inserts case progress',
@@ -1217,7 +1252,7 @@ $statefulNewDomainCarrierCase.side_effect_evidence = [ordered]@{
         'failure paths write only AI log'
     )
     must_not_writes = @('no case progress on precondition failure')
-    test_name = 'AiAutoClaimFlowServiceTest'
+    test_name = 'AutoWorkflowServiceTest'
     red_result = 'BUSINESS_ASSERTION_FAILED'
     green_result = 'PASS'
 }

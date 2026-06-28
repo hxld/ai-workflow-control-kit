@@ -24,8 +24,9 @@ $validateJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $runner `
     -ConfigPath $config `
     -CycleRounds 3 `
     -MaxCycles 2 `
-    -Executor claude `
-    -RequireExecutor claude `
+    -Executor codex `
+    -RequireExecutor codex `
+    -AllowCodexExecutor `
     -RunEvolution `
     -UseLatestKnowledgeVersion `
     -ValidateOnly
@@ -35,8 +36,8 @@ $validate = $validateJson | ConvertFrom-Json
 Assert-True -Name 'runner_validate_valid' -Condition ($validate.status -eq 'VALID')
 Assert-True -Name 'runner_cycle_rounds_three' -Condition ([int]$validate.cycle_rounds -eq 3)
 Assert-True -Name 'runner_max_cycles_two' -Condition ([int]$validate.max_cycles -eq 2)
-Assert-True -Name 'runner_requires_claude' -Condition ($validate.require_executor -eq 'claude')
-Assert-True -Name 'runner_blocks_codex_primary' -Condition ([string]$validate.allow_codex_executor -eq 'False')
+Assert-True -Name 'runner_requires_codex' -Condition ($validate.require_executor -eq 'codex')
+Assert-True -Name 'runner_authorizes_codex_primary' -Condition ([string]$validate.allow_codex_executor -eq 'True')
 Assert-True -Name 'runner_continues_on_evolve' -Condition (@($validate.continue_decision_kinds) -contains 'EVOLVE')
 Assert-True -Name 'runner_continues_on_upgrade' -Condition (@($validate.continue_decision_kinds) -contains 'UPGRADE')
 Assert-True -Name 'runner_limits_zero_cap_evolution_continue' -Condition ([int]$validate.zero_cap_evolution_continue_limit -eq 1)
@@ -45,8 +46,9 @@ $launcherJson = & powershell -NoProfile -ExecutionPolicy Bypass -File $launcher 
     -ConfigPath $config `
     -CycleRounds 3 `
     -MaxCycles 2 `
-    -Executor claude `
-    -RequireExecutor claude `
+    -Executor codex `
+    -RequireExecutor codex `
+    -AllowCodexExecutor `
     -RunEvolution `
     -UseLatestKnowledgeVersion `
     -ValidateOnly

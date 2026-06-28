@@ -4,6 +4,9 @@ Contract Fingerprinting Gate (Experiment 1 from NEXT_EXPERIMENT_PLAN.md).
 
 Verify that implemented carrier matches planned signature exactly.
 This prevents carrier mismatch gaps where agents create methods with wrong signatures.
+The script also accepts the pre-RED authorization schema used by replay
+evolution experiments: selected_real_entry, selected_carrier,
+test_invocation_path, and proof_observation_point.
 """
 
 import json
@@ -32,14 +35,82 @@ def run_command(cmd: List[str], cwd: str, timeout: int = 60) -> Tuple[int, str, 
         return -1, "", str(e)
 
 
+def simple_java_name(name: str) -> str:
+    """Return the simple Java class/type name without package or generic detail."""
+    if not name:
+        return ""
+    cleaned = re.sub(r'<[^>]+>', '', name).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    if " " in cleaned:
+        cleaned = cleaned.split(" ", 1)[0]
+    cleaned = cleaned.replace("[]", "").strip()
+    return cleaned.split(".")[-1]
+
+
+def normalize_carrier_string(carrier_str: str) -> str:
+    """Normalize common carrier evidence into Class.method signature text."""
+    if not carrier_str:
+        return ""
+
+    text = str(carrier_str).strip().strip("`").strip()
+    text = text.strip('"').strip("'").strip()
+    if text.startswith("new ") or text.startswith("call "):
+        text = text.split(" ", 1)[1].strip()
+
+    if ".java" not in text.lower():
+        return text.rstrip(".").strip()
+
+    path_text = text.replace("\\", "/")
+    class_match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\.java\b", path_text)
+    if not class_match:
+        return text.rstrip(".").strip()
+
+    class_name = class_match.group(1)
+    suffix = path_text[class_match.end():].strip()
+    method_match = re.search(
+        r"#\s*([A-Za-z_][A-Za-z0-9_]*)(\s*\([^)]*\))?(\s*:\s*[^,|;]+)?",
+        suffix,
+    )
+    if not method_match:
+        method_match = re.search(
+            r"(?:^|[\s:#])(?:(?:[A-Za-z_][A-Za-z0-9_]*)\.)?"
+            r"([A-Za-z_][A-Za-z0-9_]*)(\s*\([^)]*\))?(\s*:\s*[^,|;]+)?",
+            suffix,
+        )
+
+    if not method_match:
+        return class_name
+
+    method_name = method_match.group(1)
+    params = (method_match.group(2) or "").strip()
+    return_type = (method_match.group(3) or "").strip()
+    return f"{class_name}.{method_name}{params}{return_type}".strip()
+
+
+def carrier_requires_exact_signature(carrier_str: str) -> bool:
+    """Return true when the carrier text provides params or return type."""
+    normalized = normalize_carrier_string(carrier_str)
+    if "(" in normalized and ")" in normalized:
+        return True
+    return bool(re.search(r"(?<![A-Za-z]):\s*[A-Za-z_][A-Za-z0-9_<>, ?\[\].]*\s*$", normalized))
+
+
 class MethodSignature:
     """Represents a Java method signature."""
 
-    def __init__(self, class_name: str, method_name: str, parameters: List[str], return_type: str = "void"):
+    def __init__(
+        self,
+        class_name: str,
+        method_name: str,
+        parameters: List[str],
+        return_type: str = "void",
+        visibility: str = "package",
+    ):
         self.class_name = class_name
         self.method_name = method_name
         self.parameters = parameters
         self.return_type = return_type
+        self.visibility = visibility or "package"
 
     def __str__(self):
         params = ", ".join(self.parameters)
@@ -61,6 +132,7 @@ class MethodSignature:
             "method_name": self.method_name,
             "parameters": self.parameters,
             "return_type": self.return_type,
+            "visibility": self.visibility,
             "formatted": str(self)
         }
 
@@ -77,10 +149,8 @@ def parse_carrier_string(carrier_str: str) -> Optional[MethodSignature]:
     if not carrier_str:
         return None
 
-    # Remove common artifacts
-    carrier_str = carrier_str.strip()
-    if carrier_str.startswith("new ") or carrier_str.startswith("call "):
-        carrier_str = carrier_str.split(" ", 1)[1].strip()
+    # Remove common artifacts and normalize path-shaped evidence.
+    carrier_str = normalize_carrier_string(carrier_str)
 
     # Extract return type if present
     return_type = "void"
@@ -113,6 +183,19 @@ def parse_carrier_string(carrier_str: str) -> Optional[MethodSignature]:
     return MethodSignature(class_name, method_name, parameters, return_type)
 
 
+def carrier_is_class_only(carrier_str: str) -> bool:
+    """Return true when carrier text names only a Java class, not a method."""
+    normalized = normalize_carrier_string(carrier_str)
+    if not normalized:
+        return False
+    if "(" in normalized or ")" in normalized:
+        return False
+    if ":" in normalized:
+        return False
+    leaf = normalized.rsplit(".", 1)[-1]
+    return bool(leaf and leaf[0].isupper())
+
+
 def extract_method_signature_from_source(source: str, class_name: str, method_name: str) -> Optional[MethodSignature]:
     """
     Extract method signature from Java source code.
@@ -122,7 +205,7 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     # Pattern for method declaration
     # Matches: public/private/protected/package-private [static] [final] ReturnType methodName(params) [throws ...]
     pattern = re.compile(
-        r'^(?:public|private|protected|)?\s*(?:static\s+)?(?:final\s+)?([^\s]+)\s+' +
+        r'^\s*(?:(public|private|protected)\s+)?(?:(?:static|final|abstract|synchronized|native)\s+)*([^\s]+)\s+' +
         re.escape(method_name) +
         r'\s*\(([^)]*)\)\s*(?:throws\s+[^{]+)?',
         re.MULTILINE
@@ -131,8 +214,9 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
     for i, line in enumerate(lines):
         match = pattern.search(line)
         if match:
-            return_type = match.group(1).strip()
-            params_str = match.group(2).strip()
+            visibility = (match.group(1) or "package").strip()
+            return_type = match.group(2).strip()
+            params_str = match.group(3).strip()
 
             # Parse parameters
             parameters = []
@@ -141,52 +225,184 @@ def extract_method_signature_from_source(source: str, class_name: str, method_na
                 param_parts = [p.strip() for p in params_str.split(",")]
                 for param in param_parts:
                     if param:
+                        param = re.sub(r'@\w+(?:\([^)]*\))?\s*', '', param).strip()
+                        param = re.sub(r'\bfinal\s+', '', param).strip()
                         # Extract type from "Type name" or just "Type"
                         type_match = re.match(r'^([A-Za-z][A-Za-z0-9_<>, ?\[\]\.]*)', param)
                         if type_match:
-                            parameters.append(type_match.group(1))
+                            raw_type = type_match.group(1).strip()
+                            if " " in raw_type:
+                                raw_type = raw_type.rsplit(" ", 1)[0].strip()
+                            parameters.append(raw_type)
 
-            return MethodSignature(class_name, method_name, parameters, return_type)
+            return MethodSignature(class_name, method_name, parameters, return_type, visibility)
 
     return None
 
 
+def extract_package_name(source: str) -> str:
+    """Extract the Java package declaration from source text."""
+    match = re.search(r'^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;', source, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
+def extract_extends_name(source: str, class_name: str) -> str:
+    """Extract the direct superclass name for a Java class, if any."""
+    search_class_name = simple_java_name(class_name)
+    if not search_class_name:
+        return ""
+    match = re.search(
+        rf'\bclass\s+{re.escape(search_class_name)}\b(?P<header>[\s\S]*?)\{{',
+        source,
+        re.MULTILINE,
+    )
+    if not match:
+        return ""
+    extends_match = re.search(r'\bextends\s+([A-Za-z_$][A-Za-z0-9_.$]*)', match.group('header'))
+    return extends_match.group(1).replace('$', '.') if extends_match else ""
+
+
+def resolve_parent_class_name(parent_name: str, child_source: str) -> str:
+    """Resolve a direct superclass name against imports and package context."""
+    if not parent_name:
+        return ""
+    if "." in parent_name:
+        return parent_name
+
+    import_pattern = re.compile(
+        rf'^\s*import\s+([A-Za-z_][A-Za-z0-9_.]*\.{re.escape(parent_name)})\s*;',
+        re.MULTILINE,
+    )
+    import_match = import_pattern.search(child_source)
+    if import_match:
+        return import_match.group(1)
+
+    package_name = extract_package_name(child_source)
+    return f"{package_name}.{parent_name}" if package_name else parent_name
+
+
+def find_class_candidates(worktree: str, class_name: str) -> List[Path]:
+    """Find Java source files declaring the requested class name."""
+    search_class_name = simple_java_name(class_name)
+    if not search_class_name:
+        return []
+
+    search_cmd = [
+        "rg",
+        "--type",
+        "java",
+        "--files-with-matches",
+        rf"\bclass\s+{re.escape(search_class_name)}\b",
+    ]
+    candidate_paths: List[Path] = []
+    seen = set()
+
+    returncode, stdout, stderr = run_command(search_cmd, worktree, timeout=30)
+    if returncode == 0 and stdout.strip():
+        # Use --files-with-matches so Windows drive letters like D:\ are not
+        # confused with rg's normal match separators.
+        for line in stdout.strip().split("\n"):
+            file_path_text = line.strip()
+            if not file_path_text:
+                continue
+            candidate_path = Path(file_path_text)
+            if not candidate_path.is_absolute():
+                candidate_path = Path(worktree) / candidate_path
+            key = str(candidate_path).lower()
+            if key not in seen:
+                seen.add(key)
+                candidate_paths.append(candidate_path)
+
+    # rg can be missing from PATH or behave differently in nested executor
+    # environments. A pure Python scan is slower but deterministic for gates.
+    if not candidate_paths:
+        class_pattern = re.compile(rf"\bclass\s+{re.escape(search_class_name)}\b")
+        for java_path in Path(worktree).rglob("*.java"):
+            try:
+                source = java_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                source = java_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if class_pattern.search(source):
+                key = str(java_path).lower()
+                if key not in seen:
+                    seen.add(key)
+                    candidate_paths.append(java_path)
+
+    return candidate_paths
+
+
 def search_method_in_worktree(worktree: str, class_name: str, method_name: str) -> Optional[Dict]:
     """
-    Search for method implementation in worktree.
+    Search for a method implementation in the requested class or inherited
+    from its direct superclass chain.
 
     Returns dict with 'file_path' and 'source' if found.
     """
-    # Search for the class file
-    search_cmd = ["rg", "--type", "java", f"class {class_name}"]
+    return search_method_in_type_hierarchy(worktree, class_name, method_name, visited=set())
 
-    returncode, stdout, stderr = run_command(search_cmd, worktree, timeout=30)
-    if returncode != 0 or not stdout.strip():
+
+def search_method_in_type_hierarchy(
+    worktree: str,
+    class_name: str,
+    method_name: str,
+    visited: set,
+) -> Optional[Dict]:
+    search_class_name = simple_java_name(class_name)
+    if not search_class_name:
         return None
-
-    # Get file path from first match
-    for line in stdout.strip().split("\n")[:5]:
-        if line.strip():
-            file_path = line.split(":")[0]
-            break
-    else:
+    visited_key = search_class_name.lower()
+    if visited_key in visited:
         return None
+    visited.add(visited_key)
 
-    # Read the file to extract method signature
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            source = f.read()
-    except:
-        return None
+    expected_package = class_name.rsplit(".", 1)[0] if "." in class_name else ""
+    loaded_candidates = []
+    for candidate_path in find_class_candidates(worktree, class_name)[:50]:
+        try:
+            source = candidate_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = candidate_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
 
-    # Verify method exists in class
-    if method_name not in source:
-        return None
+        package_name = extract_package_name(source)
+        package_rank = 0 if expected_package and package_name == expected_package else 1
+        loaded_candidates.append((package_rank, str(candidate_path), candidate_path, source))
 
-    return {
-        "file_path": file_path,
-        "source": source
-    }
+    loaded_candidates.sort(key=lambda item: (item[0], item[1]))
+
+    for _, _, candidate_path, source in loaded_candidates:
+        impl_sig = extract_method_signature_from_source(source, class_name, method_name)
+        if impl_sig:
+            return {
+                "file_path": str(candidate_path),
+                "source": source,
+                "declaring_class": search_class_name,
+                "requested_class": class_name,
+                "inherited": False,
+            }
+
+    for _, _, candidate_path, source in loaded_candidates:
+        parent_name = extract_extends_name(source, search_class_name)
+        parent_lookup = resolve_parent_class_name(parent_name, source)
+        if not parent_lookup:
+            continue
+        inherited_match = search_method_in_type_hierarchy(
+            worktree,
+            parent_lookup,
+            method_name,
+            visited=visited,
+        )
+        if inherited_match:
+            inherited_match["requested_class"] = class_name
+            inherited_match["inherited"] = True
+            inherited_match["inherited_from_class"] = inherited_match.get("declaring_class") or simple_java_name(parent_lookup)
+            inherited_match["inherited_via_class"] = search_class_name
+            return inherited_match
+
+    return None
 
 
 def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bool:
@@ -199,7 +415,7 @@ def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bo
         return False
 
     # Class name must match
-    if plan_sig.class_name != impl_sig.class_name:
+    if simple_java_name(plan_sig.class_name) != simple_java_name(impl_sig.class_name):
         return False
 
     # Method name must match
@@ -213,14 +429,14 @@ def signatures_match(plan_sig: MethodSignature, impl_sig: MethodSignature) -> bo
     # Parameter types must match (order matters)
     for p1, p2 in zip(plan_sig.parameters, impl_sig.parameters):
         # Normalize for comparison (remove generics for basic check)
-        p1_clean = re.sub(r'<[^>]+>', '', p1).strip()
-        p2_clean = re.sub(r'<[^>]+>', '', p2).strip()
+        p1_clean = simple_java_name(p1)
+        p2_clean = simple_java_name(p2)
         if p1_clean != p2_clean:
             return False
 
     # Return type must match
-    plan_return_clean = re.sub(r'<[^>]+>', '', plan_sig.return_type).strip()
-    impl_return_clean = re.sub(r'<[^>]+>', '', impl_sig.return_type).strip()
+    plan_return_clean = simple_java_name(plan_sig.return_type)
+    impl_return_clean = simple_java_name(impl_sig.return_type)
     if plan_return_clean != impl_return_clean:
         return False
 
@@ -259,7 +475,10 @@ def signature_diff(plan_sig: MethodSignature, impl_sig: MethodSignature) -> List
 def verify_carrier_signature(
     plan_carrier: str,
     worktree_path: str,
-    baseline_commit: Optional[str] = None
+    baseline_commit: Optional[str] = None,
+    selected_real_entry: str = "",
+    test_invocation_path: str = "",
+    proof_observation_point: str = "",
 ) -> Dict:
     """
     Verify that implemented carrier matches planned signature.
@@ -273,13 +492,18 @@ def verify_carrier_signature(
         Dict with verification result
     """
     # Parse planned carrier
+    normalized_plan_carrier = normalize_carrier_string(plan_carrier)
+    exact_signature_required = carrier_requires_exact_signature(plan_carrier)
     plan_sig = parse_carrier_string(plan_carrier)
     if not plan_sig:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_parse_failed"],
             "error": "carrier_parse_failed",
             "message": f"Failed to parse carrier string: {plan_carrier}",
-            "carrier_provided": plan_carrier
+            "carrier_provided": plan_carrier,
+            "normalized_carrier": normalized_plan_carrier,
         }
 
     # Search for implementation in worktree
@@ -292,9 +516,13 @@ def verify_carrier_signature(
     if not impl_match:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_not_found"],
             "error": "carrier_not_found",
             "message": f"No implementation found for {plan_sig.class_name}.{plan_sig.method_name}",
             "planned_signature": plan_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "search_query": f"class {plan_sig.class_name} method {plan_sig.method_name}"
         }
 
@@ -308,31 +536,207 @@ def verify_carrier_signature(
     if not impl_sig:
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["method_signature_not_found"],
             "error": "method_signature_not_found",
             "message": f"Method {plan_sig.method_name} not found in class {plan_sig.class_name}",
             "planned_signature": plan_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "file_path": impl_match["file_path"]
         }
 
+    visibility_blockers = []
+    if impl_sig.visibility == "private":
+        visibility_blockers.append("carrier_private")
+    if selected_real_entry:
+        entry_sig = parse_carrier_string(selected_real_entry)
+        if entry_sig:
+            entry_match = search_method_in_worktree(worktree_path, entry_sig.class_name, entry_sig.method_name)
+            if not entry_match:
+                visibility_blockers.append("selected_real_entry_not_found")
+        else:
+            visibility_blockers.append("selected_real_entry_parse_failed")
+    if visibility_blockers:
+        return {
+            "status": "FAIL",
+            "authorized": False,
+            "blockers": visibility_blockers,
+            "error": "carrier_not_callable",
+            "message": "Carrier is not callable through the planned pre-RED path",
+            "planned_signature": plan_sig.to_dict(),
+            "implemented_signature": impl_sig.to_dict(),
+            "resolved_signature": impl_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
+            "file_path": impl_match["file_path"],
+            "selected_real_entry": selected_real_entry,
+            "test_invocation_path": test_invocation_path,
+            "proof_observation_point": proof_observation_point,
+            "reachable_from_entry": bool(selected_real_entry and not any(b.startswith("selected_real_entry") for b in visibility_blockers)),
+        }
+
     # Compare signatures
-    if not signatures_match(plan_sig, impl_sig):
+    if exact_signature_required and not signatures_match(plan_sig, impl_sig):
         diffs = signature_diff(plan_sig, impl_sig)
         return {
             "status": "FAIL",
+            "authorized": False,
+            "blockers": ["carrier_signature_mismatch"],
             "error": "carrier_signature_mismatch",
             "message": "Signature mismatch between planned and implemented carrier",
             "planned_signature": plan_sig.to_dict(),
             "implemented_signature": impl_sig.to_dict(),
+            "resolved_signature": impl_sig.to_dict(),
+            "normalized_carrier": normalized_plan_carrier,
+            "exact_signature_required": exact_signature_required,
             "differences": diffs,
             "file_path": impl_match["file_path"]
         }
 
     return {
         "status": "PASS",
+        "authorized": True,
+        "blockers": [],
         "message": "Carrier signature matches exactly",
         "planned_signature": plan_sig.to_dict(),
         "implemented_signature": impl_sig.to_dict(),
-        "file_path": impl_match["file_path"]
+        "resolved_signature": impl_sig.to_dict(),
+        "normalized_carrier": normalized_plan_carrier,
+        "exact_signature_required": exact_signature_required,
+        "file_path": impl_match["file_path"],
+        "selected_real_entry": selected_real_entry,
+        "test_invocation_path": test_invocation_path,
+        "proof_observation_point": proof_observation_point,
+        "reachable_from_entry": bool(selected_real_entry),
+    }
+
+
+def has_blocking_placeholder(value: str) -> bool:
+    """Return true for missing or non-authorizing placeholder values."""
+    if not value:
+        return True
+    lowered = value.strip().lower()
+    placeholders = {
+        "unknown", "private", "absent", "new_service_only", "helper_only",
+        "mock_only", "tbd", "n/a", "none", "placeholder"
+    }
+    return lowered in placeholders
+
+
+def verify_pre_red_authorization(input_data: Dict) -> Dict:
+    """Validate the callable-carrier authorization contract before RED."""
+    worktree_path = input_data.get("worktree_path", "")
+    selected_real_entry = input_data.get("selected_real_entry", "")
+    selected_carrier = input_data.get("selected_carrier", "") or input_data.get("plan_carrier", "")
+    invocation_path = input_data.get("test_invocation_path", "")
+    observation_point = input_data.get("proof_observation_point", "")
+    blockers: List[str] = []
+
+    if has_blocking_placeholder(worktree_path):
+        blockers.append("worktree_path_missing")
+    if has_blocking_placeholder(selected_real_entry):
+        blockers.append("selected_real_entry_missing_or_placeholder")
+    if has_blocking_placeholder(selected_carrier):
+        blockers.append("selected_carrier_missing_or_placeholder")
+    if has_blocking_placeholder(invocation_path):
+        blockers.append("test_invocation_path_blocked")
+    if has_blocking_placeholder(observation_point):
+        blockers.append("proof_observation_point_blocked")
+
+    entry_result = None
+    carrier_result = None
+    reachable_from_entry = False
+
+    if worktree_path and selected_real_entry and not has_blocking_placeholder(selected_real_entry):
+        entry_result = verify_carrier_signature(selected_real_entry, worktree_path)
+        if entry_result.get("status") == "FAIL":
+            blockers.append(f"selected_real_entry_{entry_result.get('error', 'invalid')}")
+
+    if worktree_path and selected_carrier and not has_blocking_placeholder(selected_carrier):
+        if carrier_is_class_only(selected_carrier) and entry_result and entry_result.get("status") == "PASS":
+            entry_sig = entry_result.get("planned_signature", {}) or {}
+            carrier_class_name = normalize_carrier_string(selected_carrier)
+            same_entry_class = simple_java_name(entry_sig.get("class_name", "")) == simple_java_name(carrier_class_name)
+            if same_entry_class:
+                carrier_result = {
+                    "status": "PASS",
+                    "authorized": True,
+                    "blockers": [],
+                    "planned_signature": {
+                        "class_name": carrier_class_name,
+                        "method_name": entry_sig.get("method_name", ""),
+                        "parameters": entry_sig.get("parameters", []),
+                        "return_type": entry_sig.get("return_type", "void"),
+                        "visibility": entry_sig.get("visibility", "package"),
+                        "formatted": entry_result.get("resolved_signature", {}).get("formatted", ""),
+                    },
+                    "implemented_signature": entry_result.get("implemented_signature") or entry_result.get("resolved_signature"),
+                    "resolved_signature": entry_result.get("resolved_signature"),
+                    "normalized_carrier": selected_carrier,
+                    "exact_signature_required": False,
+                    "file_path": entry_result.get("file_path"),
+                    "class_only_carrier_resolved_via_entry": True,
+                }
+            else:
+                carrier_result = {
+                    "status": "FAIL",
+                    "authorized": False,
+                    "blockers": ["class_carrier_entry_mismatch"],
+                    "error": "class_carrier_entry_mismatch",
+                    "normalized_carrier": carrier_class_name,
+                    "exact_signature_required": False,
+                }
+        else:
+            carrier_result = verify_carrier_signature(
+                selected_carrier,
+                worktree_path,
+                selected_real_entry=selected_real_entry,
+                test_invocation_path=invocation_path,
+                proof_observation_point=observation_point,
+            )
+        if carrier_result.get("status") == "FAIL":
+            for blocker in carrier_result.get("blockers", []) or []:
+                blockers.append(str(blocker))
+            if not carrier_result.get("blockers"):
+                blockers.append(f"selected_carrier_{carrier_result.get('error', 'invalid')}")
+
+    if entry_result and carrier_result:
+        entry_sig = entry_result.get("planned_signature", {}) or {}
+        carrier_sig = carrier_result.get("planned_signature", {}) or {}
+        entry_class = simple_java_name(entry_sig.get("class_name", ""))
+        carrier_class = simple_java_name(carrier_sig.get("class_name", ""))
+        reachable_from_entry = (
+            entry_result.get("status") == "PASS" and
+            carrier_result.get("status") == "PASS" and
+            (entry_class == carrier_class or entry_class.lower() in invocation_path.lower())
+        )
+        if not reachable_from_entry and "new_service" in selected_carrier.lower():
+            blockers.append("new_service_only_not_reachable_from_entry")
+
+    blockers = list(dict.fromkeys(blockers))
+    authorized = len(blockers) == 0
+    return {
+        "authorized": authorized,
+        "status": "PASS" if authorized else "FAIL",
+        "blockers": blockers,
+        "resolved_signature": {
+            "selected_real_entry": entry_result.get("implemented_signature") if entry_result else None,
+            "selected_carrier": carrier_result.get("implemented_signature") if carrier_result else None,
+        },
+        "normalized_carriers": {
+            "selected_real_entry": entry_result.get("normalized_carrier") if entry_result else None,
+            "selected_carrier": carrier_result.get("normalized_carrier") if carrier_result else None,
+        },
+        "exact_signature_required": {
+            "selected_real_entry": entry_result.get("exact_signature_required") if entry_result else None,
+            "selected_carrier": carrier_result.get("exact_signature_required") if carrier_result else None,
+        },
+        "reachable_from_entry": reachable_from_entry,
+        "selected_real_entry": selected_real_entry,
+        "selected_carrier": selected_carrier,
+        "test_invocation_path": invocation_path,
+        "proof_observation_point": observation_point,
     }
 
 
@@ -343,6 +747,7 @@ def main():
         print("  python verify_carrier_signature.py --input <input.json>")
         print("  echo '{...}' | python verify_carrier_signature.py")
         print("\nInput JSON keys: plan_carrier, worktree_path, baseline_commit (optional)")
+        print("Pre-RED keys: worktree_path, selected_real_entry, selected_carrier, test_invocation_path, proof_observation_point")
         sys.exit(0)
 
     if len(sys.argv) > 2 and sys.argv[1] == "--input":
@@ -352,11 +757,17 @@ def main():
         # Read from stdin
         input_data = json.loads(sys.stdin.read())
 
-    result = verify_carrier_signature(
-        plan_carrier=input_data.get("plan_carrier", ""),
-        worktree_path=input_data.get("worktree_path", ""),
-        baseline_commit=input_data.get("baseline_commit")
-    )
+    if input_data.get("selected_real_entry") or input_data.get("selected_carrier"):
+        result = verify_pre_red_authorization(input_data)
+    else:
+        result = verify_carrier_signature(
+            plan_carrier=input_data.get("plan_carrier", ""),
+            worktree_path=input_data.get("worktree_path", ""),
+            baseline_commit=input_data.get("baseline_commit"),
+            selected_real_entry=input_data.get("selected_real_entry", ""),
+            test_invocation_path=input_data.get("test_invocation_path", ""),
+            proof_observation_point=input_data.get("proof_observation_point", ""),
+        )
 
     print(json.dumps(result, indent=2, ensure_ascii=False))
     sys.exit(1 if result["status"] == "FAIL" else 0)

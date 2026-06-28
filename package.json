@@ -8,8 +8,11 @@
     "install:workflow:dry": "node scripts/install-ai-workflow-kit.js --dry-run --backup-existing",
     "install:cc-switch": "node scripts/install-cc-switch-common-config.js",
     "verify": "node scripts/verify-ai-workflow-kit.js",
+    "verify:contracts": "node scripts/verify-control-contracts.js",
     "diagnose:powershell": "node scripts/diagnose-powershell-r6016.js",
-    "test:no-secrets": "node scripts/test-no-secrets.js"
+    "test:no-secrets": "node scripts/test-no-secrets.js",
+    "test:requirement-workspace": "node scripts/test-requirement-workspace.js",
+    "test:control-contracts": "node scripts/test-control-contracts.js"
   },
   "engines": {
     "node": ">=18"

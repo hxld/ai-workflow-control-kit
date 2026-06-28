@@ -8,7 +8,9 @@ param(
     [int]$MinOracleImprovement = 8,
     [int]$LowCapThreshold = 45,
     [int]$RepeatBlockerThreshold = 2,
-    [string]$RequireExecutor = 'claude',
+    [string]$RequireExecutor = '',
+    [int]$AuxiliaryTimeoutSeconds = 90,
+    [switch]$SkipAuxiliaryArtifacts,
     [switch]$ValidateOnly,
     [switch]$Quiet
 )
@@ -154,6 +156,67 @@ function Add-String {
     }
 }
 
+function Invoke-ControlSummaryAuxiliary {
+    param(
+        [string]$Name,
+        [string]$ScriptPath,
+        [string[]]$Arguments,
+        [string]$OutputRootFull,
+        [int]$TimeoutSeconds
+    )
+
+    $timeout = [Math]::Max(1, $TimeoutSeconds)
+    $safeName = ($Name -replace '[^A-Za-z0-9_-]', '-').Trim('-')
+    if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = 'auxiliary' }
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $stdoutPath = Join-Path $OutputRootFull ("{0}-{1}.stdout.log" -f $safeName, $stamp)
+    $stderrPath = Join-Path $OutputRootFull ("{0}-{1}.stderr.log" -f $safeName, $stamp)
+    $timeoutPath = Join-Path $OutputRootFull ("{0}_AUXILIARY_TIMEOUT.json" -f $safeName.ToUpperInvariant().Replace('-', '_'))
+
+    $argumentList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ScriptPath) + $Arguments
+    $process = Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList $argumentList `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath `
+        -PassThru
+
+    $completed = $process.WaitForExit($timeout * 1000)
+    if (-not $completed) {
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        [ordered]@{
+            schema = 'replay_control_summary_auxiliary_timeout.v1'
+            generated_at = (Get-Date).ToString('s')
+            name = $Name
+            script = $ScriptPath
+            timeout_seconds = $timeout
+            stdout = $stdoutPath
+            stderr = $stderrPath
+        } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $timeoutPath -Encoding UTF8
+        return [pscustomobject]@{
+            name = $Name
+            completed = $false
+            timed_out = $true
+            exit_code = 124
+            stdout = $stdoutPath
+            stderr = $stderrPath
+            timeout_marker = $timeoutPath
+        }
+    }
+
+    $process.Refresh()
+    $exitCode = if ($null -eq $process.ExitCode) { 1 } else { [int]$process.ExitCode }
+    return [pscustomobject]@{
+        name = $Name
+        completed = $true
+        timed_out = $false
+        exit_code = $exitCode
+        stdout = $stdoutPath
+        stderr = $stderrPath
+        timeout_marker = ''
+    }
+}
+
 function Get-VerificationIssues {
     param([string]$Root)
 
@@ -247,9 +310,9 @@ function Get-FingerprintsFromText {
         'phase0_carrier_evidence_gap' = 'phase0_carrier_search_commands_missing|phase0_selected_real_entry_missing|phase0_selected_real_entry_invalid_format|phase0_selected_real_entry_not_found|phase0_selected_real_entry_not_baseline_existing|phase0_carrier_claim_hallucinated'
         'plan_format_drift' = 'first_slice_proof_(?:missing|invalid|schema)|schema_missing|format drift|BLOCKED_PLAN_MISMATCH|plan_contract_verification_failed|plan_status_not_proceed'
         'phase0_format_drift' = 'phase0_status.*not found|STOP_PHASE0_PARSE_FAILURE|phase0 parse|exploration_missing|selected_real_entry_missing|requirement literal inventory'
-        'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|command_guard_violation|protected main project root|forbidden replay command|protected root'
+        'protected_root_isolation_violation' = 'protected_root_pom_forbidden|protected_root_modified|protected main project root|protected root'
         'executor_credit_required' = 'executor_credit_required|402\s+Credit|required account credit|credit required|positive balance|required for this model|insufficient credits|not enough credits'
-        'executor_resource_or_crash' = '429|rate limit|usage_limit|timeout|API 400|executor_failed_without_result|executor crash'
+        'executor_resource_or_crash' = '429|503|rate limit|usage_limit|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity|timeout|API 400|API 503|No available channel|server-side issue|inference gateway|executor_failed_without_result|executor crash'
         'evolution_validation_fail' = 'FAIL_AFTER_REPAIR|EVOLUTION_RESULT_VERIFY|knowledge_repo_commit_or_push_blocked|validation.*fail'
         'low_verification_cap' = 'verification_capped_coverage:\s*(?:0|[1-9]|[1-3][0-9]|4[0-5])\b'
     }
@@ -300,7 +363,7 @@ function Get-ExecutorFailureEvidenceText {
         foreach ($logPath in @($stdoutLog, $stderrLog)) {
             if ([string]::IsNullOrWhiteSpace($logPath) -or -not (Test-Path -LiteralPath $logPath)) { continue }
             $text = Read-TextIfExists $logPath
-            if ($text -match '(?i)\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits|usage limit|rate.?limit|too.?many.?requests|authentication|unauthorized') {
+            if ($text -match '(?i)\b402\b|\b503\b|credit required|positive balance|required for this model|insufficient credits|not enough credits|usage limit|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity|rate.?limit|too.?many.?requests|no available channel|server-side issue|inference gateway|gateway|authentication|unauthorized') {
                 $excerpt = $text.Trim()
                 if ($excerpt.Length -gt 1200) { $excerpt = $excerpt.Substring(0, 1200) }
                 $evidence.Add(("executor_log: {0}`n{1}" -f $logPath, $excerpt)) | Out-Null
@@ -520,6 +583,8 @@ if ($ValidateOnly) {
         lookback = $Lookback
         target_coverage = $TargetCoverage
         require_executor = $RequireExecutor
+        auxiliary_timeout_seconds = $AuxiliaryTimeoutSeconds
+        skip_auxiliary_artifacts = [bool]$SkipAuxiliaryArtifacts
     } | ConvertTo-Json -Depth 6
     exit 0
 }
@@ -546,6 +611,10 @@ $latestObject = [ordered]@{
     evidence_root = $evidenceRootFull
     latest = $latest
     control_decision = $controlDecision
+    auxiliary_policy = [ordered]@{
+        timeout_seconds = $AuxiliaryTimeoutSeconds
+        skip_auxiliary_artifacts = [bool]$SkipAuxiliaryArtifacts
+    }
     recent = @($orderedRecords | Select-Object -First $Lookback)
 }
 
@@ -664,28 +733,54 @@ foreach ($record in @($orderedRecords | Select-Object -First ([Math]::Min($Lookb
 Set-Content -LiteralPath $briefMd -Value ($brief -join "`n") -Encoding UTF8
 
 $failureAuditScript = Join-Path $PSScriptRoot 'Write-FailureAuditPack.ps1'
-if (Test-Path -LiteralPath $failureAuditScript) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $failureAuditScript `
-        -EvidenceRoot $evidenceRootFull `
-        -ReplayRoot $latest.replay_root `
-        -ControlSummaryPath $latestJson `
-        -BlockerRegistryPath $registryJson `
-        -Quiet
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failure audit pack generation failed with exit code $LASTEXITCODE"
-    }
+if (-not $SkipAuxiliaryArtifacts -and (Test-Path -LiteralPath $failureAuditScript)) {
+    $failureAuditResult = Invoke-ControlSummaryAuxiliary `
+        -Name 'failure-audit-pack' `
+        -ScriptPath $failureAuditScript `
+        -Arguments @(
+            '-EvidenceRoot', $evidenceRootFull,
+            '-ReplayRoot', $latest.replay_root,
+            '-ControlSummaryPath', $latestJson,
+            '-BlockerRegistryPath', $registryJson,
+            '-Quiet'
+        ) `
+        -OutputRootFull $outputRootFull `
+        -TimeoutSeconds $AuxiliaryTimeoutSeconds
 
     $failureAuditPath = Join-Path $latest.replay_root 'FAILURE_AUDIT_PACK.json'
     $failureAudit = Read-JsonIfExists $failureAuditPath
-    if ($null -ne $failureAudit -and [bool]$failureAudit.golden_first_slice_required) {
-        $goldenScript = Join-Path $PSScriptRoot 'Write-GoldenDeliverySlice.ps1'
-        if (Test-Path -LiteralPath $goldenScript) {
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $goldenScript `
-                -EvidenceRoot $evidenceRootFull `
-                -ControlSummaryPath $latestJson `
-                -Quiet
-            if ($LASTEXITCODE -ne 0) {
-                throw "Golden delivery slice generation failed with exit code $LASTEXITCODE"
+    $failureAuditArtifactValid = $null -ne $failureAudit
+    if ($failureAuditResult.timed_out) {
+        Write-Warning "Failure audit pack generation timed out after $AuxiliaryTimeoutSeconds seconds; continuing control loop. Marker: $($failureAuditResult.timeout_marker)"
+    } elseif ($failureAuditResult.exit_code -ne 0 -and -not $failureAuditArtifactValid) {
+        Write-Warning "Failure audit pack generation failed with exit code $($failureAuditResult.exit_code); continuing control loop. stderr: $($failureAuditResult.stderr)"
+    } else {
+        if ($failureAuditResult.exit_code -ne 0) {
+            Write-Warning "Failure audit pack generation reported exit code $($failureAuditResult.exit_code), but produced a valid artifact; continuing auxiliary chain. stderr: $($failureAuditResult.stderr)"
+        }
+        if ($null -ne $failureAudit -and [bool]$failureAudit.golden_first_slice_required) {
+            $goldenScript = Join-Path $PSScriptRoot 'Write-GoldenDeliverySlice.ps1'
+            if (Test-Path -LiteralPath $goldenScript) {
+                $goldenResult = Invoke-ControlSummaryAuxiliary `
+                    -Name 'golden-delivery-slice' `
+                    -ScriptPath $goldenScript `
+                    -Arguments @(
+                        '-EvidenceRoot', $evidenceRootFull,
+                        '-ControlSummaryPath', $latestJson,
+                        '-Quiet'
+                    ) `
+                    -OutputRootFull $outputRootFull `
+                    -TimeoutSeconds $AuxiliaryTimeoutSeconds
+
+                $goldenPath = Join-Path $latest.replay_root 'NEXT_GOLDEN_DELIVERY_SLICE.json'
+                $goldenArtifactValid = $null -ne (Read-JsonIfExists $goldenPath)
+                if ($goldenResult.timed_out) {
+                    Write-Warning "Golden delivery slice generation timed out after $AuxiliaryTimeoutSeconds seconds; continuing control loop. Marker: $($goldenResult.timeout_marker)"
+                } elseif ($goldenResult.exit_code -ne 0 -and -not $goldenArtifactValid) {
+                    Write-Warning "Golden delivery slice generation failed with exit code $($goldenResult.exit_code); continuing control loop. stderr: $($goldenResult.stderr)"
+                } elseif ($goldenResult.exit_code -ne 0) {
+                    Write-Warning "Golden delivery slice generation reported exit code $($goldenResult.exit_code), but produced a valid artifact; continuing control loop. stderr: $($goldenResult.stderr)"
+                }
             }
         }
     }

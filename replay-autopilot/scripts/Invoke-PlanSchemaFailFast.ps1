@@ -28,9 +28,13 @@ function Read-JsonObject {
         $start = $text.IndexOf('{')
         $end = $text.LastIndexOf('}')
         if ($start -ge 0 -and $end -gt $start) {
-            return $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
+            try {
+                return $text.Substring($start, $end - $start + 1) | ConvertFrom-Json
+            } catch {
+                return $null
+            }
         }
-        throw
+        return $null
     }
 }
 
@@ -46,6 +50,24 @@ function Test-BooleanTrue {
     param($Value)
     if ($Value -is [bool]) { return [bool]$Value }
     return ([string]$Value).Trim().ToLowerInvariant() -eq 'true'
+}
+
+function Test-MavenFailureSignal {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+    if ($Text -match '(?i)\bBUILD FAILURE\b' -or
+        $Text -match '(?i)\bCompilation failure\b' -or
+        $Text -match '(?i)\bFailed to execute goal\b' -or
+        $Text -match '(?i)\bMojoFailureException\b' -or
+        $Text -match '(?i)\bMojoExecutionException\b') {
+        return $true
+    }
+    if ($Text -match '(?i)\bBUILD SUCCESS\b') {
+        return $false
+    }
+    return ($Text -match '(?im)^\s*\[ERROR\]')
 }
 
 function Test-RequiredValuePresent {
@@ -174,7 +196,10 @@ function Get-SideEffectSchemaIssues {
 function Test-PolicyRebuildPlan {
     param([string]$PlanText)
     if ([string]::IsNullOrWhiteSpace($PlanText)) { return $false }
-    return ($PlanText -match '(?i)policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor')
+    $hasPolicyNum = $PlanText -match '(?i)(policyNum|policy_num)'
+    $hasInsureNum = $PlanText -match '(?i)(insureNum|insure_num)'
+    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
+    return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)
 }
 
 function Test-PathInsideRoot {
@@ -234,8 +259,15 @@ function Get-TestInfrastructureRealityIssues {
             $issues += "test_infrastructure_check.compilation_dry_run_command must target module $moduleName"
         }
         $normalizedCommand = $commandText.Replace('/', '\')
-        if ($normalizedCommand.Contains('d:\opt\lipei\claim\pom.xml')) {
-            $issues += 'test_infrastructure_check.compilation_dry_run_command must not target protected project root pom'
+        # Detect any pom path that is absolute but outside the isolated worktree.
+        # A pom path like `d:\opt\...\pom.xml` is a protected project root, not the worktree.
+        if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+            $normalizedCommand -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+            $targetPom = $matches[1].Trim('"', "'", '`')
+            $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+            if (-not $targetPom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                $issues += 'test_infrastructure_check.compilation_dry_run_command must target isolated worktree pom'
+            }
         }
         if (-not [string]::IsNullOrWhiteSpace($Worktree)) {
             $worktreePom = ([System.IO.Path]::GetFullPath((Join-Path $Worktree 'pom.xml'))).ToLowerInvariant().Replace('/', '\')
@@ -302,9 +334,17 @@ function Get-TestInfrastructureRealityIssues {
                 if (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile')) {
                     $issues += 'compilation_dry_run_evidence_command_incomplete'
                 }
-                if ($evidenceCommandText.Replace('/', '\').Contains('d:\opt\lipei\claim\pom.xml')) {
-                    $issues += 'compilation_dry_run_evidence_command_must_not_target_protected_root_pom'
+                if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+                    $evidenceCommandText -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+                    $evidencePom = $matches[1].Trim('"', "'", '`')
+                    $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+                    if (-not $evidencePom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                        $issues += 'evidence_command_must_not_target_protected_root_pom'
+                    }
                 }
+            }
+            if (Test-MavenFailureSignal -Text $evidenceText) {
+                $issues += 'compilation_dry_run_evidence_contains_failure_signal'
             }
             if ($evidenceText -notmatch '(?i)BUILD SUCCESS' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
                 $issues += 'compilation_dry_run_evidence_missing_success_signal'

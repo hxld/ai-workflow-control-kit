@@ -278,7 +278,7 @@ $config = Read-SimpleYaml $configPathFull
 $projectRoot = Resolve-AbsolutePath (Require-Key $config 'project_root')
 $knowledgeRepo = Resolve-AbsolutePath (Require-Key $config 'knowledge_repo')
 $replayRootBaseTemplate = Resolve-AbsolutePath (Require-Key $config 'replay_root_base')
-$executorActual = if ($config.ContainsKey('executor') -and -not [string]::IsNullOrWhiteSpace($config['executor'])) { $config['executor'] } else { 'claude' }
+$executorActual = if ($config.ContainsKey('executor') -and -not [string]::IsNullOrWhiteSpace($config['executor'])) { $config['executor'] } else { 'codex' }
 if (@('codex', 'claude', 'manual') -notcontains $executorActual) {
     throw "Unsupported executor in config: $executorActual"
 }
@@ -294,7 +294,7 @@ if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual) -and $executorAct
 }
     $allowCodexExecutorActual = [bool]$AllowCodexExecutor -or (Convert-ToBool $(if ($config.ContainsKey('allow_codex_executor')) { $config['allow_codex_executor'] } else { '' }))
 if ($executorActual -eq 'codex' -and -not $allowCodexExecutorActual) {
-    throw "Executor policy violation: Codex executor is blocked by default. Use executor: claude, or pass -AllowCodexExecutor / allow_codex_executor:true only for an explicitly approved Codex run."
+    throw "Executor policy violation: Codex executor requires explicit authorization. Set allow_codex_executor:true or pass -AllowCodexExecutor for a Codex-primary run."
 }
 $timeoutMinutes = if ($config.ContainsKey('executor_timeout_minutes') -and -not [string]::IsNullOrWhiteSpace($config['executor_timeout_minutes'])) { [int]$config['executor_timeout_minutes'] } else { 240 }
 $sandbox = if ($config.ContainsKey('codex_sandbox')) { $config['codex_sandbox'] } else { 'danger-full-access' }
@@ -572,8 +572,13 @@ Mandatory repair:
 1. Implement concrete tooling/prompt/verifier/test changes in the existing replay autopilot repository.
 2. Prefer existing PowerShell scripts/prompts/tests; do not invent unattached JS filenames unless you add and invoke them.
 3. Run the smallest relevant regression tests.
-4. Update and push the knowledge repo.
+4. Update and push the knowledge repo only after a concrete source/tooling change exists and passes verification.
 5. Overwrite `$evolutionResultPath` only after side effects are complete.
+
+No-op version advance guard:
+- If the failed verification includes no_source_change_cannot_satisfy_stop_and_evolve, NO_SOURCE_CHANGE, noop-evolution, no-source-change, or tooling_changes_applied_missing_or_false, you must either implement a real runner/prompt/verifier/test change or stop with `NO_VERSION_ADVANCE_REASON.md`.
+- A no-source-change / already-covered audit must not edit/commit/push knowledge repo, must not update CURRENT_VERSION.md or changelog, and must not set actual_knowledge_version_after_push to the expected version.
+- If no concrete tooling change is possible, write `$evolutionResultPath` with `- final_status: BLOCKED_NO_SOURCE_CHANGE`, `- tooling_changes_applied: false`, `- stop_and_evolve_satisfied: false`, and the real current knowledge version.
 
 Required machine lines:
 - final_status: VALIDATED_TOOLING_EVOLUTION

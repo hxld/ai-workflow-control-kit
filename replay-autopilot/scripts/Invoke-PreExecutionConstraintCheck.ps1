@@ -24,8 +24,7 @@ function Read-JsonObject {
     if (-not (Test-Path -LiteralPath $Path)) {
         return $null
     }
-    $content = Get-Content -LiteralPath $Path
-    $text = $content -join "`n"
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
     try {
         return $text | ConvertFrom-Json
     } catch {
@@ -63,10 +62,73 @@ function Get-ObjectPropertyValue {
     return $property.Value
 }
 
+function Get-KeyValueField {
+    param([string]$Text, [string]$Field)
+    if ([string]::IsNullOrWhiteSpace($Text) -or [string]::IsNullOrWhiteSpace($Field)) {
+        return ''
+    }
+    $escapedField = [regex]::Escape($Field)
+    $patterns = @(
+        ('(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?' + $escapedField + '\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'),
+        ('(?im)^\s*\|\s*\*{0,2}\s*' + $escapedField + '\s*\*{0,2}\s*\|\s*`?([^|\r\n]+?)`?\s*\|')
+    )
+    foreach ($pattern in $patterns) {
+        $match = [regex]::Match($Text, $pattern)
+        if ($match.Success) {
+            return $match.Groups[1].Value.Trim()
+        }
+    }
+    return ''
+}
+
+function Get-TestCharterSurfaceDetection {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return ''
+    }
+
+    $labelPrefix = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?(?:\*{0,2})\s*'
+    $labelSuffix = '\s*(?:\*{0,2})\s*[:=]\s*\S'
+    $patterns = [ordered]@{
+        test_surface_label = $labelPrefix + 'test[_\s-]*surface' + $labelSuffix
+        entry_point_label = $labelPrefix + 'entry[_\s-]*point' + $labelSuffix
+        test_class_label = $labelPrefix + 'test[_\s-]*class' + $labelSuffix
+        test_method_label = $labelPrefix + 'test[_\s-]*method' + $labelSuffix
+        test_scenario_label = $labelPrefix + 'test[_\s-]*scenario' + $labelSuffix
+        red_test_label = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?(?:RED\s+)?Test\s*:\s*\S'
+        class_label = '(?im)^\s*(?:[-*]\s*)?(?:#{1,6}\s*)?Class\s*:\s*\S'
+    }
+
+    foreach ($name in $patterns.Keys) {
+        if ($Text -match $patterns[$name]) {
+            return $name
+        }
+    }
+    return ''
+}
+
 function Test-BooleanTrue {
     param($Value)
     if ($Value -is [bool]) { return [bool]$Value }
     return ([string]$Value).Trim().ToLowerInvariant() -eq 'true'
+}
+
+function Test-MavenFailureSignal {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+    if ($Text -match '(?i)\bBUILD FAILURE\b' -or
+        $Text -match '(?i)\bCompilation failure\b' -or
+        $Text -match '(?i)\bFailed to execute goal\b' -or
+        $Text -match '(?i)\bMojoFailureException\b' -or
+        $Text -match '(?i)\bMojoExecutionException\b') {
+        return $true
+    }
+    if ($Text -match '(?i)\bBUILD SUCCESS\b') {
+        return $false
+    }
+    return ($Text -match '(?im)^\s*\[ERROR\]')
 }
 
 function Test-RequiredValuePresent {
@@ -183,8 +245,13 @@ function Get-TestInfrastructureRealityIssues {
             $issues += "test_infrastructure_check.compilation_dry_run_command must target module $moduleName"
         }
         $normalizedCommand = $commandText.Replace('/', '\')
-        if ($normalizedCommand.Contains('d:\opt\lipei\claim\pom.xml')) {
-            $issues += 'test_infrastructure_check.compilation_dry_run_command must not target protected project root pom'
+        if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+            $normalizedCommand -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+            $targetPom = $matches[1].Trim('"', "'", '`')
+            $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+            if (-not $targetPom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                $issues += 'test_infrastructure_check.compilation_dry_run_command must target isolated worktree pom'
+            }
         }
         if (-not [string]::IsNullOrWhiteSpace($Worktree)) {
             $worktreePom = ([System.IO.Path]::GetFullPath((Join-Path $Worktree 'pom.xml'))).ToLowerInvariant().Replace('/', '\')
@@ -250,9 +317,17 @@ function Get-TestInfrastructureRealityIssues {
                 if (-not $evidenceCommandText.Contains('-am') -or -not $evidenceCommandText.Contains('-pl') -or -not $evidenceCommandText.Contains('test-compile')) {
                     $issues += 'compilation_dry_run_evidence_command_incomplete'
                 }
-                if ($evidenceCommandText.Replace('/', '\').Contains('d:\opt\lipei\claim\pom.xml')) {
-                    $issues += 'compilation_dry_run_evidence_command_must_not_target_protected_root_pom'
+                if (-not [string]::IsNullOrWhiteSpace($Worktree) -and
+                    $evidenceCommandText -match '(?i)-f[= ]\s*([a-z]:\\[^"]+)') {
+                    $evidencePom = $matches[1].Trim('"', "'", '`')
+                    $worktreeNorm = $Worktree.Replace('/', '\').ToLowerInvariant()
+                    if (-not $evidencePom.ToLowerInvariant().StartsWith($worktreeNorm)) {
+                        $issues += 'evidence_command_must_not_target_protected_root_pom'
+                    }
                 }
+            }
+            if (Test-MavenFailureSignal -Text $evidenceText) {
+                $issues += 'compilation_dry_run_evidence_contains_failure_signal'
             }
             if ($evidenceText -notmatch '(?i)BUILD SUCCESS' -and $evidenceText -notmatch '"exit_code"\s*:\s*0') {
                 $issues += 'compilation_dry_run_evidence_missing_success_signal'
@@ -270,7 +345,8 @@ function Get-CarrierClassName {
         return ''
     }
 
-    $value = $Carrier.Trim()
+    $value = $Carrier.Trim().Trim('`').Trim('"').Trim("'")
+    $value = ($value -split '[;,]')[0].Trim()
     if ($value -match '[\\/]|\.java$') {
         $leaf = Split-Path -Leaf $value
         if ($leaf -match '\.java$') {
@@ -279,10 +355,40 @@ function Get-CarrierClassName {
     }
 
     $value = $value -replace '\(.*$', ''
+    if ($value -match '#') {
+        $value = ($value -split '#')[0]
+    }
+    if ($value -match '::') {
+        $value = ($value -split '::')[0]
+    }
     if ($value -match '\.') {
-        return ($value -split '\.')[-1]
+        $parts = @($value -split '\.' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($parts.Count -ge 2 -and $parts[-1] -cmatch '^[a-z_]') {
+            return $parts[-2]
+        }
+        return $parts[-1]
     }
     return $value
+}
+
+function Get-EntryCarrierForLayerCheck {
+    param(
+        [object]$Plan,
+        [string]$FirstSliceProofText,
+        [string]$FallbackCarrier
+    )
+
+    foreach ($field in @('selected_real_entry', 'selected_carrier', 'first_executable_carrier')) {
+        $value = Get-KeyValueField -Text $FirstSliceProofText -Field $field
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+    $planCarrier = Get-NonEmptyPlanValue -Plan $Plan -Names @('selected_real_entry', 'selected_carrier', 'target_carrier')
+    if (-not [string]::IsNullOrWhiteSpace($planCarrier)) {
+        return $planCarrier
+    }
+    return $FallbackCarrier
 }
 
 function Find-JavaFileByClassName {
@@ -394,8 +500,7 @@ function Test-ValidLayer {
     # otherwise PowerShell paths can be interpreted as a malformed regex.
     $filePath = Find-JavaFileByClassName -ClassName $className -Root $Worktree
     if ($filePath) {
-        $content = Get-Content -LiteralPath $filePath
-        $contentText = $content -join "`n"
+        $contentText = Get-Content -LiteralPath $filePath -Raw -Encoding UTF8
         if ($contentText -match '\s+(public|protected|private)\s+(abstract\s+)?(class|interface)\s+') {
             return @{ Valid = $false; Layer = 'Unknown'; Reason = 'Could not determine layer from naming pattern' }
         }
@@ -432,11 +537,21 @@ if ($plan.PSObject.Properties.Name -contains 'plan_status') {
     $planStatus = ([string]$plan.status).Trim().ToUpperInvariant()
 }
 
+$firstSliceProofPath = Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md'
+$firstSliceProofExists = Test-Path -LiteralPath $firstSliceProofPath
+$firstSliceProofContent = ''
+if ($firstSliceProofExists) {
+    $firstSliceProofContent = Get-Content -LiteralPath $firstSliceProofPath -Raw -Encoding UTF8
+}
+
 $checks = @()
 $overallStatus = 'PASS'
 
-# Check 1: Carrier exists in baseline
-$selectedCarrier = Get-NonEmptyPlanValue -Plan $plan -Names @('selected_carrier', 'target_carrier', 'target_carrier_file_path')
+# Check 1: Target implementation carrier exists in baseline/worktree.
+# The target file can be a Service/Entity/Mapper implementation file; core_entry
+# layer validation is checked separately against the real entry carrier.
+$selectedCarrier = Get-NonEmptyPlanValue -Plan $plan -Names @('target_carrier_file_path', 'target_carrier', 'selected_carrier')
+$entryCarrierForLayer = Get-EntryCarrierForLayerCheck -Plan $plan -FirstSliceProofText $firstSliceProofContent -FallbackCarrier $selectedCarrier
 $carrierExists = Test-CarrierInBaseline -Carrier $selectedCarrier -Worktree $worktreeFull -BaselineRoot $BaselineRoot
 
 $checks += [ordered]@{
@@ -450,12 +565,14 @@ if (-not $carrierExists.Exists) {
     $overallStatus = 'FAIL'
 }
 
-# Check 2: Carrier in valid layer
-$layerValid = Test-ValidLayer -Carrier $selectedCarrier -Worktree $worktreeFull
+# Check 2: Real entry carrier is in a valid executable layer.
+$layerValid = Test-ValidLayer -Carrier $entryCarrierForLayer -Worktree $worktreeFull
 
 $checks += [ordered]@{
     name = 'carrier_in_valid_layer'
     status = if ($layerValid.Valid) { 'PASS' } else { 'FAIL' }
+    carrier = $entryCarrierForLayer
+    target_carrier_file_path = $selectedCarrier
     layer = $layerValid.Layer
     reason = if ($layerValid.Valid) { $null } else { $layerValid.Reason }
 }
@@ -555,12 +672,13 @@ $testCharterPath = Join-Path $replayRootFull 'TEST_CHARTER.md'
 $testCharterExists = Test-Path -LiteralPath $testCharterPath
 
 if ($testCharterExists) {
-    $testCharterContent = Get-Content -LiteralPath $testCharterPath
-    $testCharterText = $testCharterContent -join "`n"
-    $hasTestSurface = $testCharterText -match 'test_surface|entry[_\s-]*point|test[_\s-]*method|test[_\s-]*class|test[_\s-]*scenario'
+    $testCharterText = Get-Content -LiteralPath $testCharterPath -Raw -Encoding UTF8
+    $testSurfaceDetection = Get-TestCharterSurfaceDetection -Text $testCharterText
+    $hasTestSurface = -not [string]::IsNullOrWhiteSpace($testSurfaceDetection)
 } else {
     $hasTestSurface = $false
     $testCharterText = ''
+    $testSurfaceDetection = ''
 }
 
 $checks += [ordered]@{
@@ -568,6 +686,7 @@ $checks += [ordered]@{
     status = if ($testCharterExists -and $hasTestSurface) { 'PASS' } else { 'FAIL' }
     test_charter_exists = $testCharterExists
     has_test_surface = $hasTestSurface
+    surface_detection = $testSurfaceDetection
 }
 
 if (-not ($testCharterExists -and $hasTestSurface)) {
@@ -575,15 +694,10 @@ if (-not ($testCharterExists -and $hasTestSurface)) {
 }
 
 # Check 6: FIRST_SLICE_PROOF_PLAN.md schema validation (v466)
-$firstSliceProofPath = Join-Path $replayRootFull 'FIRST_SLICE_PROOF_PLAN.md'
-$firstSliceProofExists = Test-Path -LiteralPath $firstSliceProofPath
 $firstSliceProofSchemaValid = $false
 $firstSliceProofMissingFields = @()
 
 if ($firstSliceProofExists) {
-    $firstSliceProofContentArray = Get-Content -LiteralPath $firstSliceProofPath
-    $firstSliceProofContent = $firstSliceProofContentArray -join "`n"
-
     # Required fields for V457 schema
     $requiredProofFields = @(
         'target_carrier_file_path',
@@ -659,12 +773,9 @@ $familyLayerValid = $true
 $familyLayerReason = $null
 
 if ($isCoreEntryFamily) {
-    # Check if selected carrier is Service layer
-    $selectedCarrierPattern = '(?m)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?(?:selected_carrier|selected_real_entry)\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$'
-    $selectedCarrierMatch = [regex]::Match($combinedArtifacts, $selectedCarrierPattern)
-
-    if ($selectedCarrierMatch.Success) {
-        $carrierForLayerCheck = $selectedCarrierMatch.Groups[1].Value.Trim()
+    # Check the real entry carrier, not the supporting implementation target.
+    $carrierForLayerCheck = Get-EntryCarrierForLayerCheck -Plan $plan -FirstSliceProofText $combinedArtifacts -FallbackCarrier $selectedCarrier
+    if (-not [string]::IsNullOrWhiteSpace($carrierForLayerCheck)) {
         # Extract actual carrier name before any parenthetical notes
         $actualCarrier = $carrierForLayerCheck.Split('(')[0].Trim()
 
@@ -696,6 +807,7 @@ $result = [ordered]@{
     can_proceed_to_phase1 = ($overallStatus -eq 'PASS')
     checks = $checks
     selected_carrier = $selectedCarrier
+    selected_entry_carrier = $entryCarrierForLayer
     timestamp = (Get-Date -Format 'o')
 }
 

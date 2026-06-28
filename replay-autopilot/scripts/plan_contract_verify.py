@@ -327,20 +327,31 @@ def verify_first_slice_proof_v457(first_slice_proof_path):
     # Check 5: layer validation for core_entry family
     # v461: Extract actual carrier name before checking for 'Service' to avoid false positives
     highest_weight_gate_match = re.search(r'highest_weight_open_gate:\s*(.+)', content)
+    first_slice_family_match = re.search(r'first_slice_family:\s*(.+)', content)
+    if not first_slice_family_match:
+        first_slice_family_match = re.search(r'target_family:\s*(.+)', content)
+    if not first_slice_family_match:
+        first_slice_family_match = re.search(r'slice_family:\s*(.+)', content)
     selected_carrier_match = re.search(r'selected_carrier:\s*(.+)', content)
 
     if highest_weight_gate_match and selected_carrier_match:
         highest_weight_gate = highest_weight_gate_match.group(1).strip()
+        first_slice_family = first_slice_family_match.group(1).strip() if first_slice_family_match else highest_weight_gate
         selected_carrier = selected_carrier_match.group(1).strip()
         fields_checked.extend(['highest_weight_open_gate', 'selected_carrier'])
+        if first_slice_family_match:
+            fields_checked.append('first_slice_family')
 
         # v461: Extract actual carrier name (before first '(') to avoid false positives
         # Example: "AiApplyClaimApiTaskProcessor (EXISTING -> calls NEW AiAutoClaimFlowService)"
         # should extract "AiApplyClaimApiTaskProcessor" not match on "AiAutoClaimFlowService"
         actual_carrier = selected_carrier.split('(')[0].strip()
 
-        # For core_entry family, carrier must be Facade/Controller, not Service
-        if 'core_entry' in highest_weight_gate.lower():
+        # For an actual core_entry first slice, carrier must be Facade/Controller,
+        # not Service. If core_entry is only the highest pending family and S1 is
+        # a prerequisite (for example config_policy_threshold), do not apply this
+        # layer gate to the prerequisite carrier.
+        if 'core_entry' in first_slice_family.lower():
             # v461: Check actual carrier name, not the full string with parenthetical notes
             if 'Service' in actual_carrier and 'Facade' not in actual_carrier and 'Controller' not in actual_carrier:
                 issues.append('first_slice_proof_invalid:core_entry_static_carrier')

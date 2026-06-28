@@ -52,6 +52,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
+# Reasonix (local config / tooling)
+.reasonix/
+reasonix.toml
+
 # Replay runtime output
 replay-evidence/
 run-logs/
@@ -59,3 +63,6 @@ run-logs/
 **/PREFLIGHT_*.log
 replay-autopilot/PREFLIGHT_BLOCKER.md
 replay-autopilot/PREFLIGHT_TEST_COMPILATION.json
+
+replay-autopilot/scripts/.scan-results/
+**/.review-tmp/

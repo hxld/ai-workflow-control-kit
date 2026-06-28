@@ -97,6 +97,14 @@ function Get-VersionNumberFromText {
     return [int]$match.Groups[1].Value
 }
 
+function Get-VersionNumberFromReplayRootName {
+    param([string]$Name)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return -1 }
+    $match = [regex]::Match($Name, '-v([0-9]+)-')
+    if (-not $match.Success) { return -1 }
+    return [int]$match.Groups[1].Value
+}
+
 function Resolve-EvidenceRootFromReplayBase {
     param([string]$ReplayRootBase)
     if ([string]::IsNullOrWhiteSpace($ReplayRootBase)) { return '' }
@@ -189,6 +197,65 @@ function Get-NextRound {
     return ($max + 1)
 }
 
+function Resolve-CycleReplayRootForSummary {
+    param(
+        [string]$ReplayRootBase,
+        [int]$StartRound,
+        [int]$Rounds
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRootBase) -or $StartRound -lt 1 -or $Rounds -lt 1) {
+        return ''
+    }
+
+    $parent = Split-Path -Parent $ReplayRootBase
+    $baseLeaf = Split-Path -Leaf $ReplayRootBase
+    if (-not (Test-Path -LiteralPath $parent)) { return '' }
+    $baseVersionNumber = Get-VersionNumberFromReplayRootName -Name $baseLeaf
+
+    $candidates = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match ('^' + [regex]::Escape($baseLeaf) + '-r(?<round>[0-9]+)$')
+    } | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.FullName
+            Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Version = Get-VersionNumberFromReplayRootName -Name $_.Name
+            Updated = $_.LastWriteTime
+        }
+    } | Where-Object {
+        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds)
+    } | Sort-Object Version, Round, Updated -Descending)
+
+    $versionMatch = [regex]::Match($baseLeaf, '-v[0-9]+-')
+    if ($versionMatch.Success) {
+        $prefix = [regex]::Escape($baseLeaf.Substring(0, $versionMatch.Index))
+        $suffixStart = $versionMatch.Index + $versionMatch.Length
+        $suffix = [regex]::Escape($baseLeaf.Substring($suffixStart))
+        $regex = '^' + $prefix + '-v[0-9]+-' + $suffix + '-r(?<round>[0-9]+)$'
+    } else {
+        $regex = '^' + [regex]::Escape($baseLeaf) + '-r(?<round>[0-9]+)$'
+    }
+    $fallback = @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match $regex
+    } | ForEach-Object {
+        [pscustomobject]@{
+            Path = $_.FullName
+            Round = [int]([regex]::Match($_.Name, '-r([0-9]+)$').Groups[1].Value)
+            Version = Get-VersionNumberFromReplayRootName -Name $_.Name
+            Updated = $_.LastWriteTime
+        }
+    } | Where-Object {
+        $_.Round -ge $StartRound -and $_.Round -lt ($StartRound + $Rounds) -and
+        ($baseVersionNumber -lt 0 -or $_.Version -ge $baseVersionNumber)
+    } | Sort-Object Version, Round, Updated -Descending)
+
+    $allCandidates = @($candidates + $fallback | Sort-Object Version, Round, Updated -Descending)
+    if ($allCandidates.Count -gt 0) {
+        return [System.IO.Path]::GetFullPath([string]$allCandidates[0].Path)
+    }
+    return ''
+}
+
 function Write-JsonStatus {
     param(
         [string]$Path,
@@ -278,8 +345,11 @@ function Invoke-KnowledgeBackupSyncSafe {
     if ($maxRetries -lt 0) { $maxRetries = 0 }
     $retryDelaySeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_retry_delay_seconds' -DefaultValue '60') -DefaultValue 60
     if ($retryDelaySeconds -lt 0) { $retryDelaySeconds = 0 }
+    $pushTimeoutSeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $Config -Key 'knowledge_backup_push_timeout_seconds' -DefaultValue '60') -DefaultValue 60
+    if ($pushTimeoutSeconds -lt 1) { $pushTimeoutSeconds = 60 }
     $attemptLimit = $maxRetries + 1
     $pushExitCode = 0
+    $pushTimedOut = $false
 
     for ($attempt = 1; $attempt -le $attemptLimit; $attempt++) {
         $pushStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -291,9 +361,18 @@ function Invoke-KnowledgeBackupSyncSafe {
             -RedirectStandardOutput $pushStdout `
             -RedirectStandardError $pushStderr `
             -WindowStyle Hidden `
-            -PassThru `
-            -Wait
-        $pushExitCode = $pushProcess.ExitCode
+            -PassThru
+        $completed = $pushProcess.WaitForExit($pushTimeoutSeconds * 1000)
+        if ($completed) {
+            $pushExitCode = $pushProcess.ExitCode
+        } else {
+            $pushTimedOut = $true
+            $pushExitCode = -1
+            Stop-Process -Id $pushProcess.Id -Force -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+                Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "$(Get-Date -Format s) knowledge_backup_push_timeout_seconds=$pushTimeoutSeconds attempt=$attempt pid=$($pushProcess.Id)"
+            }
+        }
         if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
             Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "$(Get-Date -Format s) knowledge_backup_push_stdout=$pushStdout stderr=$pushStderr exit=$pushExitCode attempt=$attempt"
         }
@@ -331,6 +410,8 @@ function Invoke-KnowledgeBackupSyncSafe {
             branch = $branch
             attempts = $attemptLimit
             exit_code = $pushExitCode
+            timed_out = $pushTimedOut
+            timeout_seconds = $pushTimeoutSeconds
             blocking = $blockingPushFailure
             recovery = "Run git -C `"$knowledgeRepoForPush`" push origin $branch or rerun Sync-KnowledgeBackup.ps1 -Push."
         } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $statusDir 'KNOWLEDGE_BACKUP_PENDING.json') -Encoding UTF8
@@ -432,7 +513,7 @@ $knowledgeRepo = Resolve-AbsolutePath (Require-Key $config 'knowledge_repo')
 $replayRootBaseTemplate = Resolve-AbsolutePath (Require-Key $config 'replay_root_base')
 $cycleRoundsActual = if ($CycleRounds -gt 0) { $CycleRounds } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_cycle_rounds' -DefaultValue (Get-ConfigValueOrDefault -Config $config -Key 'max_rounds' -DefaultValue '3')) }
 $maxCyclesActual = if ($MaxCycles -gt 0) { $MaxCycles } else { [int](Get-ConfigValueOrDefault -Config $config -Key 'control_max_cycles' -DefaultValue '3') }
-$executorActual = if (-not [string]::IsNullOrWhiteSpace($Executor)) { $Executor } else { Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'claude' }
+$executorActual = if (-not [string]::IsNullOrWhiteSpace($Executor)) { $Executor } else { Get-ConfigValueOrDefault -Config $config -Key 'executor' -DefaultValue 'codex' }
 $requiredExecutorActual = if (-not [string]::IsNullOrWhiteSpace($RequireExecutor)) { $RequireExecutor } else { Get-ConfigValueOrDefault -Config $config -Key 'require_executor' -DefaultValue '' }
 $allowCodexExecutorActual = [bool]$AllowCodexExecutor -or (Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'allow_codex_executor' -DefaultValue 'false'))
 $runEvolutionActual = [bool]$RunEvolution -or (Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_run_evolution' -DefaultValue 'true'))
@@ -445,6 +526,9 @@ $zeroCapEvolutionContinueLimit = Convert-ToIntOrDefault -Value (Get-ConfigValueO
 if ($zeroCapEvolutionContinueLimit -lt 0) { $zeroCapEvolutionContinueLimit = 0 }
 $zeroCapNextAction = Get-ConfigValueOrDefault -Config $config -Key 'control_zero_cap_next_action' -DefaultValue 'golden_slice'
 $reflectionGateEnabled = Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_reflection_gate_enabled' -DefaultValue 'true')
+$controlSummaryAuxiliaryTimeoutSeconds = Convert-ToIntOrDefault -Value (Get-ConfigValueOrDefault -Config $config -Key 'control_summary_auxiliary_timeout_seconds' -DefaultValue '90') -DefaultValue 90
+if ($controlSummaryAuxiliaryTimeoutSeconds -lt 1) { $controlSummaryAuxiliaryTimeoutSeconds = 1 }
+$controlSummarySkipAuxiliaryArtifacts = Convert-ToBool (Get-ConfigValueOrDefault -Config $config -Key 'control_summary_skip_auxiliary_artifacts' -DefaultValue 'false')
 $continueKinds = @('CONTINUE', 'EVOLVE', 'UPGRADE')
 
 if (@('codex', 'claude', 'manual') -notcontains $executorActual) {
@@ -457,7 +541,7 @@ if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual) -and $executorAct
     throw "Executor policy violation: actual executor '$executorActual' does not match required executor '$requiredExecutorActual'."
 }
 if ($executorActual -eq 'codex' -and -not $allowCodexExecutorActual) {
-    throw "Executor policy violation: Codex executor is blocked by default."
+    throw "Executor policy violation: Codex executor requires explicit authorization."
 }
 if ($cycleRoundsActual -lt 1) { throw "CycleRounds must be >= 1." }
 if ($maxCyclesActual -lt 1) { throw "MaxCycles must be >= 1." }
@@ -497,6 +581,8 @@ if ($ValidateOnly) {
         zero_cap_evolution_continue_limit = $zeroCapEvolutionContinueLimit
         zero_cap_next_action = $zeroCapNextAction
         reflection_gate_enabled = $reflectionGateEnabled
+        control_summary_auxiliary_timeout_seconds = $controlSummaryAuxiliaryTimeoutSeconds
+        control_summary_skip_auxiliary_artifacts = $controlSummarySkipAuxiliaryArtifacts
         continue_decision_kinds = $continueKinds
     } | ConvertTo-Json -Depth 8
     exit 0
@@ -583,12 +669,27 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
     }
 
     $controlScript = Join-Path $PSScriptRoot 'Write-ControlPlaneSummary.ps1'
+    $currentReplayRoot = Resolve-CycleReplayRootForSummary -ReplayRootBase $cycleReplayRootBase -StartRound $nextStartRound -Rounds $cycleRoundsActual
     if (Test-Path -LiteralPath $controlScript) {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $controlScript `
-            -EvidenceRoot $evidenceRoot `
-            -TargetCoverage $targetCoverage `
-            -RequireExecutor $requiredExecutorActual `
-            -Quiet
+        $controlArgs = @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', $controlScript,
+            '-EvidenceRoot', $evidenceRoot,
+            '-TargetCoverage', [string]$targetCoverage,
+            '-AuxiliaryTimeoutSeconds', [string]$controlSummaryAuxiliaryTimeoutSeconds
+        )
+        if (-not [string]::IsNullOrWhiteSpace($requiredExecutorActual)) {
+            $controlArgs += @('-RequireExecutor', $requiredExecutorActual)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($currentReplayRoot)) {
+            $controlArgs += @('-ReplayRoot', $currentReplayRoot)
+        }
+        if ($controlSummarySkipAuxiliaryArtifacts) {
+            $controlArgs += '-SkipAuxiliaryArtifacts'
+        }
+        $controlArgs += '-Quiet'
+        & powershell @controlArgs
         if ($LASTEXITCODE -ne 0) {
             $stopReason = "control_summary_exit_$LASTEXITCODE"
             Write-JsonStatus -Path $statusPath -Data ([ordered]@{
@@ -642,6 +743,10 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
     $reflectionGateStatus = 'not_run'
     $reflectionGateExitCode = 0
     $reflectionGateFailed = $false
+    $ruleClosureStatus = 'not_run'
+    $ruleClosureExitCode = 0
+    $ruleClosureFailed = $false
+    $ruleClosurePath = ''
     $reflectionGateScript = Join-Path $PSScriptRoot 'Invoke-ReflectionSufficiencyGate.ps1'
     if ($reflectionGateEnabled -and (@('EVOLVE', 'UPGRADE') -contains $decisionKind) -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot) -and (Test-Path -LiteralPath $reflectionGateScript)) {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $reflectionGateScript -ReplayRoot $lastReplayRoot | Out-Null
@@ -662,14 +767,34 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
         $reflectionGateStatus = 'skipped_missing_script_or_root'
         $reflectionGateFailed = $true
     }
-    $shouldContinue = $hasNextCycle -and $continuableDecision -and -not $targetReached -and -not $stoplineBlocked -and -not $zeroCapStopTriggered -and -not $evolveWithoutVersionAdvance -and -not $reflectionGateFailed
+    $ruleClosureScript = Join-Path $PSScriptRoot 'Validate-VerifiableRuleClosure.ps1'
+    if ((@('EVOLVE', 'UPGRADE') -contains $decisionKind) -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot) -and (Test-Path -LiteralPath $ruleClosureScript)) {
+        $ruleClosurePath = Join-Path $lastReplayRoot 'VERIFIABLE_RULE_CLOSURE.json'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $ruleClosureScript -ReplayRoot $lastReplayRoot -ControlRoot (Join-Path $evidenceRoot '_control') | Out-Null
+        $ruleClosureExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+        if (Test-Path -LiteralPath $ruleClosurePath) {
+            try {
+                $ruleClosureJson = Get-Content -LiteralPath $ruleClosurePath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $ruleClosureStatus = [string]$ruleClosureJson.status
+            } catch {
+                $ruleClosureStatus = "parse_error:$($_.Exception.Message)"
+            }
+        } else {
+            $ruleClosureStatus = "missing_result_exit_$ruleClosureExitCode"
+        }
+        $ruleClosureFailed = $ruleClosureExitCode -ne 0 -or $ruleClosureStatus -ne 'PASS'
+    } elseif (@('EVOLVE', 'UPGRADE') -contains $decisionKind) {
+        $ruleClosureStatus = 'skipped_missing_script_or_root'
+        $ruleClosureFailed = $true
+    }
+    $shouldContinue = $hasNextCycle -and $continuableDecision -and -not $targetReached -and -not $stoplineBlocked -and -not $zeroCapStopTriggered -and -not $evolveWithoutVersionAdvance -and -not $reflectionGateFailed -and -not $ruleClosureFailed
 
     if ($zeroCapEvolutionContinue -and $zeroCapNextAction -eq 'golden_slice' -and -not [string]::IsNullOrWhiteSpace($lastReplayRoot)) {
         $goldenRecoveryStatus = Invoke-GoldenSliceRecoverySafe -Config $config -ReplayRootBase $cycleReplayRootBase -LatestReplayRoot $lastReplayRoot -Reason 'zero_cap_evolved_continue' -LogPath $logPath
         Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) zero_cap_recovery=$goldenRecoveryStatus zero_cap_stop_suppressed=true version_before=$($beforeVersion.Version) version_after=$($afterVersion.Version)"
     }
 
-    Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_DECISION cycle=$cycle decision=$decisionKind cap=$latestCap oracle=$latestCoverage zero_cap_streak=$zeroCapStreak zero_cap_stop_raw=$zeroCapStopTriggeredRaw zero_cap_stop=$zeroCapStopTriggered zero_cap_evolution_continue=$zeroCapEvolutionContinue zero_cap_evolution_continue_limit=$zeroCapEvolutionContinueLimit evolve_without_version_advance=$evolveWithoutVersionAdvance evolve_without_latest_root_advance=$evolveWithoutLatestRootAdvance reflection_gate=$reflectionGateStatus reflection_gate_failed=$reflectionGateFailed latest_root=$lastReplayRoot latest_root_version=$latestRootVersionNumber version_after=$($afterVersion.Version)"
+    Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) CYCLE_DECISION cycle=$cycle decision=$decisionKind cap=$latestCap oracle=$latestCoverage zero_cap_streak=$zeroCapStreak zero_cap_stop_raw=$zeroCapStopTriggeredRaw zero_cap_stop=$zeroCapStopTriggered zero_cap_evolution_continue=$zeroCapEvolutionContinue zero_cap_evolution_continue_limit=$zeroCapEvolutionContinueLimit evolve_without_version_advance=$evolveWithoutVersionAdvance evolve_without_latest_root_advance=$evolveWithoutLatestRootAdvance reflection_gate=$reflectionGateStatus reflection_gate_failed=$reflectionGateFailed rule_closure=$ruleClosureStatus rule_closure_failed=$ruleClosureFailed latest_root=$lastReplayRoot latest_root_version=$latestRootVersionNumber version_after=$($afterVersion.Version)"
     Write-JsonStatus -Path $statusPath -Data ([ordered]@{
         schema = 'unattended_replay_control_status.v1'
         status = 'CYCLE_DONE'
@@ -696,6 +821,10 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
         reflection_gate_status = $reflectionGateStatus
         reflection_gate_exit_code = $reflectionGateExitCode
         reflection_gate_failed = $reflectionGateFailed
+        rule_closure_status = $ruleClosureStatus
+        rule_closure_exit_code = $ruleClosureExitCode
+        rule_closure_failed = $ruleClosureFailed
+        rule_closure_path = $ruleClosurePath
         evolve_without_version_advance = $evolveWithoutVersionAdvance
         evolve_without_latest_root_advance = $evolveWithoutLatestRootAdvance
         will_continue = $shouldContinue
@@ -725,6 +854,28 @@ for ($cycle = 1; $cycle -le $maxCyclesActual; $cycle++) {
             updated_at = (Get-Date).ToString('s')
         })
         Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) STOP reflection_sufficiency_failed decision=$decisionKind reflection_gate=$reflectionGateStatus latest_root=$lastReplayRoot"
+        break
+    }
+    if ($ruleClosureFailed) {
+        $stopReason = 'verifiable_rule_closure_required'
+        Write-JsonStatus -Path $statusPath -Data ([ordered]@{
+            schema = 'unattended_replay_control_status.v1'
+            status = 'RULE_CLOSURE_REQUIRED'
+            run_id = $runId
+            cycle = $cycle
+            max_cycles = $maxCyclesActual
+            stop_reason = $stopReason
+            decision_kind = $decisionKind
+            latest_replay_root = $lastReplayRoot
+            verification_capped_coverage = $latestCap
+            oracle_adjusted_coverage = $latestCoverage
+            rule_closure_status = $ruleClosureStatus
+            rule_closure_exit_code = $ruleClosureExitCode
+            rule_closure_path = $ruleClosurePath
+            will_continue = $false
+            updated_at = (Get-Date).ToString('s')
+        })
+        Add-Content -LiteralPath $logPath -Encoding UTF8 -Value "$(Get-Date -Format s) STOP verifiable_rule_closure_required decision=$decisionKind rule_closure=$ruleClosureStatus latest_root=$lastReplayRoot"
         break
     }
     if ($zeroCapStopTriggered) {

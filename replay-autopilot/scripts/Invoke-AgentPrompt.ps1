@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$LogDir,
     [ValidateSet('codex', 'claude', 'manual')]
-    [string]$Executor = 'claude',
+    [string]$Executor = 'codex',
     [string]$Model = '',
     [string]$ReasoningEffort = '',
     [string]$Sandbox = 'danger-full-access',
@@ -14,6 +14,7 @@ param(
     [int]$TimeoutMinutes = 240,
     [string]$CompletionPath = '',
     [int]$CompletionQuietSeconds = 90,
+    [int]$SilentNoOutputTimeoutSeconds = 0,
     [string]$Name = 'agent',
     [switch]$ValidateOnly
 )
@@ -199,11 +200,19 @@ function Get-GitStatusText {
     if ([string]::IsNullOrWhiteSpace($Repo) -or -not (Test-Path -LiteralPath $Repo)) {
         return ''
     }
-    $status = & git -C $Repo status --short 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    $oldErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $status = & git -C $Repo status --short 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return ''
+        }
+        return (($status | Sort-Object) -join "`n")
+    } catch {
         return ''
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
     }
-    return (($status | Sort-Object) -join "`n")
 }
 
 function Resolve-ExecutorCommand {
@@ -406,6 +415,24 @@ function Test-AgentCompletionFileReady {
     return (-not $item.PSIsContainer -and $item.Length -gt 0)
 }
 
+function Get-AgentArtifactInfo {
+    param([string]$Path)
+    $full = ''
+    if (-not [string]::IsNullOrWhiteSpace($Path)) {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    }
+    $exists = (-not [string]::IsNullOrWhiteSpace($full)) -and (Test-Path -LiteralPath $full -PathType Leaf)
+    $length = 0
+    if ($exists) {
+        $length = (Get-Item -LiteralPath $full).Length
+    }
+    return [ordered]@{
+        path = $full
+        exists = $exists
+        length = $length
+    }
+}
+
 function Receive-JobWithTimeout {
     param(
         [System.Management.Automation.Job]$Job,
@@ -417,10 +444,15 @@ function Receive-JobWithTimeout {
         [string]$WorkDir = '',
         [string]$ProtectedRoot = '',
         [string]$ProtectedRootStatusBefore = '',
+        [string]$StdoutLogPath = '',
+        [string]$StderrLogPath = '',
+        [string]$LastMessagePath = '',
+        [int]$SilentNoOutputTimeoutSeconds = 0,
         [string]$GuardLogPath = ''
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $watchStartedUtc = (Get-Date).ToUniversalTime()
     $completionFull = ''
     if (-not [string]::IsNullOrWhiteSpace($CompletionPath)) {
         $completionFull = [System.IO.Path]::GetFullPath($CompletionPath)
@@ -428,10 +460,47 @@ function Receive-JobWithTimeout {
     $lastCompletionSignature = ''
     $completionStableSince = $null
     $quietSeconds = [Math]::Max(15, $CompletionQuietSeconds)
+    $silentTimeout = [Math]::Max(0, $SilentNoOutputTimeoutSeconds)
 
     function Test-CompletionFileReady {
         param([string]$Path)
         return (Test-AgentCompletionFileReady -Path $Path)
+    }
+
+    function Get-OutputActivitySignature {
+        $parts = New-Object System.Collections.ArrayList
+        foreach ($path in @($StdoutLogPath, $StderrLogPath, $LastMessagePath, $completionFull)) {
+            if ([string]::IsNullOrWhiteSpace($path)) {
+                continue
+            }
+            $fullPath = [System.IO.Path]::GetFullPath($path)
+            if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+                $item = Get-Item -LiteralPath $fullPath
+                if ($item.Length -gt 8) {
+                    [void]$parts.Add(('{0}|{1}|{2}' -f $item.FullName, $item.Length, $item.LastWriteTimeUtc.Ticks))
+                }
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($completionFull)) {
+            $completionParent = Split-Path -Parent $completionFull
+            if (-not [string]::IsNullOrWhiteSpace($completionParent) -and (Test-Path -LiteralPath $completionParent -PathType Container)) {
+                $recentArtifacts = @(Get-ChildItem -LiteralPath $completionParent -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Length -gt 0 -and $_.LastWriteTimeUtc -gt $watchStartedUtc } |
+                    Sort-Object FullName)
+                foreach ($artifact in $recentArtifacts) {
+                    [void]$parts.Add(('{0}|{1}|{2}' -f $artifact.FullName, $artifact.Length, $artifact.LastWriteTimeUtc.Ticks))
+                }
+            }
+        }
+
+        return (@($parts) -join "`n")
+    }
+
+    $lastOutputActivitySignature = ''
+    $lastOutputActivityAt = Get-Date
+    if ($silentTimeout -gt 0) {
+        $lastOutputActivitySignature = Get-OutputActivitySignature
     }
 
     function Get-ResultExitCode {
@@ -590,6 +659,25 @@ function Receive-JobWithTimeout {
                 }
             }
         }
+
+        if ($silentTimeout -gt 0 -and -not (Test-CompletionFileReady $completionFull)) {
+            $currentOutputActivitySignature = Get-OutputActivitySignature
+            if ($currentOutputActivitySignature -ne $lastOutputActivitySignature) {
+                $lastOutputActivitySignature = $currentOutputActivitySignature
+                $lastOutputActivityAt = Get-Date
+            } elseif (((Get-Date) - $lastOutputActivityAt).TotalSeconds -ge $silentTimeout) {
+                Stop-ExecutorProcessesByCommandLine -MatchText $ProcessMatchText
+                Stop-Job -Job $Job | Out-Null
+                Remove-Job -Job $Job -Force | Out-Null
+                [void](Invoke-ReplayCommandGuardCleanup -WorkDir $WorkDir -ProtectedRoot $ProtectedRoot -GuardLogPath $GuardLogPath)
+                return [pscustomobject]@{
+                    ExitCode = 88
+                    CompletionMode = 'silent_no_output_timeout'
+                    SilentNoOutputTimeoutSeconds = $silentTimeout
+                    CompletionPath = $completionFull
+                }
+            }
+        }
     }
 
     $completionReadyAfterExit = Test-CompletionFileReady $completionFull
@@ -638,6 +726,8 @@ $stdoutLog = Join-Path $logDirFull "$Name.stdout.log"
 $stderrLog = Join-Path $logDirFull "$Name.stderr.log"
 $lastMessage = Join-Path $logDirFull "$Name.last-message.md"
 $metaPath = Join-Path $logDirFull "$Name.exec.json"
+$goalSpecPath = Join-Path $logDirFull "$Name.goalspec.json"
+$proofSpecPath = Join-Path $logDirFull "$Name.proofspec.json"
 $commandGuardLog = Join-Path $logDirFull "$Name.command-guard.jsonl"
 $rgConfigPath = Join-Path $PSScriptRoot 'ripgrep-autopilot.config'
 $toolPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\tools'))
@@ -647,6 +737,72 @@ if ($Executor -ne 'manual') {
     $commandSource = Resolve-ExecutorCommand $Executor
 }
 
+$timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
+$effectiveSilentNoOutputTimeoutSeconds = [Math]::Max(0, $SilentNoOutputTimeoutSeconds)
+$silentNoOutputPolicyReason = 'disabled'
+$silentNoOutputExplicit = $SilentNoOutputTimeoutSeconds -gt 0
+if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and $env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS -match '^\d+$') {
+    $effectiveSilentNoOutputTimeoutSeconds = [int]$env:REPLAY_AGENT_SILENT_NO_OUTPUT_TIMEOUT_SECONDS
+    $silentNoOutputExplicit = $true
+}
+if ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and $timeoutSeconds -gt 1200) {
+    if ($Executor -eq 'claude') {
+        # Claude --print normally emits no stdout until final completion; the stage timeout remains the hard bound.
+        $silentNoOutputPolicyReason = 'default_disabled_for_claude_print_executor'
+    } else {
+        $effectiveSilentNoOutputTimeoutSeconds = 900
+        $silentNoOutputPolicyReason = 'default_required_completion_watchdog'
+    }
+}
+if ($effectiveSilentNoOutputTimeoutSeconds -gt 0 -and $silentNoOutputExplicit) {
+    $silentNoOutputPolicyReason = 'explicit_or_env_override'
+} elseif ($effectiveSilentNoOutputTimeoutSeconds -gt 0 -and $silentNoOutputPolicyReason -eq 'disabled') {
+    $silentNoOutputPolicyReason = 'enabled'
+} elseif ($effectiveSilentNoOutputTimeoutSeconds -le 0 -and $silentNoOutputPolicyReason -eq 'disabled') {
+    $silentNoOutputPolicyReason = 'not_required'
+}
+
+$reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
+$completionArtifact = Get-AgentArtifactInfo -Path $CompletionPath
+$completionRequired = -not [string]::IsNullOrWhiteSpace($CompletionPath)
+$completionCriterion = if ($completionRequired) { 'required_completion_artifact_non_empty' } else { 'completion_artifact_not_required' }
+$goalSpec = [ordered]@{
+    schema = 'replay_agent_goal_spec.v1'
+    stage = $Name
+    executor = $Executor
+    prompt_path = $promptPathFull
+    work_dir = $workDirFull
+    log_dir = $logDirFull
+    model = $Model
+    reasoning_effort = $reasoningEffortActual
+    completion_path = $completionArtifact.path
+    success_criteria = @(
+        'executor_exit_code_zero',
+        $completionCriterion,
+        'protected_root_not_modified',
+        'command_guard_has_no_violation'
+    )
+    stop_policy = [ordered]@{
+        timeout_seconds = $timeoutSeconds
+        completion_quiet_seconds = $CompletionQuietSeconds
+        silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
+        silent_no_output_policy_reason = $silentNoOutputPolicyReason
+        fail_closed_on_missing_completion = $completionRequired
+        fail_closed_on_command_guard = $true
+        fail_closed_on_protected_root_modified = $true
+    }
+    proof_obligations = @(
+        [ordered]@{ name = 'executor_exit'; required = $true; evidence_path = $metaPath },
+        [ordered]@{ name = 'completion_artifact'; required = $completionRequired; evidence_path = $completionArtifact.path },
+        [ordered]@{ name = 'stdout_log'; required = $false; evidence_path = $stdoutLog },
+        [ordered]@{ name = 'stderr_log'; required = $false; evidence_path = $stderrLog },
+        [ordered]@{ name = 'command_guard'; required = $true; evidence_path = $commandGuardLog },
+        [ordered]@{ name = 'protected_root_guard'; required = $true; evidence_path = $metaPath }
+    )
+    created_at = (Get-Date).ToString('s')
+}
+$goalSpec | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $goalSpecPath -Encoding UTF8
+
 if ($ValidateOnly -or $Executor -eq 'manual') {
     [pscustomobject]@{
         Executor = $Executor
@@ -654,19 +810,21 @@ if ($ValidateOnly -or $Executor -eq 'manual') {
         PromptPath = $promptPathFull
         WorkDir = $workDirFull
         LogDir = $logDirFull
+        GoalSpecPath = $goalSpecPath
+        ProofSpecPath = $proofSpecPath
         Model = $Model
         ReasoningEffort = $ReasoningEffort
         CompletionPath = $CompletionPath
         CompletionQuietSeconds = $CompletionQuietSeconds
+        SilentNoOutputTimeoutSeconds = $effectiveSilentNoOutputTimeoutSeconds
+        SilentNoOutputPolicyReason = $silentNoOutputPolicyReason
         Status = if ($Executor -eq 'manual') { 'MANUAL_PROMPT_READY' } else { 'VALID' }
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
     Get-Content -LiteralPath $metaPath -Encoding UTF8
     exit 0
 }
 
-$timeoutSeconds = [Math]::Max(60, $TimeoutMinutes * 60)
 $started = Get-Date
-$reasoningEffortActual = if ([string]::IsNullOrWhiteSpace($ReasoningEffort)) { 'medium' } else { $ReasoningEffort.Trim() }
 $allowedPom = Join-Path $workDirFull 'pom.xml'
 $protectedPomForPrompt = if (-not [string]::IsNullOrWhiteSpace($protectedRoot)) { Join-Path $protectedRoot 'pom.xml' } else { '<protected project root pom>' }
 $automationGuard = @(
@@ -677,15 +835,20 @@ $automationGuard = @(
     '- If you genuinely cannot proceed, write the requested completion file with BLOCKED status and concrete evidence instead of replying conversationally.',
     "- Maven project boundary: the only allowed project POM is $allowedPom; never run Maven with -f $protectedPomForPrompt or any POM under the protected project root.",
     '- Forbidden Maven goals in replay agent execution: never run `mvn deploy`; do not run `mvn install` unless the prompt explicitly authorizes install for an isolated replay worktree.',
-    '- Maven commands that run tests must include `-f <isolated replay worktree>\pom.xml`; include `-s <settings.xml>` only when the replay config defines `maven_settings`.',
+    '- Maven commands that run tests must include `-f <isolated replay worktree>\pom.xml`; include the Maven settings and encoding arguments shown in the current prompt `MAVEN_SETTINGS_ARG` / command template when present.',
     '- Maven commands with `-pl <module>` must also include `-am` so reactor source modules are used instead of drifted local/remote SNAPSHOT artifacts.',
     '- In PowerShell, Maven commands containing `-Dtest`, `#`, or `-Dsurefire.failIfNoSpecifiedTests=false` should use `mvn --% ...` to avoid argument parsing false blockers.',
     '- If the target production carrier is in a module without test dependencies, place tests in an existing test-harness module; do not edit any `pom.xml` to add JUnit/Mockito/Spring Test.',
+    '- Editing `pom.xml` or any dependency configuration file during slice execution is FORBIDDEN. If existing harness dependencies are insufficient, write BLOCKED SLICE_RESULT instead of modifying pom.xml.',
     '- For TaskProcessor/rebuildTaskData/source-chain tests, do not start a full Spring context: do not extend AbstractTestClass and do not add @SpringBootTest, @RunWith(SpringJUnit4ClassRunner.class), @ContextConfiguration, or @Resource injection. Use no-Spring JUnit with Mockito/reflection and deterministic inputs.',
     '- For policyNum/insureNum rebuild slices, mock AiClaimDataAssemblyHelper.buildRequestCommon and invoke the real RequestBuildFunction with a RequestBuildContext containing policyNum and insureNum. Do not directly return a hand-built request from thenAnswer. Do not rely on fixed database caseIds or allow taskData == null to pass.',
     ''
 ) -join "`n"
 
+$result = $null
+$exitCode = 1
+$executorInvocationError = ''
+try {
 if ($Executor -eq 'codex') {
     $codexExecHelp = (& $commandSource exec --help 2>&1 | Out-String)
     $supportsApproval = $codexExecHelp -match '--ask-for-approval'
@@ -713,8 +876,8 @@ if ($Executor -eq 'codex') {
     }
     $args += '-'
 
-    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $rgConfigPath, $toolPath, $automationGuard, $Name -ScriptBlock {
-        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner)
+    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $rgConfigPath, $toolPath, $automationGuard, $Name, $protectedRoot, $workDirFull -ScriptBlock {
+        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner, $ProtectedRootInner, $WorkDirInner)
         $stdoutText = ''
         $stderrText = ''
         $exit = 1
@@ -726,6 +889,8 @@ if ($Executor -eq 'codex') {
                 $env:RIPGREP_CONFIG_PATH = $RgConfigPathInner
             }
             $env:RG_AUTOPILOT_LIMIT = '80'
+            $env:REPLAY_PROTECTED_ROOT = $ProtectedRootInner
+            $env:REPLAY_WORKTREE_ROOT = $WorkDirInner
             $promptBody = Get-Content -LiteralPath $PromptPathInner -Raw -Encoding UTF8
             $env:REPLAY_AGENT_STAGE = $NameInner
             $env:REPLAY_ORACLE_ISOLATION = if ($NameInner -match '^(?i:phase2)$') { '0' } else { '1' }
@@ -747,7 +912,7 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Codex executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } elseif ($Executor -eq 'claude') {
     $args = @('--print', '--permission-mode', 'bypassPermissions', '--output-format', 'text', '--max-turns', '200')
@@ -756,8 +921,8 @@ if ($Executor -eq 'codex') {
     }
     $args += @('--add-dir', $workDirFull)
 
-    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $workDirFull, $rgConfigPath, $toolPath, $automationGuard, $Name -ScriptBlock {
-        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $WorkDirInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner)
+    $job = Start-Job -ArgumentList $promptPathFull, $commandSource, $args, $stdoutLog, $stderrLog, $workDirFull, $rgConfigPath, $toolPath, $automationGuard, $Name, $protectedRoot -ScriptBlock {
+        param($PromptPathInner, $CommandSource, $ArgsInner, $StdoutLogInner, $StderrLogInner, $WorkDirInner, $RgConfigPathInner, $ToolPathInner, $AutomationGuardInner, $NameInner, $ProtectedRootInner)
         $stdoutText = ''
         $stderrText = ''
         $exit = 1
@@ -770,6 +935,8 @@ if ($Executor -eq 'codex') {
                 $env:RIPGREP_CONFIG_PATH = $RgConfigPathInner
             }
             $env:RG_AUTOPILOT_LIMIT = '80'
+            $env:REPLAY_PROTECTED_ROOT = $ProtectedRootInner
+            $env:REPLAY_WORKTREE_ROOT = $WorkDirInner
             Push-Location $WorkDirInner
             $pushed = $true
             $promptBody = Get-Content -LiteralPath $PromptPathInner -Raw -Encoding UTF8
@@ -796,17 +963,61 @@ if ($Executor -eq 'codex') {
         }
         [pscustomobject]@{ ExitCode = $exit }
     }
-    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -GuardLogPath $commandGuardLog
+    $result = Receive-JobWithTimeout -Job $job -TimeoutSeconds $timeoutSeconds -TimeoutMessage "Claude executor timed out after $TimeoutMinutes minutes" -CompletionPath $CompletionPath -CompletionQuietSeconds $CompletionQuietSeconds -ProcessMatchText $workDirFull -WorkDir $workDirFull -ProtectedRoot $protectedRoot -ProtectedRootStatusBefore $protectedRootStatusBefore -StdoutLogPath $stdoutLog -StderrLogPath $stderrLog -LastMessagePath $lastMessage -SilentNoOutputTimeoutSeconds $effectiveSilentNoOutputTimeoutSeconds -GuardLogPath $commandGuardLog
     $exitCode = $result.ExitCode
 } else {
     throw "Unsupported executor: $Executor"
 }
+} catch {
+    $executorInvocationError = ($_ | Out-String)
+    if ($null -ne $_.Exception) {
+        $executorInvocationError += "`n$($_.Exception.ToString())"
+    }
+    $completionMode = if ($executorInvocationError -match '(?i)timed out|timeout') { 'executor_timeout_exception' } else { 'executor_exception' }
+    $exitCode = if ($completionMode -eq 'executor_timeout_exception') { 89 } else { 1 }
+    Add-Content -LiteralPath $stderrLog -Encoding UTF8 -Value $executorInvocationError
+    $result = [pscustomobject]@{
+        ExitCode = $exitCode
+        CompletionMode = $completionMode
+        ExecutorExitCode = $exitCode
+        InvocationError = $executorInvocationError
+    }
+}
+if ($null -eq $result) {
+    $result = [pscustomobject]@{
+        ExitCode = 1
+        CompletionMode = 'executor_missing_result'
+        ExecutorExitCode = 1
+    }
+    $exitCode = 1
+}
 
 $ended = Get-Date
+$stdoutLength = if (Test-Path -LiteralPath $stdoutLog -PathType Leaf) { (Get-Item -LiteralPath $stdoutLog).Length } else { 0 }
+$stderrLength = if (Test-Path -LiteralPath $stderrLog -PathType Leaf) { (Get-Item -LiteralPath $stderrLog).Length } else { 0 }
+$lastMessageExists = Test-Path -LiteralPath $lastMessage -PathType Leaf
+$lastMessageLength = if ($lastMessageExists) { (Get-Item -LiteralPath $lastMessage).Length } else { 0 }
+$executorProducedNoOutput = (
+    $result.CompletionMode -eq 'silent_no_output_timeout' -or
+    (
+        $result.CompletionMode -eq 'process_exit' -and
+        -not (Test-AgentCompletionFileReady $CompletionPath) -and
+        $stdoutLength -le 8 -and
+        $stderrLength -le 8 -and
+        (-not $lastMessageExists -or $lastMessageLength -le 8)
+    )
+)
 $failureCategory = ''
-if ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and -not (Test-AgentCompletionFileReady $CompletionPath)) {
+if ($result.CompletionMode -eq 'executor_timeout_exception') {
+    $failureCategory = 'executor_timeout'
+} elseif ($result.CompletionMode -eq 'executor_exception' -or $result.CompletionMode -eq 'executor_missing_result') {
+    $failureCategory = 'executor_exception'
+} elseif ($result.CompletionMode -eq 'silent_no_output_timeout') {
     $exitCode = 88
-    $failureCategory = 'missing_completion'
+    $failureCategory = 'executor_silent_no_output'
+} elseif ($exitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($CompletionPath) -and -not (Test-AgentCompletionFileReady $CompletionPath)) {
+    $exitCode = 88
+    $failureCategory = if ($executorProducedNoOutput) { 'executor_silent_no_output' } else { 'missing_completion' }
 }
 if ($exitCode -eq 93 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
     $failureCategory = 'command_guard_violation'
@@ -822,7 +1033,7 @@ if ($exitCode -ne 0 -and [string]::IsNullOrWhiteSpace($failureCategory)) {
     }
     if ($failureText -match '(?i)\b402\b|credit required|positive balance|required for this model|insufficient credits|not enough credits') {
         $failureCategory = 'executor_credit_required'
-    } elseif ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at') {
+    } elseif ($failureText -match '(?i)usage limit|hit your usage limit|purchase more credits|try again at|selected model is at capacity|please try a different model|model\s+is\s+at\s+capacity') {
         $failureCategory = 'usage_limit'
     } elseif ($failureText -match '(?i)not logged in|login required|authentication|unauthorized') {
         $failureCategory = 'auth'
@@ -867,6 +1078,8 @@ $meta = [ordered]@{
     stderr_log = $stderrLog
     last_message = $lastMessage
     command_guard_log = $commandGuardLog
+    goal_spec_path = $goalSpecPath
+    proof_spec_path = $proofSpecPath
     model = $Model
     reasoning_effort = $reasoningEffortActual
     started_at = $started.ToString('s')
@@ -874,13 +1087,79 @@ $meta = [ordered]@{
     timeout_minutes = $TimeoutMinutes
     completion_path = $CompletionPath
     completion_quiet_seconds = $CompletionQuietSeconds
+    silent_no_output_timeout_seconds = $effectiveSilentNoOutputTimeoutSeconds
+    silent_no_output_policy_reason = $silentNoOutputPolicyReason
     completion_mode = $result.CompletionMode
+    stdout_length = $stdoutLength
+    stderr_length = $stderrLength
+    last_message_exists = $lastMessageExists
+    last_message_length = $lastMessageLength
+    executor_produced_no_output = $executorProducedNoOutput
     command_guard_reasons = if ($null -ne $result.PSObject.Properties['GuardReasons']) { $result.GuardReasons } else { '' }
     exit_code = $exitCode
     executor_exit_code = if ($null -ne $result.PSObject.Properties['ExecutorExitCode']) { $result.ExecutorExitCode } else { $exitCode }
     failure_category = $failureCategory
 }
 $meta | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+
+$completionArtifactAfter = Get-AgentArtifactInfo -Path $CompletionPath
+$completionReady = if ($completionRequired) { ($completionArtifactAfter.exists -and $completionArtifactAfter.length -gt 0) } else { $true }
+$validatedObligations = @(
+    [ordered]@{
+        name = 'executor_exit'
+        required = $true
+        status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
+        evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'completion_artifact'
+        required = $completionRequired
+        status = if (-not $completionRequired) { 'SKIP' } elseif ($completionReady) { 'PASS' } else { 'FAIL' }
+        evidence_path = $completionArtifactAfter.path
+    },
+    [ordered]@{
+        name = 'protected_root_guard'
+        required = $true
+        status = if ($failureCategory -eq 'protected_root_modified') { 'FAIL' } else { 'PASS' }
+        evidence_path = $metaPath
+    },
+    [ordered]@{
+        name = 'command_guard'
+        required = $true
+        status = if ($failureCategory -eq 'command_guard_violation') { 'FAIL' } else { 'PASS' }
+        evidence_path = $commandGuardLog
+    },
+    [ordered]@{
+        name = 'silent_progress'
+        required = $true
+        status = if ($failureCategory -eq 'executor_silent_no_output') { 'FAIL' } else { 'PASS' }
+        evidence_path = $stdoutLog
+    }
+)
+$proofSpec = [ordered]@{
+    schema = 'replay_agent_proof_spec.v1'
+    stage = $Name
+    executor = $Executor
+    goal_spec_path = $goalSpecPath
+    exec_metadata_path = $metaPath
+    status = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
+    exit_code = $exitCode
+    executor_exit_code = if ($null -ne $result.PSObject.Properties['ExecutorExitCode']) { $result.ExecutorExitCode } else { $exitCode }
+    failure_category = $failureCategory
+    completion_mode = $result.CompletionMode
+    completion_ready = $completionReady
+    evidence = [ordered]@{
+        completion = $completionArtifactAfter
+        stdout = Get-AgentArtifactInfo -Path $stdoutLog
+        stderr = Get-AgentArtifactInfo -Path $stderrLog
+        last_message = Get-AgentArtifactInfo -Path $lastMessage
+        command_guard_log = Get-AgentArtifactInfo -Path $commandGuardLog
+        exec_metadata = Get-AgentArtifactInfo -Path $metaPath
+    }
+    validated_obligations = $validatedObligations
+    generated_at = $ended.ToString('s')
+}
+$proofSpec | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $proofSpecPath -Encoding UTF8
 
 if ($exitCode -ne 0) {
     if ($failureCategory -eq 'protected_root_modified') {
@@ -902,6 +1181,18 @@ if ($exitCode -ne 0) {
     if ($failureCategory -eq 'missing_completion') {
         Write-Host "$Executor exited successfully but did not write required completion file: $CompletionPath. See $stdoutLog"
         exit 88
+    }
+    if ($failureCategory -eq 'executor_silent_no_output') {
+        Write-Host "$Executor produced no output or stage artifacts before the silent watchdog expired: $CompletionPath. See $stdoutLog"
+        exit 88
+    }
+    if ($failureCategory -eq 'executor_timeout') {
+        Write-Host "$Executor timed out before writing required proof artifacts. See $stderrLog"
+        exit 89
+    }
+    if ($failureCategory -eq 'executor_exception') {
+        Write-Host "$Executor invocation failed before normal completion. See $stderrLog"
+        exit 1
     }
     if ($failureCategory -eq 'command_guard_violation') {
         Write-Host "$Executor attempted a forbidden replay command. See $commandGuardLog"

@@ -35,6 +35,74 @@ function Add-Unique {
     }
 }
 
+function Get-SafeFileStem {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+
+    $leaf = @(([string]$Path -replace '\\', '/') -split '/')[-1]
+    if ([string]::IsNullOrWhiteSpace($leaf)) { return '' }
+    return ($leaf -replace '\.[^.]+$', '')
+}
+
+function Convert-SnakeToCamel {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+
+    $parts = @([string]$Value -split '_')
+    if ($parts.Count -eq 0) { return '' }
+
+    $camel = [string]$parts[0]
+    for ($i = 1; $i -lt $parts.Count; $i++) {
+        if ([string]::IsNullOrWhiteSpace($parts[$i])) { continue }
+        $part = [string]$parts[$i]
+        $camel += $part.Substring(0, 1).ToUpperInvariant() + $part.Substring(1)
+    }
+    return $camel
+}
+
+function Test-NegatedSourceChainIntent {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+
+    return (
+        $Text -match '(?i)\bnot\s+(a\s+)?(rebuildTaskData|rebuild\s+path|source[-_\s]?chain)\b' -or
+        $Text -match '(?i)\bnot\s+(a\s+)?rebuildTaskData\s+or\s+source[-_\s]?chain\b'
+    )
+}
+
+function Test-ExplicitSourceChainIntent {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    if (Test-NegatedSourceChainIntent -Text $Text) { return $false }
+
+    $normalized = [string]$Text
+    if (
+        $normalized -match '(?i)\bsource[-_\s]?chain\b' -or
+        $normalized -match '(?i)\b(source extraction|backend source extraction|from backend source)\b' -or
+        $normalized -match '(?i)\b(RequestBuildContext|buildRequestCommon|RequestBuildFunction)\b'
+    ) {
+        return $true
+    }
+
+    $paragraphs = @([regex]::Split($normalized, '(?:\r?\n\s*){2,}'))
+    foreach ($paragraph in $paragraphs) {
+        if ([string]::IsNullOrWhiteSpace($paragraph)) { continue }
+        if ($paragraph -notmatch '(?i)\b(rebuildTaskData|rebuilt task data|task data is rebuilt|boundary rebuild path)\b') { continue }
+
+        if ($paragraph -match '(?i)\b(No-Spring Test Rule|test rule|tests?:\s*use|JUnit|Mockito|Spring Boot Test annotation|Test resides)\b') {
+            continue
+        }
+
+        $hasTransferVerb = $paragraph -match '(?i)\b(preserve|propagate|copy|carry|map|assign|fill|read|write|from|into|through|via)\b'
+        $hasSourceOrWireBoundary = $paragraph -match '(?i)\b(source|InputData|input_data|wire|payload|RequestBuildContext|build context|task data|AI request|field|[a-z][a-z0-9]+_[a-z0-9_]+)\b'
+        if ($hasTransferVerb -and $hasSourceOrWireBoundary) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Get-OracleTaskProcessorFiles {
     param([string]$ReplayRoot)
 
@@ -103,18 +171,47 @@ $hasSecondarySource = $text -match '(?i)\b(Secondary\.secondaryId|secondaryId|se
 $hasPrimaryTarget = $text -match '(?i)\b(primary_id)\b'
 $hasSecondaryTarget = $text -match '(?i)\b(secondary_id)\b'
 $hasAiPayloadContext = $text -match '(?i)\b(InputData|input_data|AI request|Example|Example|ExampleApply|ExampleCalculate)\b'
-$rebuildPathRequirement = $text -match '(?i)\b(rebuildTaskData|rebuild|rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
+$explicitSourceChainIntent = Test-ExplicitSourceChainIntent -Text $text
+$rebuildPathRequirement = $explicitSourceChainIntent -and (
+    $text -match '(?i)\b(rebuildTaskData|rebuilt task data|task data is rebuilt|boundary rebuild path)\b'
+)
 $oracleTaskProcessorFiles = @(Get-OracleTaskProcessorFiles -ReplayRoot $root)
 
-if ($hasPrimarySource -and $hasPrimaryTarget -and $hasAiPayloadContext) {
+if ($explicitSourceChainIntent -and $hasPrimarySource -and $hasPrimaryTarget -and $hasAiPayloadContext) {
     Add-Unique $sourceFields 'SourceRecord.primaryId'
     Add-Unique $targetFields 'primary_id'
     Add-Unique $assertions 'captured InputData.primary_id equals SourceRecord.primaryId from backend source extraction'
 }
-if ($hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
+if ($explicitSourceChainIntent -and $hasSecondarySource -and $hasSecondaryTarget -and $hasAiPayloadContext) {
     Add-Unique $sourceFields 'SecondaryRecord.secondaryId'
     Add-Unique $targetFields 'secondary_id'
     Add-Unique $assertions 'captured InputData.secondary_id equals SecondaryRecord.secondaryId queried by policy number'
+}
+
+$ignoredWireTokens = @(
+    'input_data',
+    'task_data',
+    'source_chain',
+    'wire_payload',
+    'request_body',
+    'response_body'
+)
+$wireTokens = @()
+if ($explicitSourceChainIntent) {
+    $wireTokens = @([regex]::Matches($text, '(?i)\b[a-z][a-z0-9]+(?:_[a-z0-9]+)+\b') | ForEach-Object {
+        $_.Value.ToLowerInvariant()
+    } | Where-Object {
+        $ignoredWireTokens -notcontains $_
+    } | Select-Object -Unique)
+    foreach ($wireToken in $wireTokens) {
+        $camelToken = Convert-SnakeToCamel -Value $wireToken
+        if ([string]::IsNullOrWhiteSpace($camelToken)) { continue }
+        if ($text -match ('(?i)\b' + [regex]::Escape($camelToken) + '\b')) {
+            Add-Unique $sourceFields "source.$camelToken"
+            Add-Unique $targetFields $wireToken
+            Add-Unique $assertions "captured InputData.$wireToken equals source.$camelToken from backend source extraction"
+        }
+    }
 }
 
 foreach ($file in @(
@@ -127,10 +224,28 @@ foreach ($file in @(
     '<production-module>/src/main/java/com/example/project/core/task/ExampleApplyTaskProcessor.java',
     '<production-module>/src/main/java/com/example/project/core/task/ExampleCalculateTaskProcessor.java'
 )) {
-    if ($text -match [regex]::Escape(([System.IO.Path]::GetFileNameWithoutExtension($file)))) {
+    $fileStem = Get-SafeFileStem -Path $file
+    if (-not [string]::IsNullOrWhiteSpace($fileStem) -and $text -match [regex]::Escape($fileStem)) {
         Add-Unique $mustTouchFiles $file
     }
 }
+
+$oracleTaskProcessorClassNames = New-Object System.Collections.Generic.List[string]
+foreach ($file in @($oracleTaskProcessorFiles)) {
+    Add-Unique -List $oracleTaskProcessorClassNames -Value (Get-SafeFileStem -Path $file)
+}
+$taskProcessorCarrierNames = if ($oracleTaskProcessorClassNames.Count -gt 0) {
+    @($oracleTaskProcessorClassNames) -join ' and '
+} else {
+    'TaskProcessor rebuildTaskData'
+}
+$taskProcessorEntry = if ($oracleTaskProcessorClassNames.Count -gt 0) {
+    @($oracleTaskProcessorClassNames | ForEach-Object { "$_.rebuildTaskData(Long caseId)" }) -join ' and '
+} else {
+    'TaskProcessor.rebuildTaskData(Long caseId)'
+}
+$sourceFieldDisplay = if ($sourceFields.Count -gt 0) { @($sourceFields) -join '/' } else { 'source fields' }
+$targetFieldDisplay = if ($targetFields.Count -gt 0) { @($targetFields) -join '/' } else { 'wire fields' }
 
 $hasNamedSource = $sourceFields.Count -gt 0 -and $targetFields.Count -gt 0
 $sourceChainMode = if ($hasNamedSource -and $rebuildPathRequirement) {
@@ -150,14 +265,16 @@ $activationReason = if ($hasNamedSource) {
     'source-like terms found, but no exact wire target field primary_id/secondary_id; source-chain gate not applicable'
 } elseif (($hasPrimaryTarget -or $hasSecondaryTarget) -and -not $hasAiPayloadContext) {
     'wire-like target terms found without AI InputData context; source-chain gate not applicable'
+} elseif (-not $explicitSourceChainIntent -and ($wireTokens.Count -eq 0)) {
+    'field-name pairs found without explicit source-chain/rebuild intent; source-chain gate not applicable'
 } else {
     'no named source-chain contract detected'
 }
 $requiredFamilies = @()
 if ($hasNamedSource -and $sourceChainMode -eq 'task_processor_rebuild') {
     $requiredFamilies = @(
-        [ordered]@{ family = 'task_processor_rebuild'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
-        [ordered]@{ family = 'wire_payload'; carrier = 'ExampleApplyTaskProcessor and ExampleCalculateTaskProcessor'; reason = 'rebuilt task data must still reach outgoing InputData primary_id/secondary_id keys' }
+        [ordered]@{ family = 'task_processor_rebuild'; carrier = $taskProcessorCarrierNames; reason = 'archived oracle high-weight files are rebuild TaskProcessors; first executable proof must bind to rebuildTaskData' },
+        [ordered]@{ family = 'wire_payload'; carrier = $taskProcessorCarrierNames; reason = "rebuilt task data must still reach outgoing InputData $targetFieldDisplay keys" }
     )
 } elseif ($hasNamedSource) {
     $requiredFamilies = @(
@@ -174,18 +291,12 @@ $nextRequiredSlice = if ($hasNamedSource) {
     if ($sourceChainMode -eq 'task_processor_rebuild') {
         [ordered]@{
             family = 'source_chain'
-            entry = 'ExampleApplyTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)'
-            carrier = 'TaskProcessor rebuildTaskData -> ExampleBaseTaskData.primaryId/secondaryId -> InputData.primary_id/InputData.secondary_id'
+            entry = $taskProcessorEntry
+            carrier = "TaskProcessor rebuildTaskData -> $sourceFieldDisplay -> InputData.$targetFieldDisplay"
             slice_type = 'exact_contract_slice'
-            test_name = 'ExampleApplyTaskProcessorTest.testRebuildTaskData_PreservesPrimaryNumAndSecondaryNum'
+            test_name = "$(@($oracleTaskProcessorClassNames | Select-Object -First 1))Test.testRebuildTaskData_PreservesSourceFields"
             must_touch_files = @($oracleTaskProcessorFiles)
-            required_assertions = @(
-                'apply-example rebuildTaskData preserves primaryId',
-                'apply-example rebuildTaskData preserves secondaryId',
-                'calculate-example rebuildTaskData preserves primaryId',
-                'calculate-example rebuildTaskData preserves secondaryId',
-                'final AI input_data includes primary_id and secondary_id after rebuild'
-            )
+            required_assertions = @($assertions)
             forbidden_proof = @('synthetic_carrier', 'hand_built_task_data_only', 'reflection_setter_only', 'terminal_payload_only', 'dto_existence_only', 'helper_chain_expansion_without_oracle_proof')
         }
     } else {
@@ -208,6 +319,7 @@ $result = [ordered]@{
     schema_version = 1
     replay_root = $root
     required_source_chain = $hasNamedSource
+    explicit_source_chain_intent = $explicitSourceChainIntent
     source_fields = @($sourceFields)
     target_fields = @($targetFields)
     source_chain_mode = $sourceChainMode

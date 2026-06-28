@@ -213,10 +213,10 @@ function Get-BlockerRule {
             return [ordered]@{
                 blocker = $Fingerprint
                 root_cause_layer = 'executor_reliability'
-                root_cause = 'Executor exits, rate limits, or transient API failures interrupt the pipeline.'
+                root_cause = 'Executor exits, model capacity, rate limits, or transient API failures interrupt the pipeline.'
                 required_fix = 'Use bounded retry/fallback and record executor failure class without consuming it as coverage failure.'
                 prevention_gate = 'Transient executor errors retry; persistent executor errors stop with evidence.'
-                regression_test = 'Executor retry fixture treats 429 as transient and bounded.'
+                regression_test = 'Executor retry fixture treats 429 and model capacity as transient and bounded.'
                 next_validation = 'Run status distinguishes infrastructure stop from implementation blocker.'
                 machine_gate = 'executor_retry_and_classification_required'
                 severity = 'P1'
@@ -245,6 +245,19 @@ function Get-BlockerRule {
                 regression_test = 'Invoke-AgentPrompt command-guard fixture proves forbidden protected-root commands produce exit 92/93 and blocker classification.'
                 next_validation = 'FAILURE_AUDIT_PACK classifies protected_root_isolation_violation instead of unknown.'
                 machine_gate = 'protected_root_isolation_required'
+                severity = 'P0'
+            }
+        }
+        '^maven_pl_without_am_command_guard$' {
+            return [ordered]@{
+                blocker = $Fingerprint
+                root_cause_layer = 'runner_command_policy'
+                root_cause = 'Slice executor ran a Maven command with -pl for compile/test goals without -am, so dependent modules may be skipped and replay evidence becomes unreliable.'
+                required_fix = 'Inject command-guard feedback into the retry prompt and keep a machine gate requiring -am for every Maven compile/test command that uses -pl.'
+                prevention_gate = 'Phase1 retry prompt must name maven_pl_without_am_forbidden and show the valid -pl <module> -am command shape before retrying.'
+                regression_test = 'Command-guard retry fixture proves PHASE1_SLICE retry prompt contains maven_pl_without_am_forbidden and -pl <test-module> -am guidance.'
+                next_validation = 'Next Phase1 retry either uses -am with -pl or writes BLOCKED SLICE_RESULT without running a forbidden command.'
+                machine_gate = 'maven_project_list_also_make_required'
                 severity = 'P0'
             }
         }
@@ -300,6 +313,8 @@ if ($ValidateOnly) {
         evidence_root = $evidenceRootFull
         control_summary_path = Resolve-AbsolutePath $ControlSummaryPath
         blocker_registry_path = Resolve-AbsolutePath $BlockerRegistryPath
+        emits_verifiable_rules = $true
+        verifiable_rules_schema = 'replay_verifiable_rule_pack.v1'
     } | ConvertTo-Json -Depth 6
     exit 0
 }
@@ -334,6 +349,23 @@ if ($fingerprints.Count -eq 0 -and $null -ne $control -and $null -ne $control.la
 }
 if ($fingerprints.Count -eq 0) {
     Add-UniqueString $fingerprints 'unknown'
+}
+
+$commandGuardSignals = New-Object System.Collections.Generic.List[string]
+Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.exec.json' -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+        $exec = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        $category = [string]$exec.failure_category
+        $reasons = [string]$exec.command_guard_reasons
+        if ($category -eq 'command_guard_violation' -and $reasons -match 'maven_pl_without_am_forbidden') {
+            $commandGuardSignals.Add($_.FullName) | Out-Null
+        }
+    } catch {
+        continue
+    }
+}
+if ($commandGuardSignals.Count -gt 0) {
+    Add-UniqueString $fingerprints 'maven_pl_without_am_command_guard'
 }
 
 $repeated = New-Object System.Collections.Generic.List[string]
@@ -386,9 +418,73 @@ if ($null -ne $control -and $null -ne $control.latest) {
     $feature = [string]$control.latest.feature
 }
 
+$jsonPath = Join-Path $root 'FAILURE_AUDIT_PACK.json'
+$mdPath = Join-Path $root 'FAILURE_AUDIT_PACK.md'
+$verifiableRulesPath = Join-Path $root 'VERIFIABLE_RULES.json'
+$verifiableRulesMdPath = Join-Path $root 'VERIFIABLE_RULES.md'
+$generatedAt = (Get-Date).ToString('s')
+
+$verifiableRuleItems = New-Object System.Collections.Generic.List[object]
+foreach ($diagnosis in @($diagnoses.ToArray())) {
+    $machineGate = [string]$diagnosis.machine_gate
+    if ([string]::IsNullOrWhiteSpace($machineGate)) {
+        $machineGate = 'blocker_classification_required'
+    }
+    $safeGate = $machineGate -replace '[^a-zA-Z0-9_\-]', '_'
+    $fingerprint = [string]$diagnosis.blocker
+    $verifiableRuleItems.Add([pscustomobject][ordered]@{
+        id = "rule_$safeGate"
+        fingerprint = $fingerprint
+        severity = [string]$diagnosis.severity
+        owner_layer = [string]$diagnosis.root_cause_layer
+        trigger = [ordered]@{
+            fingerprint = $fingerprint
+            repeated = [bool]$diagnosis.repeated
+            replay_count = [int]$diagnosis.replay_count
+        }
+        must_fix = @($mustFix.ToArray()) -contains $fingerprint
+        prevention_gate = [string]$diagnosis.prevention_gate
+        required_fix = [string]$diagnosis.required_fix
+        regression_test = [string]$diagnosis.regression_test
+        next_validation = [string]$diagnosis.next_validation
+        machine_gate = $machineGate
+        acceptance = @(
+            "Invoked runner, prompt, verifier, schema, or gate change addresses machine_gate=$machineGate.",
+            "Regression evidence is present and PASS for: $($diagnosis.regression_test)",
+            "Next validation evidence is present and PASS for: $($diagnosis.next_validation)"
+        )
+        verification_status = 'PENDING'
+    }) | Out-Null
+}
+
+$verifiableRulePack = [ordered]@{
+    schema = 'replay_verifiable_rule_pack.v1'
+    generated_at = $generatedAt
+    replay_root = $root
+    evidence_root = $evidenceRootFull
+    source_audit_pack = $jsonPath
+    rules = @($verifiableRuleItems.ToArray())
+}
+
+$preserveExistingVerifiableRules = $false
+$effectiveVerifiableRuleItems = @($verifiableRuleItems.ToArray())
+if (Test-Path -LiteralPath $verifiableRulesPath -PathType Leaf) {
+    try {
+        $existingRulePack = Get-Content -LiteralPath $verifiableRulesPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$existingRulePack.schema -eq 'replay_verifiable_rule_pack.v1' -and @($existingRulePack.rules).Count -gt 0) {
+            $verifiableRulePack = $existingRulePack
+            $effectiveVerifiableRuleItems = @($existingRulePack.rules)
+            $preserveExistingVerifiableRules = $true
+        }
+    } catch {
+        $preserveExistingVerifiableRules = $false
+        $effectiveVerifiableRuleItems = @($verifiableRuleItems.ToArray())
+    }
+}
+
 $audit = [ordered]@{
     schema = 'failure_audit_pack.v1'
-    generated_at = (Get-Date).ToString('s')
+    generated_at = $generatedAt
     replay_root = $root
     evidence_root = $evidenceRootFull
     feature = $feature
@@ -399,12 +495,17 @@ $audit = [ordered]@{
     must_fix_before_next_replay = @($mustFix.ToArray())
     golden_first_slice_required = $goldenRequired
     diagnoses = @($diagnoses.ToArray())
+    verifiable_rules_path = $verifiableRulesPath
+    verifiable_rules_md_path = $verifiableRulesMdPath
+    verifiable_rule_count = @($effectiveVerifiableRuleItems).Count
+    preserved_existing_verifiable_rules = $preserveExistingVerifiableRules
     operating_rule = 'If must_fix_before_next_replay is non-empty, the next unattended cycle must not continue until evolution addresses these blockers with invoked tooling/prompt/verifier changes and regression evidence.'
 }
 
-$jsonPath = Join-Path $root 'FAILURE_AUDIT_PACK.json'
-$mdPath = Join-Path $root 'FAILURE_AUDIT_PACK.md'
 $audit | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+if (-not $preserveExistingVerifiableRules) {
+    $verifiableRulePack | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $verifiableRulesPath -Encoding UTF8
+}
 
 $md = New-Object System.Collections.Generic.List[string]
 $md.Add('# Failure Audit Pack') | Out-Null
@@ -431,17 +532,62 @@ foreach ($diagnosis in @($diagnoses.ToArray())) {
         (Convert-ToMarkdownCell $diagnosis.next_validation))) | Out-Null
 }
 $md.Add('') | Out-Null
+$md.Add('## Verifiable Rule Pack') | Out-Null
+$md.Add('') | Out-Null
+$md.Add("- json: $verifiableRulesPath") | Out-Null
+$md.Add("- md: $verifiableRulesMdPath") | Out-Null
+$md.Add("- preserved_existing: $preserveExistingVerifiableRules") | Out-Null
+$md.Add('') | Out-Null
+$md.Add('| Rule | Machine Gate | Status | Regression Test | Next Validation |') | Out-Null
+$md.Add('| --- | --- | --- | --- | --- |') | Out-Null
+foreach ($ruleItem in @($effectiveVerifiableRuleItems)) {
+    $md.Add(('| {0} | {1} | {2} | {3} | {4} |' -f `
+        (Convert-ToMarkdownCell $ruleItem.id),
+        (Convert-ToMarkdownCell $ruleItem.machine_gate),
+        (Convert-ToMarkdownCell $ruleItem.verification_status),
+        (Convert-ToMarkdownCell $ruleItem.regression_test),
+        (Convert-ToMarkdownCell $ruleItem.next_validation))) | Out-Null
+}
+$md.Add('') | Out-Null
 $md.Add('## Hard Rule') | Out-Null
 $md.Add('') | Out-Null
 $md.Add('Do not run another blind replay only to rediscover these blockers. First produce a validated evolution that changes an invoked runner, prompt, verifier, schema, or golden-slice gate and proves it with regression evidence.') | Out-Null
 Set-Content -LiteralPath $mdPath -Encoding UTF8 -Value ($md -join "`n")
 
+$rulesMd = New-Object System.Collections.Generic.List[string]
+$rulesMd.Add('# Verifiable Replay Rules') | Out-Null
+$rulesMd.Add('') | Out-Null
+$rulesMd.Add("- generated_at: $generatedAt") | Out-Null
+$sourceAuditPack = [string]$verifiableRulePack.source_audit_pack
+if ([string]::IsNullOrWhiteSpace($sourceAuditPack)) {
+    $sourceAuditPack = $jsonPath
+}
+$rulesMd.Add("- source_audit_pack: $sourceAuditPack") | Out-Null
+$rulesMd.Add('') | Out-Null
+$rulesMd.Add('| Rule | Fingerprint | Severity | Machine Gate | Verification Status |') | Out-Null
+$rulesMd.Add('| --- | --- | --- | --- | --- |') | Out-Null
+foreach ($ruleItem in @($effectiveVerifiableRuleItems)) {
+    $rulesMd.Add(('| {0} | {1} | {2} | {3} | {4} |' -f `
+        (Convert-ToMarkdownCell $ruleItem.id),
+        (Convert-ToMarkdownCell $ruleItem.fingerprint),
+        (Convert-ToMarkdownCell $ruleItem.severity),
+        (Convert-ToMarkdownCell $ruleItem.machine_gate),
+        (Convert-ToMarkdownCell $ruleItem.verification_status))) | Out-Null
+}
+if (-not $preserveExistingVerifiableRules -or -not (Test-Path -LiteralPath $verifiableRulesMdPath -PathType Leaf)) {
+    Set-Content -LiteralPath $verifiableRulesMdPath -Encoding UTF8 -Value ($rulesMd -join "`n")
+}
+
 $controlDir = Join-Path $evidenceRootFull '_control'
 if (Test-Path -LiteralPath $controlDir) {
     Copy-Item -LiteralPath $jsonPath -Destination (Join-Path $controlDir 'FAILURE_AUDIT_PACK_LATEST.json') -Force
     Copy-Item -LiteralPath $mdPath -Destination (Join-Path $controlDir 'FAILURE_AUDIT_PACK_LATEST.md') -Force
+    Copy-Item -LiteralPath $verifiableRulesPath -Destination (Join-Path $controlDir 'VERIFIABLE_RULES_LATEST.json') -Force
+    Copy-Item -LiteralPath $verifiableRulesMdPath -Destination (Join-Path $controlDir 'VERIFIABLE_RULES_LATEST.md') -Force
 }
 
 if (-not $Quiet) {
     Write-Host "Failure audit pack written: $mdPath"
 }
+
+exit 0

@@ -67,6 +67,148 @@ function Get-OracleFilePath {
     return ''
 }
 
+function Get-StringArray {
+    param($Value)
+
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) {
+        return @($Value | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    }
+    return @([string]$Value | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Get-PropertyValue {
+    param($Object, [string[]]$Names)
+
+    if ($null -eq $Object) { return $null }
+    foreach ($name in $Names) {
+        if ($Object.PSObject.Properties.Name -contains $name) {
+            return $Object.$name
+        }
+    }
+    return $null
+}
+
+function Get-NullableIntProperty {
+    param($Object, [string]$Name)
+
+    if ($null -eq $Object -or -not ($Object.PSObject.Properties.Name -contains $Name)) {
+        return $null
+    }
+    $raw = $Object.$Name
+    if ($null -eq $raw -or [string]::IsNullOrWhiteSpace([string]$raw)) {
+        return $null
+    }
+    try {
+        return [int]$raw
+    } catch {
+        return $null
+    }
+}
+
+function Test-PathUnderRoot {
+    param([string]$Root, [string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or [string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+    try {
+        $rootFull = [System.IO.Path]::GetFullPath($Root)
+        if (-not $rootFull.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+            $rootFull += [System.IO.Path]::DirectorySeparatorChar
+        }
+        $pathFull = [System.IO.Path]::GetFullPath($Path)
+        return $pathFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
+function Get-LatestSliceResultPath {
+    param([string]$ReplayRoot)
+
+    if ([string]::IsNullOrWhiteSpace($ReplayRoot) -or -not (Test-Path -LiteralPath $ReplayRoot)) {
+        return $null
+    }
+    $slice = Get-ChildItem -LiteralPath $ReplayRoot -Filter 'SLICE_RESULT_*.json' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^SLICE_RESULT_(\d+)\.json$' } |
+        ForEach-Object {
+            [pscustomobject]@{
+                Path = $_.FullName
+                Index = [int]([regex]::Match($_.Name, '^SLICE_RESULT_(\d+)\.json$').Groups[1].Value)
+            }
+        } |
+        Sort-Object Index -Descending |
+        Select-Object -First 1
+    if ($null -eq $slice) { return $null }
+    return $slice.Path
+}
+
+function Test-SliceResultAuthorizesTaskProcessorEntry {
+    param([string]$ReplayRoot, [string]$WorktreePath)
+
+    $slicePath = Get-LatestSliceResultPath -ReplayRoot $ReplayRoot
+    if ([string]::IsNullOrWhiteSpace($slicePath)) { return $false }
+    $result = Read-JsonIfExists $slicePath
+    if ($null -eq $result) { return $false }
+
+    $charter = Get-PropertyValue -Object $result -Names @('behavior_test_charter', 'test_charter')
+    $entryText = @(
+        (Get-PropertyValue -Object $charter -Names @('production_entry', 'real_entry', 'selected_real_entry', 'selected_carrier', 'production_boundary')),
+        (Get-PropertyValue -Object $result -Names @('production_entry', 'real_entry', 'selected_real_entry', 'selected_carrier', 'target_subsurface_or_carrier', 'production_boundary'))
+    ) -join ' '
+    if ($entryText -notmatch '(?i)\bTaskProcessor\b|[\\/]task[\\/]|\.task\.|\bhandleTaskResponse\b') {
+        return $false
+    }
+
+    $proofKind = [string](Get-PropertyValue -Object $charter -Names @('proof_kind', 'proof_type'))
+    if ($proofKind -notmatch '(?i)real_entry|behavior|stateful|side_effect') {
+        return $false
+    }
+
+    $matchedTestCount = Get-NullableIntProperty -Object $result -Name 'matched_test_count'
+    if ($null -eq $matchedTestCount -or $matchedTestCount -le 0) {
+        return $false
+    }
+    if (-not [bool](Get-PropertyValue -Object $result -Names @('real_entry_invoked'))) {
+        return $false
+    }
+
+    $declaredExitCodes = @(
+        Get-NullableIntProperty -Object $result -Name 'green_exit_code'
+        Get-NullableIntProperty -Object $result -Name 'test_execution_exit_code'
+    ) | Where-Object { $null -ne $_ }
+    if ($declaredExitCodes.Count -eq 0 -or ($declaredExitCodes | Where-Object { $_ -ne 0 }).Count -gt 0) {
+        return $false
+    }
+
+    $assertions = @()
+    $assertions += @(Get-StringArray (Get-PropertyValue -Object $result -Names @('side_effect_assertions')))
+    $assertions += @(Get-StringArray (Get-PropertyValue -Object $result -Names @('exact_output_assertions')))
+    $assertions += @(Get-StringArray (Get-PropertyValue -Object $result -Names @('closed_assertions')))
+    if ($assertions.Count -eq 0) {
+        return $false
+    }
+
+    $evidenceFiles = @()
+    $evidenceFiles += @(Get-StringArray (Get-PropertyValue -Object $charter -Names @('evidence_file', 'evidence_files')))
+    $evidenceFiles += @(Get-StringArray (Get-PropertyValue -Object $result -Names @('evidence_file', 'evidence_files', 'implemented_tests')))
+    $evidenceFiles = @($evidenceFiles | Select-Object -Unique)
+    foreach ($rawEvidence in $evidenceFiles) {
+        $evidence = ([string]$rawEvidence).Split('#')[0].Trim()
+        if ([string]::IsNullOrWhiteSpace($evidence)) { continue }
+        $candidate = if ([System.IO.Path]::IsPathRooted($evidence)) { $evidence } else { Join-Path $WorktreePath $evidence }
+        $normalizedEvidence = $candidate -replace '\\', '/'
+        if ((Test-Path -LiteralPath $candidate) -and
+            (Test-PathUnderRoot -Root $WorktreePath -Path $candidate) -and
+            $normalizedEvidence -match '(?i)/src/test/') {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Test-BackendTaskProcessorOracleReplay {
     param([string]$ReplayRoot, [string]$EvidenceText = '')
 
@@ -141,6 +283,10 @@ function Test-CharterLayer {
 
         # Check if targeting Service layer directly
         if ($context -match '\w+Service') {
+            if (Test-SliceResultAuthorizesTaskProcessorEntry -ReplayRoot $ReplayRoot -WorktreePath $WorktreePath) {
+                Write-Host "WARNING: Service collaborator mention allowed because slice result proves a real TaskProcessor entry was executed." -ForegroundColor Yellow
+                return $true
+            }
             if (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -EvidenceText $charter) {
                 Write-Host "WARNING: Service-layer charter allowed by backend TaskProcessor oracle exception." -ForegroundColor Yellow
                 return $true
@@ -244,7 +390,14 @@ function Invoke-LayerValidationGate {
             }
         }
 
-        if ($invalidCarriers.Count -gt 0 -and (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -EvidenceText $planContent)) {
+        if ($invalidCarriers.Count -gt 0 -and (Test-SliceResultAuthorizesTaskProcessorEntry -ReplayRoot $ReplayRoot -WorktreePath $Worktree)) {
+            $result.warnings += @{
+                code = 'TASK_PROCESSOR_REAL_ENTRY_SLICE_EXCEPTION'
+                message = "$($invalidCarriers.Count) non-Facade carrier(s) allowed because slice result proves real TaskProcessor entry execution"
+                carriers = $invalidCarriers
+            }
+            Write-Host "WARNING: Non-Facade carriers allowed by real TaskProcessor slice evidence" -ForegroundColor Yellow
+        } elseif ($invalidCarriers.Count -gt 0 -and (Test-BackendTaskProcessorOracleReplay -ReplayRoot $ReplayRoot -EvidenceText $planContent)) {
             $result.warnings += @{
                 code = 'BACKEND_TASK_PROCESSOR_ORACLE_EXCEPTION'
                 message = "$($invalidCarriers.Count) non-Facade carrier(s) allowed because archived oracle high-weight files are backend TaskProcessor/Service carriers"

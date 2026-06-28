@@ -85,14 +85,21 @@ Run the built-in verifier:
 
 ```bash
 node scripts/verify-ai-workflow-kit.js
+node scripts/verify-control-contracts.js
 ```
 
 Run the repository checks:
 
 ```bash
 node scripts/test-no-secrets.js
+node scripts/verify-control-contracts.js
 node scripts/verify-ai-workflow-kit.js
 ```
+
+`verify-control-contracts.js` checks repository-level control contracts before they are installed:
+
+- `agents/skills/goal-mode/templates/goalspec-autonomous-task.yaml` must include observable success criteria, stop policy, budget, and audit fields.
+- `agents/.skill-lock.json` must include source metadata for every external skill. Existing lock files with empty hashes warn by default; use `--strict-skill-lock` when you are ready to require SHA-256 style hashes.
 
 Legacy replay controllers are still PowerShell scripts. Prefer `pwsh` when running them:
 

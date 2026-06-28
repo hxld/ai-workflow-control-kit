@@ -396,9 +396,25 @@ if ([string]::IsNullOrWhiteSpace($plannedTestName)) {
         $plannedRedResult = 'PENDING_BUSINESS_ASSERTION'
     }
 }
+
+$issues = New-Object System.Collections.Generic.List[string]
+$warnings = New-Object System.Collections.Generic.List[string]
 if ($null -ne $sourceChain -and [bool]$sourceChain.required_source_chain -and $null -ne $sourceChain.next_required_slice) {
     $sourceCarrier = [string]$sourceChain.next_required_slice.carrier
+    $sourceEntry = [string]$sourceChain.next_required_slice.entry
+    $sourceTestName = [string]$sourceChain.next_required_slice.test_name
+    $sourceText = @($sourceCarrier, $sourceEntry, $sourceTestName) -join "`n"
+    $plannedText = @($firstPlannedCarrier, $firstPlannedTestName) -join "`n"
+    $firstSlicePlanLocksNonSourceCarrier = (
+        $SliceIndex -eq 1 -and
+        [string]$ForcedRequirementFamily -eq 'core_entry' -and
+        -not [string]::IsNullOrWhiteSpace($firstPlannedCarrier) -and
+        -not [string]::IsNullOrWhiteSpace($sourceText) -and
+        $sourceText -notmatch [regex]::Escape($firstPlannedCarrier) -and
+        $plannedText -notmatch '(?i)\b(rebuildTaskData|source_chain|source[-_\s]?chain|source field|wire field|input_data)\b'
+    )
     $sourceApplies = (
+        -not $firstSlicePlanLocksNonSourceCarrier -and
         [string]$ForcedSliceType -eq 'exact_contract_slice' -and
         (
             [string]$ForcedSiblingSurface -eq $sourceCarrier -or
@@ -413,6 +429,9 @@ if ($null -ne $sourceChain -and [bool]$sourceChain.required_source_chain -and $n
         $plannedTestName = [string]$sourceChain.next_required_slice.test_name
         $plannedRedResult = 'PENDING_BUSINESS_ASSERTION'
     }
+    if ($firstSlicePlanLocksNonSourceCarrier) {
+        $warnings.Add('source_chain_contract_preserved_for_later_slice_plan_lock_kept') | Out-Null
+    }
 }
 $downstreamTarget = if ($proofRequired.Count -gt 0) {
     (@($proofRequired | Select-Object -First 4) -join '; ')
@@ -420,8 +439,6 @@ $downstreamTarget = if ($proofRequired.Count -gt 0) {
     Get-DefaultEvidenceTarget -FamilyId $ForcedRequirementFamily -SliceType $ForcedSliceType
 }
 
-$issues = New-Object System.Collections.Generic.List[string]
-$warnings = New-Object System.Collections.Generic.List[string]
 if ([string]::IsNullOrWhiteSpace($ForcedRequirementFamily)) {
     $warnings.Add('forced_requirement_family_missing') | Out-Null
 }

@@ -49,6 +49,208 @@ function Get-SummaryFlagCount {
     return $null
 }
 
+function Get-JsonIfExists {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    return $text | ConvertFrom-Json
+}
+
+function Test-RootHasStaticTestHarnessEvidence {
+    param(
+        [string]$Root,
+        [string]$ModuleName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Root) -or [string]::IsNullOrWhiteSpace($ModuleName)) {
+        return $false
+    }
+
+    $moduleRoot = Join-Path (Join-Path $Root 'worktree') $ModuleName
+    $modulePom = Join-Path $moduleRoot 'pom.xml'
+    if (-not (Test-Path -LiteralPath $modulePom -PathType Leaf)) {
+        return $false
+    }
+
+    $testRoot = Join-Path $moduleRoot 'src\test'
+    if (-not (Test-Path -LiteralPath $testRoot -PathType Container)) {
+        return $false
+    }
+    $testFiles = @(Get-ChildItem -LiteralPath $testRoot -Recurse -File -Include *.java -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($testFiles.Count -eq 0) {
+        return $false
+    }
+
+    $pomText = Get-Content -LiteralPath $modulePom -Raw -Encoding UTF8
+    if ($pomText -match '(?is)<artifactId>\s*(junit|testng|spring-test|spring-boot-starter-test|mockito-core|mockito-all)\s*</artifactId>') {
+        return $true
+    }
+
+    return $false
+}
+
+function Test-ValidPlanInfrastructureBlocker {
+    param([string]$Root)
+
+    $plan = Get-JsonIfExists (Join-Path $Root 'PLAN_RESULT.json')
+    $schema = Get-JsonIfExists (Join-Path $Root 'PLAN_SCHEMA_FAILFAST.json')
+    if ($null -eq $plan -or $null -eq $schema) { return $false }
+
+    $planStatus = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    $blocker = ''
+    if ($plan.PSObject.Properties.Name -contains 'blocker') {
+        $blocker = ([string]$plan.blocker).Trim()
+    }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') {
+        return $false
+    }
+
+    $schemaStatus = ''
+    if ($schema.PSObject.Properties.Name -contains 'status') {
+        $schemaStatus = ([string]$schema.status).Trim().ToUpperInvariant()
+    }
+    $schemaCanProceed = $false
+    if ($schema.PSObject.Properties.Name -contains 'can_proceed') {
+        $schemaCanProceed = [bool]$schema.can_proceed
+    }
+    $schemaIssues = @()
+    if ($schema.PSObject.Properties.Name -contains 'issues') {
+        $schemaIssues = @($schema.issues)
+    }
+    if ($schemaStatus -ne 'PASS' -or -not $schemaCanProceed -or $schemaIssues.Count -gt 0) {
+        return $false
+    }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) {
+        return $false
+    }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+    $hasDependencies = if ($infra.PSObject.Properties.Name -contains 'test_module_has_dependencies') { [bool]$infra.test_module_has_dependencies } else { $true }
+    $harnessAvailable = if ($infra.PSObject.Properties.Name -contains 'test_harness_available') { [bool]$infra.test_harness_available } else { $true }
+    $canImportProduction = if ($infra.PSObject.Properties.Name -contains 'can_import_production_classes') { [bool]$infra.can_import_production_classes } else { $false }
+    $dryRunExit = if ($infra.PSObject.Properties.Name -contains 'compilation_dry_run_exit_code') { [int]$infra.compilation_dry_run_exit_code } else { 0 }
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+
+    if (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-RootHasStaticTestHarnessEvidence -Root $Root -ModuleName $moduleName)) {
+        return $false
+    }
+
+    return ((-not $hasDependencies -or -not $harnessAvailable -or $dryRunExit -ne 0) -and
+        $canImportProduction -and
+        $reasonText -match '(?i)(dependency|mockito|junit|test harness|pom\.xml edits?|forbid|not found)')
+}
+
+function Test-ResolvablePlanInfrastructureBlocker {
+    param([string]$Root)
+
+    $plan = Get-JsonIfExists (Join-Path $Root 'PLAN_RESULT.json')
+    if ($null -eq $plan) { return $false }
+
+    $planStatus = ''
+    if ($plan.PSObject.Properties.Name -contains 'plan_status') {
+        $planStatus = ([string]$plan.plan_status).Trim().ToUpperInvariant()
+    }
+    $blocker = ''
+    if ($plan.PSObject.Properties.Name -contains 'blocker') {
+        $blocker = ([string]$plan.blocker).Trim()
+    }
+    if ($planStatus -ne 'BLOCKED' -or $blocker -ne 'PLAN_BLOCKED_TEST_INFRASTRUCTURE') {
+        return $false
+    }
+
+    if (-not ($plan.PSObject.Properties.Name -contains 'test_infrastructure_check')) {
+        return $false
+    }
+    $infra = $plan.test_infrastructure_check
+    if ($null -eq $infra) { return $false }
+
+    $reasonText = if ($infra.PSObject.Properties.Name -contains 'blocker_reason') { [string]$infra.blocker_reason } else { '' }
+    $moduleName = if ($infra.PSObject.Properties.Name -contains 'test_module_for_target') { [string]$infra.test_module_for_target } else { '' }
+    return (($reasonText -match '(?i)mockito.*not found|not found.*mockito') -and
+        (Test-RootHasStaticTestHarnessEvidence -Root $Root -ModuleName $moduleName))
+}
+
+function New-VerifiableRuleItem {
+    param(
+        [string]$Id,
+        [string]$Fingerprint,
+        [string]$Severity = 'P0',
+        [string]$OwnerLayer = 'replay-autopilot',
+        [string]$MachineGate,
+        [string]$PreventionGate,
+        [string]$RequiredFix,
+        [string]$RegressionTest,
+        [string]$NextValidation
+    )
+
+    return [pscustomobject][ordered]@{
+        id = $Id
+        fingerprint = $Fingerprint
+        severity = $Severity
+        owner_layer = $OwnerLayer
+        trigger = [ordered]@{
+            fingerprint = $Fingerprint
+            repeated = $true
+            replay_count = 1
+        }
+        must_fix = $true
+        prevention_gate = $PreventionGate
+        required_fix = $RequiredFix
+        regression_test = $RegressionTest
+        next_validation = $NextValidation
+        machine_gate = $MachineGate
+        acceptance = @(
+            "Invoked runner, prompt, verifier, schema, or gate change addresses machine_gate=$MachineGate.",
+            "Regression evidence is present and PASS for: $RegressionTest",
+            "Next validation evidence is present and PASS for: $NextValidation"
+        )
+        verification_status = 'PENDING'
+    }
+}
+
+function Write-VerifiableRules {
+    param(
+        [string]$Root,
+        [object[]]$Rules
+    )
+
+    if (@($Rules).Count -eq 0) {
+        return
+    }
+
+    $rulesPath = Join-Path $Root 'VERIFIABLE_RULES.json'
+    $rulesMdPath = Join-Path $Root 'VERIFIABLE_RULES.md'
+    $generatedAt = (Get-Date).ToString('s')
+    $pack = [ordered]@{
+        schema = 'replay_verifiable_rule_pack.v1'
+        generated_at = $generatedAt
+        replay_root = $Root
+        source_audit_pack = (Join-Path $Root 'PLAN_CONTRACT_VERIFY.json')
+        rules = @($Rules)
+    }
+    $pack | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $rulesPath -Encoding UTF8
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('# Verifiable Replay Rules') | Out-Null
+    $lines.Add('') | Out-Null
+    $lines.Add("- generated_at: $generatedAt") | Out-Null
+    $lines.Add("- source_audit_pack: $(Join-Path $Root 'PLAN_CONTRACT_VERIFY.json')") | Out-Null
+    $lines.Add('') | Out-Null
+    $lines.Add('| Rule | Fingerprint | Severity | Machine Gate | Verification Status |') | Out-Null
+    $lines.Add('| --- | --- | --- | --- | --- |') | Out-Null
+    foreach ($rule in @($Rules)) {
+        $lines.Add("| $($rule.id) | $($rule.fingerprint) | $($rule.severity) | $($rule.machine_gate) | $($rule.verification_status) |") | Out-Null
+    }
+    Set-Content -LiteralPath $rulesMdPath -Encoding UTF8 -Value ($lines -join "`n")
+}
+
 $root = [System.IO.Path]::GetFullPath($ReplayRoot)
 if (-not (Test-Path -LiteralPath $root)) {
     throw "Replay root not found: $root"
@@ -68,6 +270,9 @@ $roundText = Read-TextIfExists $roundResultPath
 $finalText = Read-TextIfExists $finalReportPath
 $summaryText = Read-TextIfExists $summaryPath
 $combined = "$phase0Text`n$roundText`n$finalText`n$summaryText"
+
+$validPlanInfrastructureBlocker = Test-ValidPlanInfrastructureBlocker -Root $root
+$resolvablePlanInfrastructureBlocker = Test-ResolvablePlanInfrastructureBlocker -Root $root
 
 $blind = Get-MetricNumber $combined @('blind_self_assessed_coverage', 'blind coverage')
 $capped = Get-MetricNumber $combined @('verification_capped_coverage', 'verification-capped coverage', 'verification capped coverage')
@@ -138,6 +343,18 @@ $flagMap = [ordered]@{
         Gate = 'Core-First Budget Gate'
         Recommendation = 'Budget still goes to low-risk helper/DTO/log slices. Route first slice to the highest-weight surface.'
     }
+    plan_oracle_overlap_gap = [pscustomobject]@{
+        Gate = 'Surface Coverage Gate'
+        Recommendation = 'Plan oracle production file coverage is below the 50% threshold. Expand coverage by mapping missing production files to implementation slices, or document out-of-scope files with architectural separation reasons. The evolution proposal system must detect this gap to prevent no-op evolutions when the plan was BLOCKED by oracle overlap enforcement.'
+    }
+    plan_high_weight_oracle_overlap_gap = [pscustomobject]@{
+        Gate = 'Surface Coverage Gate'
+        Recommendation = 'Plan oracle high-weight production file coverage is below the 70% threshold. Core service, facade, and flow files must be covered before proceeding. The evolution proposal should flag this as tooling-evolution-needed.'
+    }
+    phase2_executor_blocker = [pscustomobject]@{
+        Gate = 'Evolution Abstraction Gate'
+        Recommendation = 'Phase2 executor failure prevented the normal final report/oracle path. Preserve deterministic fallback reporting, keep oracle credit at zero, and route the run into tooling evolution instead of stranding unattended control.'
+    }
 }
 
 $detected = @(foreach ($key in $flagMap.Keys) {
@@ -153,6 +370,8 @@ $detected = @(foreach ($key in $flagMap.Keys) {
             'workflow-gate-needs-evolution'
         } elseif (@('exact_contract_gap', 'executable_surface_slice_gap', 'core_entry_unclosed', 'real_entry_gap', 'side_effect_ledger_gap', 'needs_transaction_test', 'wrong_test_surface', 'shallow_module', 'feedback_loop_blocker', 'mock_behavior_gap', 'helper_only_surface_gap', 'surface_budget_gap') -contains $key) {
             'already-covered-but-not-enforced'
+        } elseif (@('phase2_executor_blocker') -contains $key) {
+            'tooling-evolution-needed'
         } else {
             'needs-more-replay-evidence'
         }
@@ -166,6 +385,105 @@ $detected = @(foreach ($key in $flagMap.Keys) {
     }
 })
 
+$verifiableRules = New-Object System.Collections.Generic.List[object]
+if ($resolvablePlanInfrastructureBlocker) {
+    $detected += [pscustomobject]@{
+        Gate = 'Core-First Budget Gate'
+        Flag = 'plan_transitive_test_harness_false_blocker'
+        Count = 1
+        Recommendation = 'Plan blocked on missing direct Mockito even though the selected test module has existing test sources and static test-harness dependencies such as spring-boot-starter-test, spring-test, junit, testng, or mockito. Prompt/runner gates must require intended test-compile materialization before terminally blocking.'
+        ActionClass = 'tooling-evolution-needed'
+    }
+    $verifiableRules.Add((New-VerifiableRuleItem `
+        -Id 'rule_plan_transitive_test_harness_false_blocker' `
+        -Fingerprint 'plan_transitive_test_harness_false_blocker' `
+        -MachineGate 'plan_transitive_test_harness_false_blocker' `
+        -PreventionGate 'Core-First Budget Gate' `
+        -RequiredFix 'Do not accept a PLAN_BLOCKED_TEST_INFRASTRUCTURE result based only on missing direct Mockito text when the chosen module already has test sources and static test-harness dependencies. Require Plan to proceed to runner materialized test-compile evidence or emit a specific non-harness blocker.' `
+        -RegressionTest 'scripts\tests\Test-v677-TransitiveMockitoPlanBlockerGuard.ps1' `
+        -NextValidation 'scripts\Run-ReplayLoop.ps1')) | Out-Null
+}
+
+$planContractVerifyPath = Join-Path $root 'PLAN_CONTRACT_VERIFY.json'
+if (Test-Path -LiteralPath $planContractVerifyPath) {
+    try {
+        $planContract = Get-Content -LiteralPath $planContractVerifyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $contractIssues = @($planContract.issues)
+
+        if (($contractIssues | Where-Object { $_ -match 'oracle_overlap_below_threshold' } | Select-Object -First 1)) {
+            $alreadyDetected = $detected | Where-Object { $_.Flag -eq 'plan_oracle_overlap_gap' }
+            if (-not $alreadyDetected) {
+                $detected += [pscustomobject]@{
+                    Gate = 'Surface Coverage Gate'
+                    Flag = 'plan_oracle_overlap_gap'
+                    Count = 1
+                    Recommendation = 'Plan oracle production file coverage is below the 50% threshold. Expand coverage by mapping missing production files to implementation slices, or document out-of-scope files with architectural separation reasons.'
+                    ActionClass = 'tooling-evolution-needed'
+                }
+            }
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_plan_oracle_overlap_enforced' `
+                -Fingerprint 'oracle_overlap_below_threshold' `
+                -MachineGate 'plan_oracle_overlap_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Make invoked plan repair and verification fail closed unless oracle production file overlap reaches the threshold or a verifier-recognized exemption is present.' `
+                -RegressionTest 'scripts\Test-v600-OracleOverlapEvolutionProposalDetection.ps1' `
+                -NextValidation 'scripts\Validate-VerifiableRuleClosure.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match 'oracle_high_weight_overlap_below_threshold' } | Select-Object -First 1)) {
+            $alreadyDetected = $detected | Where-Object { $_.Flag -eq 'plan_high_weight_oracle_overlap_gap' }
+            if (-not $alreadyDetected) {
+                $detected += [pscustomobject]@{
+                    Gate = 'Surface Coverage Gate'
+                    Flag = 'plan_high_weight_oracle_overlap_gap'
+                    Count = 1
+                    Recommendation = 'Plan oracle high-weight production file coverage is below the 70% threshold. Core service, facade, and flow files must be covered before proceeding.'
+                    ActionClass = 'tooling-evolution-needed'
+                }
+            }
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_plan_high_weight_oracle_overlap_enforced' `
+                -Fingerprint 'oracle_high_weight_overlap_below_threshold' `
+                -MachineGate 'plan_high_weight_oracle_overlap_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Make invoked plan repair and verification fail closed unless high-weight oracle production file coverage reaches the threshold or a verifier-recognized exemption is present.' `
+                -RegressionTest 'scripts\Test-v600-OracleOverlapEvolutionProposalDetection.ps1' `
+                -NextValidation 'scripts\Validate-VerifiableRuleClosure.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match '(?i)_plan_missing:.*Context' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_source_chain_context_contract_enforced' `
+                -Fingerprint 'source_chain_context_contract_missing' `
+                -MachineGate 'source_chain_context_contract_enforced' `
+                -PreventionGate 'Requirement Contract Gate' `
+                -RequiredFix 'Require source-chain plans to name the upstream context carrier and the real builder path before Phase 1 can proceed.' `
+                -RegressionTest 'scripts\Test-v626-PlanContractPolicyRebuildIntentGuard.ps1' `
+                -NextValidation 'scripts\Verify-PlanContract.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match '(?i)_plan_missing:.*siblings' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_sibling_surface_coverage_enforced' `
+                -Fingerprint 'sibling_surface_coverage_missing' `
+                -MachineGate 'sibling_surface_coverage_enforced' `
+                -PreventionGate 'Surface Coverage Gate' `
+                -RequiredFix 'Require first-slice plans to cover required sibling execution surfaces, or remain blocked.' `
+                -RegressionTest 'scripts\Test-v491-PolicyRebuildVerifierSiblingAndNoSpring.ps1' `
+                -NextValidation 'scripts\Verify-PlanContract.ps1')) | Out-Null
+        }
+        if (($contractIssues | Where-Object { $_ -match 'plan_status_not_proceed' } | Select-Object -First 1)) {
+            $verifiableRules.Add((New-VerifiableRuleItem `
+                -Id 'rule_blocked_plan_status_stops_replay' `
+                -Fingerprint 'plan_status_not_proceed' `
+                -MachineGate 'blocked_plan_status_stops_replay' `
+                -PreventionGate 'Core-First Budget Gate' `
+                -RequiredFix 'Keep the replay stopped when the plan contract status is BLOCKED, and route to evolution with closeable machine gates.' `
+                -RegressionTest 'scripts\Test-v598-VerifiableRuleClosureGate.ps1' `
+                -NextValidation 'scripts\Run-ReplayLoop.ps1')) | Out-Null
+        }
+    } catch {
+    }
+}
+
 $shouldEvolve = $false
 $reason = 'No transferable gap was detected, or oracle coverage already reached the target.'
 if ($oracle -ne $null -and $oracle -lt 90 -and $detected.Count -gt 0) {
@@ -176,7 +494,20 @@ if ($oracle -ne $null -and $oracle -lt 90 -and $detected.Count -gt 0) {
     $reason = 'oracle score is missing, but transferable workflow gate gaps were detected.'
 }
 
-$enforcementNeeded = @($detected | Where-Object { $_.ActionClass -in @('workflow-gate-needs-evolution', 'already-covered-but-not-enforced') })
+$oracleGapDetected = $detected | Where-Object { $_.Flag -in @('plan_oracle_overlap_gap', 'plan_high_weight_oracle_overlap_gap') } | Select-Object -First 1
+if (-not $shouldEvolve -and $oracleGapDetected) {
+    $shouldEvolve = $true
+    $reason = 'plan oracle overlap gap detected from PLAN_CONTRACT_VERIFY.json'
+}
+
+if ($validPlanInfrastructureBlocker -and @($verifiableRules.ToArray()).Count -eq 0) {
+    $detected = @()
+    $enforcementNeeded = @()
+    $shouldEvolve = $false
+    $reason = 'plan_status=BLOCKED is a valid terminal test-infrastructure blocker: the plan schema passed, the isolated harness cannot satisfy existing test dependencies, and dependency edits are forbidden. No transferable tooling gap was detected.'
+}
+
+$enforcementNeeded = @($detected | Where-Object { $_.ActionClass -in @('workflow-gate-needs-evolution', 'already-covered-but-not-enforced', 'tooling-evolution-needed') })
 
 $detectedRows = if ($detected.Count -gt 0) {
     ($detected | Sort-Object Gate, Flag | ForEach-Object { "| $($_.Gate) | $($_.Flag) | $($_.Count) | $($_.ActionClass) | $($_.Recommendation) |" }) -join "`n"
@@ -220,6 +551,7 @@ $detectedRows
 
 - enforcement_needed_count: $($enforcementNeeded.Count)
 - rule: if a gap maps to an existing gate but recurs in replay, classify it as already-covered-but-not-enforced, not no-op.
+- no_op_version_guard: already-covered-by-existing-gate without a concrete runner/prompt/verifier/test change must not advance knowledge version; write NO_VERSION_ADVANCE_REASON.md instead.
 - required_action: evolve runner/prompt/verifier enforcement before adding more synonym skill rules.
 
 ## 8-Gate Summary
@@ -233,7 +565,7 @@ $gateRows
 - Absorb only cross-project gates, routing rules, validation discipline, or report formats.
 - Do not absorb project paths, business class names, table names, oracle filenames, commits, or concrete replay roots.
 - Do not treat scoring caps as execution improvements; when the same gap repeats, evolve budget routing, real entries, and executable slices first.
-- If an existing skill already covers the gate, mark already-covered-by-existing-gate instead of duplicating rules.
+- If an existing skill already covers the gate, mark already-covered-by-existing-gate instead of duplicating rules, but do not create no-source-change knowledge versions.
 - Do not add new synonymous gate names. Map every candidate change to one of the eight productized gates before editing skills.
 
 ## Suggested Next Action
@@ -242,4 +574,5 @@ $(if ($shouldEvolve) { 'Run a controlled tooling/prompt enforcement evolution us
 "@
 
 Set-Content -LiteralPath $OutPath -Value $proposal -Encoding UTF8
+Write-VerifiableRules -Root $root -Rules @($verifiableRules.ToArray())
 Write-Host "Wrote evolution proposal: $OutPath"

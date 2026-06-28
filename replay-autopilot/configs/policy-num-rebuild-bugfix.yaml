@@ -15,9 +15,9 @@ control_max_cycles: 1
 control_run_evolution: false
 control_use_latest_knowledge_version: false
 auto_evolution: false
-executor: claude
-require_executor: claude
-allow_codex_executor: false
+executor: codex
+require_executor: codex
+allow_codex_executor: true
 executor_timeout_minutes: 120
 codex_sandbox: danger-full-access
 codex_approval: never

@@ -33,6 +33,179 @@ function Get-SliceIndexFromPath {
     return 0
 }
 
+function Get-ObjectPropertyValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Get-StringArray {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    if ($Value -is [System.Array]) { return @($Value | ForEach-Object { [string]$_ }) }
+    return @([string]$Value)
+}
+
+function Get-ObjectIntValueOrNull {
+    param($Object, [string[]]$Names)
+    foreach ($name in $Names) {
+        $value = Get-ObjectPropertyValue -Object $Object -Name $name
+        if ($null -ne $value) {
+            $text = ([string]$value).Trim()
+            if ($text -match '^-?\d+$') { return [int]$text }
+        }
+    }
+    return $null
+}
+
+function Get-ObjectBoolValue {
+    param($Object, [string[]]$Names, [bool]$Default = $false)
+    foreach ($name in $Names) {
+        $value = Get-ObjectPropertyValue -Object $Object -Name $name
+        if ($null -eq $value) { continue }
+        if ($value -is [bool]) { return [bool]$value }
+        $text = ([string]$value).Trim()
+        if ($text -match '^(?i:true|false)$') { return [System.Convert]::ToBoolean($text) }
+        if ($text -match '^[01]$') { return ($text -eq '1') }
+    }
+    return $Default
+}
+
+function Resolve-WorktreeEvidencePath {
+    param([string]$WorktreePath, [string]$EvidencePath)
+    if ([string]::IsNullOrWhiteSpace($WorktreePath) -or [string]::IsNullOrWhiteSpace($EvidencePath)) { return '' }
+    $candidate = (([string]$EvidencePath) -split '#')[0].Trim().Trim('"').Trim("'")
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return '' }
+    $candidate = $candidate -replace '/', [System.IO.Path]::DirectorySeparatorChar
+    try {
+        $fullPath = if ([System.IO.Path]::IsPathRooted($candidate)) {
+            [System.IO.Path]::GetFullPath($candidate)
+        } else {
+            [System.IO.Path]::GetFullPath((Join-Path $WorktreePath $candidate))
+        }
+        $worktreeFull = [System.IO.Path]::GetFullPath($WorktreePath).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+        if ($fullPath.StartsWith($worktreeFull + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $fullPath
+        }
+    } catch {
+        return ''
+    }
+    return ''
+}
+
+function Add-UniqueString {
+    param([System.Collections.Generic.List[string]]$List, [string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return }
+    $trimmed = $Value.Trim()
+    if (-not $List.Contains($trimmed)) {
+        $List.Add($trimmed) | Out-Null
+    }
+}
+
+function Get-SliceResultEvidenceFiles {
+    param($SliceResult)
+
+    $files = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $SliceResult) { return @() }
+
+    $behaviorCharter = Get-ObjectPropertyValue -Object $SliceResult -Name 'behavior_test_charter'
+    if ($null -ne $behaviorCharter) {
+        foreach ($file in @(Get-StringArray (Get-ObjectPropertyValue -Object $behaviorCharter -Name 'evidence_files'))) {
+            Add-UniqueString -List $files -Value ([string]$file)
+        }
+        foreach ($file in @(Get-StringArray (Get-ObjectPropertyValue -Object $behaviorCharter -Name 'evidence_file'))) {
+            foreach ($part in @(([string]$file) -split "[,;`r`n]+")) {
+                Add-UniqueString -List $files -Value ([string]$part)
+            }
+        }
+    }
+
+    $sideEffectEvidence = Get-ObjectPropertyValue -Object $SliceResult -Name 'side_effect_evidence'
+    if ($null -ne $sideEffectEvidence) {
+        foreach ($name in @('test_name', 'evidence_file', 'evidence_path')) {
+            foreach ($file in @(Get-StringArray (Get-ObjectPropertyValue -Object $sideEffectEvidence -Name $name))) {
+                Add-UniqueString -List $files -Value ([string]$file)
+            }
+        }
+    }
+
+    return @($files)
+}
+
+function Test-TestSourceHasExecutableSideEffectAssertion {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $false }
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $hasExecutableAssertion = $text -match '(?i)(ArgumentCaptor\s*<|\.capture\s*\(|Mockito\.verify\s*\(|\bverify\s*\(|Assert\.assert(?:Equals|True|False|NotNull)\s*\(|assert(?:Equals|True|False|NotNull)\s*\(|assertThat\s*\()'
+    $hasSideEffectBoundary = $text -match '(?i)(Mapper\s*\)\s*\.\s*(insert|update|delete|save)|Mapper\s*\.\s*(insert|update|delete|save)|Repository\s*\)\s*\.\s*(save|delete)|Repository\s*\.\s*(save|delete)|\b(insert|update|delete|save)\s*\(|updateStatus|save[A-Za-z]*Log)'
+    return ($hasExecutableAssertion -and $hasSideEffectBoundary)
+}
+
+function Test-ExecutableSideEffectEvidence {
+    param(
+        [string]$ReplayRoot,
+        [string]$SliceResultPath,
+        [string]$WorktreePath
+    )
+
+    $issues = New-Object System.Collections.Generic.List[string]
+    $evidenceFiles = New-Object System.Collections.Generic.List[string]
+    $sliceResult = Read-JsonIfExists -Path $SliceResultPath
+    if ($null -eq $sliceResult) {
+        $issues.Add('slice_result_missing') | Out-Null
+        return [pscustomobject]@{ IsValid = $false; Issues = @($issues); EvidenceFiles = @() }
+    }
+
+    $matchedTestCount = Get-ObjectIntValueOrNull -Object $sliceResult -Names @('matched_test_count', 'test_count')
+    if ($null -eq $matchedTestCount -or $matchedTestCount -le 0) {
+        $issues.Add('matched_test_count_missing') | Out-Null
+    }
+
+    if (-not (Get-ObjectBoolValue -Object $sliceResult -Names @('real_entry_invoked') -Default $false)) {
+        $issues.Add('real_entry_invoked_missing') | Out-Null
+    }
+
+    $greenExitCode = Get-ObjectIntValueOrNull -Object $sliceResult -Names @('green_exit_code', 'test_execution_exit_code')
+    if ($null -eq $greenExitCode -or $greenExitCode -ne 0) {
+        $issues.Add('green_execution_not_verified') | Out-Null
+    }
+
+    $assertionSignals = @()
+    foreach ($name in @('side_effect_assertions', 'exact_output_assertions')) {
+        $assertionSignals += @(Get-StringArray (Get-ObjectPropertyValue -Object $sliceResult -Name $name))
+    }
+    $sideEffectEvidence = Get-ObjectPropertyValue -Object $sliceResult -Name 'side_effect_evidence'
+    if ($null -ne $sideEffectEvidence) {
+        $assertionSignals += @(Get-StringArray (Get-ObjectPropertyValue -Object $sideEffectEvidence -Name 'expected_writes_or_outputs'))
+        $assertionSignals += @(Get-StringArray (Get-ObjectPropertyValue -Object $sideEffectEvidence -Name 'expected_writes'))
+    }
+    $assertionSignals = @($assertionSignals | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($assertionSignals.Count -eq 0) {
+        $issues.Add('side_effect_assertions_missing') | Out-Null
+    }
+
+    $candidateFiles = @(Get-SliceResultEvidenceFiles -SliceResult $sliceResult)
+    foreach ($candidateFile in $candidateFiles) {
+        $resolved = Resolve-WorktreeEvidencePath -WorktreePath $WorktreePath -EvidencePath $candidateFile
+        if (-not [string]::IsNullOrWhiteSpace($resolved) -and (Test-Path -LiteralPath $resolved)) {
+            if (Test-TestSourceHasExecutableSideEffectAssertion -Path $resolved) {
+                Add-UniqueString -List $evidenceFiles -Value $resolved
+            }
+        }
+    }
+    if ($evidenceFiles.Count -eq 0) {
+        $issues.Add('executable_test_source_missing') | Out-Null
+    }
+
+    return [pscustomobject]@{
+        IsValid = ($issues.Count -eq 0)
+        Issues = @($issues)
+        EvidenceFiles = @($evidenceFiles)
+    }
+}
+
 function Test-SideEffectNotApplicable {
     param(
         [string]$ReplayRoot,
@@ -119,14 +292,29 @@ function Test-SideEffectLedger {
     $hasAssertionPattern = $ledger -match 'assertThat\(|verify\(.+Mapper\)|AtomicReference'
 
     if (-not $hasSelectPattern -and -not $hasAssertionPattern) {
+        $worktreePath = Join-Path $ReplayRoot 'worktree'
+        $executableEvidence = Test-ExecutableSideEffectEvidence -ReplayRoot $ReplayRoot -SliceResultPath $SliceResultPath -WorktreePath $worktreePath
+        if ([bool]$executableEvidence.IsValid) {
+            Write-Host "INFO: SIDE_EFFECT_LEDGER.md verified by executable side-effect test evidence" -ForegroundColor Green
+            return @{
+                IsValid = $true
+                Reason = 'executable_side_effect_evidence_verified'
+                HasSideEffects = $true
+                HasVerification = $true
+                VerificationSource = 'SLICE_RESULT_and_test_source'
+                EvidenceFiles = @($executableEvidence.EvidenceFiles)
+            }
+        }
+
         Write-Host "ERROR: SIDE_EFFECT_LEDGER.md missing DB assertion patterns." -ForegroundColor Red
         Write-Host "Required pattern: SELECT * FROM table WHERE key = ?" -ForegroundColor Yellow
-        Write-Host "Or verification pattern: assertThat(captured.get().getField()).isEqualTo(value)" -ForegroundColor Yellow
+        Write-Host "Or executable Mockito/JUnit side-effect assertions linked from SLICE_RESULT." -ForegroundColor Yellow
         return @{
             IsValid = $false
             Reason = 'missing_verification_patterns'
             HasSideEffects = $true
-            RequiredPattern = 'SELECT * FROM table WHERE key = ? or assertThat(captured.get())'
+            RequiredPattern = 'SELECT * FROM table WHERE key = ? or executable Mockito/JUnit side-effect assertions linked from SLICE_RESULT'
+            EvidenceIssues = @($executableEvidence.Issues)
         }
     }
 
@@ -177,6 +365,18 @@ function Invoke-SideEffectVerificationGate {
         $result.skipped = $true
         $result.skip_reason = $ledgerValid.Reason
     }
+    if ($ledgerValid.HasVerification) {
+        $result.has_verification = $true
+    }
+    if ($ledgerValid.Reason) {
+        $result.reason = $ledgerValid.Reason
+    }
+    if ($ledgerValid.VerificationSource) {
+        $result.verification_source = $ledgerValid.VerificationSource
+    }
+    if ($ledgerValid.EvidenceFiles) {
+        $result.evidence_files = @($ledgerValid.EvidenceFiles)
+    }
 
     if (-not $ledgerValid.IsValid) {
         $result.can_proceed = $false
@@ -213,7 +413,7 @@ if ($ValidateOnly) {
         Script = $PSCommandPath
         Checks = @(
             'Test-SideEffectLedger: Validates SIDE_EFFECT_LEDGER.md exists',
-            'Checks for DB assertion patterns (SELECT, assertThat, verify)',
+            'Checks for DB assertion patterns (SELECT, assertThat, verify) or executable side-effect test evidence',
             'Prevents side_effect_ledger_gap before slice completion'
         )
     }

@@ -5,7 +5,8 @@ param(
     [string]$Worktree,
     [Parameter(Mandatory = $true)]
     [string]$SliceResultPath,
-    [int]$SliceIndex = 1
+    [int]$SliceIndex = 1,
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +47,27 @@ function Get-StringValue {
     return ''
 }
 
+function Get-BoolValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $false }
+    if (-not ($Object.PSObject.Properties.Name -contains $Name)) { return $false }
+    $value = $Object.$Name
+    if ($value -is [bool]) { return [bool]$value }
+    return ([string]$value) -match '(?i)^(true|yes|1|pass|passed)$'
+}
+
+function Get-IntValue {
+    param($Object, [string[]]$Names)
+    if ($null -eq $Object) { return 0 }
+    foreach ($name in @($Names)) {
+        if (-not ($Object.PSObject.Properties.Name -contains $name)) { continue }
+        $value = $Object.$name
+        if ($value -is [int] -or $value -is [long] -or $value -is [decimal] -or $value -is [double]) { return [int]$value }
+        if ([string]$value -match '^-?\d+$') { return [int]$value }
+    }
+    return 0
+}
+
 function Read-TextIfExists {
     param([string]$Path)
     if (Test-Path -LiteralPath $Path) {
@@ -58,11 +80,35 @@ $replayRootFull = Resolve-AbsolutePath $ReplayRoot
 $worktreeFull = Resolve-AbsolutePath $Worktree
 $sliceResultPath = Resolve-AbsolutePath $SliceResultPath
 
+$outputPath = Join-Path $replayRootFull ('EXECUTABLE_EVIDENCE_GATE_{0:D2}.json' -f $SliceIndex)
+if ($ValidateOnly) {
+    [ordered]@{
+        stage = 'executable_evidence_gate'
+        validation_status = 'PASS'
+        mode = 'ValidateOnly'
+        replay_root = $replayRootFull
+        worktree = $worktreeFull
+        slice_result = $sliceResultPath
+        output_path = $outputPath
+    } | ConvertTo-Json -Depth 8
+    exit 0
+}
+
 $issues = New-Object System.Collections.Generic.List[string]
 $warnings = New-Object System.Collections.Generic.List[string]
 
 # Read slice result
 $slice = Read-JsonObject -Path $sliceResultPath
+$normalizerScript = Join-Path $PSScriptRoot 'SliceResultSchemaNormalizer.ps1'
+if (Test-Path -LiteralPath $normalizerScript) {
+    . $normalizerScript
+    $schemaNormalization = Invoke-SliceResultSchemaNormalization -Slice $slice
+    foreach ($normalizationWarning in @($schemaNormalization.warnings)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$normalizationWarning)) {
+            $warnings.Add([string]$normalizationWarning) | Out-Null
+        }
+    }
+}
 $sliceStatus = [string]$slice.slice_status
 $sliceType = [string]$slice.slice_type
 $targetSubsurface = [string]$slice.target_subsurface_or_carrier
@@ -71,6 +117,12 @@ $proofKind = [string]$slice.proof_kind
 $touchedFamilies = @(Get-StringArray $slice.touched_requirement_families)
 $closedFamilies = @(Get-StringArray $slice.closed_requirement_families)
 $implementedFiles = @(Get-StringArray $slice.implemented_files)
+$changedFiles = @(
+    (Get-StringArray $slice.current_slice_changed_files) +
+    (Get-StringArray $slice.round_changed_files_snapshot) +
+    (Get-StringArray $slice.changed_files)
+) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+$effectiveFiles = @($implementedFiles + $changedFiles) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 $gapFlags = @(Get-StringArray $slice.gap_flags)
 
 # Read supporting artifacts
@@ -81,11 +133,13 @@ $testCharterText = Read-TextIfExists -Path $testCharterPath
 
 # ===== v281 VALIDATION 1: Wrong Test Surface Detection =====
 
-# Check if slice claims to close a family but only tests helpers/DTOs
+# Check if slice claims to close a family but only tests helpers/DTOs.
+# Leading \b is intentionally omitted so suffix-style production processor
+# carriers still count as real entries.
 $hasRealEntryBinding = (
-    $targetSubsurface -match '(?i)\b(Facade(?:Impl)?|Controller(?:Impl)?|Service|Processor|Handler|Task|Route|Endpoint)\b' -or
+    $targetSubsurface -match '(?i)(Facade(?:Impl)?|Controller(?:Impl)?|Service|Processor|Handler|Task|Route|Endpoint)\b' -or
     $targetSubsurface -match '\.java#\w+\(' -or
-    $productionBoundary -match '(?i)\b(entry|service|process|handle|execute)\b'
+    $productionBoundary -match '(?i)(entry|service|process|handle|execute)\b'
 )
 
 $hasHelperOnlyBinding = (
@@ -99,9 +153,45 @@ $hasSyntheticBinding = (
     $proofKind -match '(?i)(mock_only|test_stub|synthetic)'
 )
 
-# Check if implemented files are all test-only
-$testOnlyFiles = @($implementedFiles | Where-Object { $_ -match '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' })
-$hasProductionFiles = @($implementedFiles | Where-Object { $_ -notmatch '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' }).Count -gt 0
+# Check if the slice only changed test files. Agents sometimes report production
+# files in current_slice_changed_files or round_changed_files_snapshot instead of
+# implemented_files, so use the effective union before falling back to git.
+$testOnlyFiles = @($effectiveFiles | Where-Object { $_ -match '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' })
+$hasProductionFiles = @($effectiveFiles | Where-Object { $_ -notmatch '(^|/)src/test/|(^|\\)src\\test\\|Test\.java$' }).Count -gt 0
+
+# v555: Fallback to git status in worktree when SLICE_RESULT file lists are
+# incomplete. Worktree status is authoritative for tracked and untracked files.
+if (-not $hasProductionFiles -and (Test-Path -LiteralPath $worktreeFull -PathType Container)) {
+    try {
+        $statusLines = @(& git -C $worktreeFull status --short --untracked-files=all 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $statusLines.Count -gt 0) {
+            $foundProduction = $false
+            foreach ($line in $statusLines) {
+                $text = ([string]$line).TrimEnd()
+                if ([string]::IsNullOrWhiteSpace($text)) { continue }
+                $pathText = ''
+                if ($text -match '^(.{2})\s+(.+)$') {
+                    $pathText = $matches[2].Trim()
+                } else {
+                    $pathText = $text.Trim()
+                }
+                if ($pathText -match '\s+->\s+(.+)$') {
+                    $pathText = $matches[1].Trim()
+                }
+                if ($pathText -match '(^|/)src/main/' -and $pathText -notmatch '(?i)Test\.java$') {
+                    $foundProduction = $true
+                    break
+                }
+            }
+            if ($foundProduction) {
+                $hasProductionFiles = $true
+                $warnings.Add('Production files detected via git-status fallback (not listed in SLICE_RESULT file fields)') | Out-Null
+            }
+        }
+    } catch {
+        # git-status fallback is best-effort; silent on failure.
+    }
+}
 
 # Wrong test surface: closing family without testing real production entry
 if (($closedFamilies.Count -gt 0 -or $touchedFamilies.Count -gt 0) -and
@@ -258,6 +348,101 @@ if ($touchesCoreEntryFamily -and $sliceStatus -eq 'DONE') {
     }
 }
 
+# ===== v555+v616 VALIDATION: Executable Evidence Capture =====
+# Require machine-readable test commands for any success-shaped slice. The
+# prompt contract says DONE, but older agents have emitted COMPLETED; treat both
+# as authorizing claims so natural-language GREEN summaries cannot bypass this
+# gate by using a synonym.
+$successSliceStatus = @('DONE', 'COMPLETED') -contains $sliceStatus
+$testExecCommand = Get-StringValue $slice 'test_execution_command'
+$testExecExitCode = $slice.test_execution_exit_code
+$testCompileCommand = Get-StringValue $slice 'test_compilation_command'
+$testCompileExitCode = $slice.test_compilation_exit_code
+
+if ($successSliceStatus) {
+    $hasExecutableTestCommand = -not [string]::IsNullOrWhiteSpace($testExecCommand)
+    $hasExecutableTestExitCode = ($null -ne $testExecExitCode -and $testExecExitCode -eq 0)
+
+    # Some agents encode the executable target entirely in tests[].command.
+    # v630: Also fall through when top-level test_execution_command exists but
+    # test_execution_exit_code is missing — the tests[] fallback can supply a
+    # machine-verifiable Maven test selector that implies exit code 0.
+    if (-not $hasExecutableTestCommand -or -not $hasExecutableTestExitCode) {
+        foreach ($test in @($slice.tests)) {
+            if ($null -ne $test -and ($test -is [System.Management.Automation.PSCustomObject])) {
+                $testCommand = [string]$test.command
+                $testResult = [string]$test.result
+                $testPhase = [string]$test.phase
+                if (-not [string]::IsNullOrWhiteSpace($testCommand) -and
+                    $testPhase -match '(?i)^(GREEN|VERIFY)$' -and
+                    $testResult -match '(?i)^(pass|success)$') {
+                    $hasExecutableTestCommand = $true
+                    if ($testCommand -match '(?i)\bmvn(?:\.cmd)?\b' -and $testCommand -match '(?i)(?:^|\s)-D(?:it\.)?test\s*=') {
+                        $hasExecutableTestExitCode = $true
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    if (-not $hasExecutableTestCommand -or -not $hasExecutableTestExitCode) {
+        $issues.Add('behavior_evidence_missing:no_executable_command_evidence') | Out-Null
+        $warnings.Add('Success-shaped slice missing test_execution_command/exit_code; use machine-verifiable Maven commands instead of natural-language summaries') | Out-Null
+    }
+
+    # v675: Business behavior credit requires an executed matching test, the
+    # selected real entry, and at least one asserted side effect or exact output.
+    # Compile-only, static, helper-only, and zero-test "greens" remain setup
+    # evidence and cannot authorize coverage.
+    $matchedTestCount = Get-IntValue -Object $slice -Names @('matched_test_count', 'matching_test_count', 'matched_tests')
+    if ($matchedTestCount -le 0 -and $null -ne $slice.tests) {
+        foreach ($test in @($slice.tests)) {
+            if ($null -eq $test -or -not ($test -is [System.Management.Automation.PSCustomObject])) { continue }
+            $phase = [string]$test.phase
+            $resultText = [string]$test.result
+            $commandText = [string]$test.command
+            if ($phase -match '(?i)^(GREEN|VERIFY)$' -and
+                $resultText -match '(?i)^(pass|success)$' -and
+                -not [string]::IsNullOrWhiteSpace($commandText) -and
+                $commandText -match '(?i)-D(?:it\.)?test\s*=') {
+                $matchedTestCount++
+            }
+        }
+    }
+    $realEntryInvoked = (
+        (Get-BoolValue -Object $slice -Name 'real_entry_invoked') -or
+        (Get-BoolValue -Object $slice.side_effect_evidence -Name 'real_entry_invoked') -or
+        (-not [string]::IsNullOrWhiteSpace($sideEffectEntryCall) -and $sideEffectEntryCall -notmatch '(?i)(TODO|placeholder|none|null|helper_only|static_only)')
+    )
+    $sideEffectAssertions = @(
+        (Get-StringArray $slice.side_effect_assertions) +
+        (Get-StringArray $sideEffectObj.side_effect_assertions) +
+        (Get-StringArray $sideExpectedWrites)
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $exactOutputAssertions = @(
+        (Get-StringArray $slice.exact_output_assertions) +
+        (Get-StringArray $slice.output_assertions) +
+        (Get-StringArray $slice.closed_assertions)
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) -and [string]$_ -match $meaningfulAssertionPattern } | Select-Object -Unique
+
+    if ($matchedTestCount -le 0) {
+        $issues.Add('behavior_evidence_missing:matched_test_count_zero') | Out-Null
+        $warnings.Add('Success-shaped slice has no matched behavior test execution; zero matching tests cannot authorize coverage') | Out-Null
+        if ($gapFlags -notcontains 'no_test_execution_evidence') { $gapFlags += 'no_test_execution_evidence' }
+    }
+    if (-not $realEntryInvoked) {
+        $issues.Add('wrong_test_surface:real_entry_not_invoked') | Out-Null
+        $warnings.Add('Success-shaped slice does not prove invocation of the selected real production entry') | Out-Null
+        if ($gapFlags -notcontains 'wrong_test_surface') { $gapFlags += 'wrong_test_surface' }
+    }
+    if ($sideEffectAssertions.Count -eq 0 -and $exactOutputAssertions.Count -eq 0) {
+        $issues.Add('side_effect_ledger_gap:no_side_effect_or_exact_output_assertion') | Out-Null
+        $warnings.Add('Success-shaped slice has no side-effect assertion or exact output assertion') | Out-Null
+        if ($gapFlags -notcontains 'side_effect_ledger_gap') { $gapFlags += 'side_effect_ledger_gap' }
+    }
+}
+
 # ===== v281 VALIDATION 3: Feedback Loop Blocker Detection =====
 
 # Detect if RED phase was blocked but implementation proceeded anyway
@@ -282,31 +467,28 @@ if ($null -ne $slice.tests) {
 if ($redBlocked -and $implementedFiles.Count -gt 0) {
     $issues.Add('feedback_loop_blocker:implementation_after_blocked_red') | Out-Null
     $warnings.Add('RED phase was BLOCKED but implementation proceeded - violates TDD') | Out-Null
+    if ($gapFlags -notcontains 'feedback_loop_blocker') { $gapFlags += 'feedback_loop_blocker' }
 }
 
 # Check if implementation happened without failing RED
 if ($redPassedBeforeImplementation -and $implementedFiles.Count -gt 0 -and -not $redBlocked) {
     $issues.Add('feedback_loop_blocker:red_passed_before_implementation') | Out-Null
     $warnings.Add('RED phase PASSED before implementation - invalid TDD workflow') | Out-Null
+    if ($gapFlags -notcontains 'feedback_loop_blocker') { $gapFlags += 'feedback_loop_blocker' }
 }
 
-# v289: Test harness placement validation. claim-core has no test dependency
-# harness in this repository; RED/VERIFY tests must be authored and executed
-# through claim-server, without modifying POM dependencies.
+# v289: Test harness placement validation. Dependency-deficient modules must
+# not be patched with new test dependencies during replay slice execution.
 $allChangedForHarness = @(
     $implementedFiles +
     (Get-StringArray $slice.current_slice_changed_files) +
     (Get-StringArray $slice.round_changed_files_snapshot)
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-if (@($allChangedForHarness | Where-Object { $_ -match '(?i)claim-core[/\\]src[/\\]test' }).Count -gt 0) {
-    $issues.Add('wrong_test_surface:claim_core_test_harness') | Out-Null
-    $warnings.Add('Tests were placed under claim-core/src/test even though this replay requires claim-server test harness') | Out-Null
-}
 foreach ($test in @($slice.tests)) {
     $commandText = [string]$test.command
-    if ($commandText -match '(?i)-pl\s+claim-core\b') {
-        $issues.Add('wrong_test_surface:claim_core_maven_module') | Out-Null
-        $warnings.Add('RED/GREEN command used -pl claim-core; use -pl claim-server -am for replay tests') | Out-Null
+    if ($commandText -match '(?i)(^|\s)-pl\s+["'']?([^"''\s]+)' -and $commandText -notmatch '(?i)(^|\s)-am(\s|$)') {
+        $issues.Add('wrong_test_surface:maven_module_without_also_make') | Out-Null
+        $warnings.Add('RED/GREEN command used -pl without -am; replay tests must use reactor source modules') | Out-Null
     }
 }
 if (@($allChangedForHarness | Where-Object { $_ -match '(?i)(^|[/\\])pom\.xml$' }).Count -gt 0) {
@@ -346,7 +528,7 @@ if ($v340ExperimentsEnabled -and $pythonCmd) {
     $e1Script = Join-Path $scriptDir 'verifier\executable_evidence.py'
     $requirementLedgerPath = Join-Path $replayRootFull 'REQUIREMENT_FAMILY_LEDGER.json'
 
-    if (Test-Path -LiteralPath $e1Script -and Test-Path -LiteralPath $requirementLedgerPath) {
+    if ((Test-Path -LiteralPath $e1Script) -and (Test-Path -LiteralPath $requirementLedgerPath)) {
         try {
             $sliceResultJson = Get-Content -LiteralPath $sliceResultPath -Raw -Encoding UTF8
             $ledgerJson = Get-Content -LiteralPath $requirementLedgerPath -Raw -Encoding UTF8
@@ -422,12 +604,15 @@ $result = [ordered]@{
     has_production_files = $hasProductionFiles
     touches_stateful_family = $touchesStatefulFamily
     has_state_change_evidence = $hasStateChangeKeywords -or $testEvidenceShowsStateChange
+    matched_test_count = if ($successSliceStatus) { $matchedTestCount } else { 0 }
+    real_entry_invoked = if ($successSliceStatus) { $realEntryInvoked } else { $false }
+    side_effect_assertions = if ($successSliceStatus) { @($sideEffectAssertions) } else { @() }
+    exact_output_assertions = if ($successSliceStatus) { @($exactOutputAssertions) } else { @() }
     red_was_blocked = $redBlocked
     implementation_after_blocked_red = $redBlocked -and $implementedFiles.Count -gt 0
     generated_at = (Get-Date).ToString('s')
 }
 
-$outputPath = Join-Path $replayRootFull ('EXECUTABLE_EVIDENCE_GATE_{0:D2}.json' -f $SliceIndex)
 $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $outputPath -Encoding UTF8
 
 if ($issues.Count -gt 0) {

@@ -38,6 +38,8 @@ Assert-True ($runner -match 'plan_result_missing:oracle_production_file_overlap'
     'Repair prompt must specifically repair missing oracle overlap disclosure'
 Assert-True ($runner -match 'oracle_overlap_below_threshold') `
     'Repair prompt must specifically repair or block low oracle overlap'
+Assert-True ($runner -match 'oracle_high_weight_overlap_below_threshold') `
+    'Repair prompt must enforce high-weight 70% threshold for PROCEED'
 Assert-True ([regex]::Matches($runner, 'Verify-PlanContract\.ps1').Count -ge 4) `
     'Run-ReplayLoop must re-run Verify-PlanContract after repair'
 Assert-True (($planPrompt -match 'carrier_search_queries_too_few') -and ($planPrompt -match 'contract repair pass')) `
@@ -45,13 +47,14 @@ Assert-True (($planPrompt -match 'carrier_search_queries_too_few') -and ($planPr
 
 [ordered]@{
     status = 'PASS'
-    assertions = 7
+    assertions = 8
     cases = @(
         'repair_prompt_created',
         'repair_pass_named',
         'carrier_search_query_repair_required',
         'oracle_overlap_disclosure_repair_required',
         'oracle_overlap_threshold_repair_required',
+        'oracle_high_weight_threshold_repair_required',
         'verify_rerun_after_repair',
         'plan_prompt_discloses_repair'
     )

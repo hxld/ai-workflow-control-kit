@@ -98,6 +98,7 @@ Verify the installation:
 
 ```bash
 node scripts/verify-ai-workflow-kit.js
+node scripts/verify-control-contracts.js
 ```
 
 ## Skills Sync Model
@@ -142,6 +143,16 @@ If Windows shows `R6016 - not enough space for thread data` for `powershell.exe`
 node scripts/diagnose-powershell-r6016.js
 ```
 
+## Control Contract Verification
+
+The kit includes a lightweight verifier for repository-level control contracts:
+
+```bash
+node scripts/verify-control-contracts.js
+```
+
+It checks the unattended GoalSpec template plus `agents/.skill-lock.json` source metadata. Legacy lock entries with empty hashes warn by default; use `--strict-skill-lock` when you are ready to require SHA-256 style hashes.
+
 ## Replay Autopilot
 
 `replay-autopilot` is the control plane for AI workflow evaluation. It supports:
@@ -180,6 +191,7 @@ Before committing or publishing, run:
 
 ```bash
 node scripts/test-no-secrets.js
+node scripts/verify-control-contracts.js
 ```
 
 The repository should contain templates and placeholders only. Real credentials must be restored locally after installation.

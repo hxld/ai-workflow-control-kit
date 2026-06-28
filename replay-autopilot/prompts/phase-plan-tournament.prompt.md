@@ -61,7 +61,7 @@
 5. 读取 `{{SURFACE_CARRIER_SCAN}}`，把 required family 的候选生产承载点纳入候选计划。
 6. 若上述文件缺失，写 `PLAN_RESULT.md`，`plan_status=BLOCKED`。
 
-【Oracle Feature Domain Compatibility Check (MANDATORY v347)】
+【Oracle Feature Domain Compatibility Check (MANDATORY v347/v578)】
 
 在执行 "Oracle-Constrained Planning" 之前，必须先检查 oracle 与需求的功能域是否兼容。
 
@@ -81,20 +81,23 @@
    - 统计 oracle 文件中各功能域的文件数量
    - 确定主功能域：文件数量最多的域
    - 计算非主功能域文件比例：`foreign_ratio = non_primary_count / total_oracle_files`
-   - 如果 `foreign_ratio > 30%` → `domain_compatibility: MISMATCH`
-   - 如果 oracle 主功能域与需求主功能域不同 → `domain_compatibility: MISMATCH`
-   - 否则 → `domain_compatibility: COMPATIBLE`
+   - 如果 oracle 主功能域与需求主功能域明确不同 → `domain_compatibility: MISMATCH`
+   - 如果 oracle 主功能域与需求主功能域一致，但 `foreign_ratio > 30%` → `domain_compatibility: COMPATIBLE`，并设置 `supporting_domain_review_required: true`
+   - 高 `foreign_ratio` 只能表示跨支撑面较多，不能单独作为 BLOCK 理由。必须继续执行 Domain-Aware Oracle Overlap Calculation，并用 domain-filtered oracle files、Expected Diff Matrix、Side Effect Ledger 和 Test Charter 约束计划范围。
+   - 如果主功能域无法可靠提取 → `domain_compatibility: UNCERTAIN`，继续规划但必须写出 `domain_uncertainty_reason` 和保守的 domain-filtered overlap 计算。
 
 4. **在 `PLAN_RESULT.md` 中必须包含**：
    - `oracle_primary_domain:` <提取的oracle主功能域>
    - `requirement_primary_domain:` <提取的需求主功能域>
    - `domain_compatibility:` COMPATIBLE | MISMATCH | UNCERTAIN
    - `foreign_domain_ratio:` <非主功能域文件百分比>
+   - `supporting_domain_review_required:` true | false
+   - `supporting_domain_ledger:` 当 `supporting_domain_review_required=true` 时，列出 supporting domain、为何是支撑面、是否纳入本轮 expected diff/test，或为何延后且不影响 first executable slice。
 
-5. 如果 `domain_compatibility: MISMATCH`，禁止生成候选计划，直接写 `PLAN_RESULT.md` 并设置：
+5. 只有当 `domain_compatibility: MISMATCH` 时，禁止生成候选计划，直接写 `PLAN_RESULT.md` 并设置：
    - `plan_status=BLOCKED`
    - `blocker: oracle_feature_domain_mismatch`
-   - 在 `PLAN_RESULT.md` 中说明冲突文件列表和冲突原因
+   - 在 `PLAN_RESULT.md` 中说明主域冲突证据。不得因为 `foreign_ratio > 30%` 但主域一致而设置此 blocker。
 
 【Oracle-Constrained Planning (MANDATORY)】
 
@@ -380,14 +383,16 @@ Status: PROCEED  # ✅ ALLOWED
    - DB/事务或替代验证
    - deploy-facing surface tests
    - static-only/blocker 时的 cap
-   - **格式硬要求（v426）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词，如果缺少这些关键词将触发 `test_charter_missing:RED` 或 `test_charter_missing:GREEN` 错误。你可以添加其他内容，但必须显式包含这两个标题段落。
+   - **机器行硬要求（v608）**：TEST_CHARTER 的第一段必须包含独立 `key: value` 行：`test_surface: <test harness/surface>`、`entry_point: <production entry>`、`test_class: <expected test class>`、`test_method: <expected RED test method>`。Markdown 粗体标签可以保留，但不能作为唯一机器可读入口。
+   - **格式硬要求（v426/v604）**：TEST_CHARTER 必须包含独立的 `## RED Phase` 和 `## GREEN Phase` 标题段落。验证器会搜索 "RED" 和 "GREEN" 关键词；缺少 RED 会触发阻塞的 `test_charter_missing:RED`，缺少 GREEN 在 Plan 阶段只触发 `test_charter_missing:GREEN` warning，但 Phase 1 执行前仍会由 `Invoke-TestCharterPrevalidator.ps1` 重新硬校验 charter 可执行性。你可以添加其他内容，但必须显式包含这两个标题段落。
 
 7. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md`
    - 只写 Phase 1 第一刀，不写全量计划
    - 必须绑定 `PLAN_RESULT.md` 的 `first_slice`、`first_red_test` 和 Phase 0 的 `selected_real_entry`
    - **格式硬要求（机器校验 v452）**：FIRST_SLICE_PROOF_PLAN 必须包含以下所有字段作为独立的 `key: value` 行。runner dry-run 脚本会逐行解析这些字段，不会解析叙述段落、Markdown 表格或嵌套列表。如果某个字段没有以 `key: value` 格式出现在独立行上，dry-run gate 会直接 BLOCKED_PLAN_MISMATCH。
    - **v452 最高优先级字段**：以下字段是最容易被遗漏的关键字段，必须优先检查：
-     - `highest_weight_open_gate:` - **必须填写**。从 ROUND_CONTRACT.md 的 Requirement Family Ledger 中找出 weight 最高且需要在第一刀"打开"（新建服务或修改核心路径）的 family。例如：`stateful_side_effect`、`core_entry`、`wire_payload_api_contract`。不能省略，不能写成 "TBD"、"待确认" 等占位词。
+     - `highest_weight_open_gate:` - **必须填写**。从 ROUND_CONTRACT.md 的 Requirement Family Ledger 中找出当前最高优先级的待关闭 family。例如：`stateful_side_effect`、`core_entry`、`wire_payload_api_contract`。不能省略，不能写成 "TBD"、"待确认" 等占位词。
+     - `first_slice_family:` - **必须填写**。写 S1 实际要打开/闭合的 family。若 S1 是配置阈值、wire contract、导出模板等前置切片，而 `core_entry` 仍是后续 S2 的最高待关闭 family，则这里必须写前置 family（例如 `config_policy_threshold`），并在计划中保留 core tracer slice；不能为了满足 core_entry layer gate 把前置 Service 伪装成 Facade/Controller。
      - `selected_real_entry:` - **必须填写**。必须与 Phase 0 的 selected_real_entry 完全一致。
      - `proof_kind:` - **必须填写**。必须是以下枚举值之一：`real_entry_behavior`、`stateful_side_effect`、`route_export_behavior`、`payload_shape_behavior`、`generated_artifact_behavior`。
      - `real_carrier_kind:` - **必须填写**。必须是以下枚举值之一：`production_entry_or_service`、`production_controller_or_route`、`production_mapper_or_query`、`production_payload_builder`、`production_template_or_artifact_renderer`、`production_lifecycle_cleanup`、`production_service_method`、`production_service`、`production_enum`、`production_dto`。
@@ -396,7 +401,8 @@ Status: PROCEED  # ✅ ALLOWED
    - 必须逐字使用以下字段名，供 runner dry-run 校验；不得只写近义词：
      - `first_slice:`
      - `golden_slice_binding:`
-     - `highest_weight_open_gate:` ← **v452 CRITICAL：这是最常被遗漏的字段，必须填写** 
+     - `highest_weight_open_gate:` ← **v452 CRITICAL：这是最常被遗漏的字段，必须填写**
+     - `first_slice_family:` ← **v595 CRITICAL：这是 S1 实际 family；前置切片不能误写成 core_entry**
      - `first_red_test:`
      - `selected_real_entry:`
      - `public_entry_contract_coverage:`
@@ -423,7 +429,8 @@ Status: PROCEED  # ✅ ALLOWED
 ```text
 first_slice: <slice id>
 golden_slice_binding: <rule fingerprint -> selected production carrier -> first RED -> minimum GREEN -> executable side effect>
-highest_weight_open_gate: <MANDATORY: family name like stateful_side_effect/core_entry/wire_payload_api_contract. This field CANNOT be omitted. Read ROUND_CONTRACT.md Requirement Family Ledger, find the highest-weight family that needs to be opened in S1, and write its id here. Do NOT write TBD/unknown/placeholder.>
+highest_weight_open_gate: <MANDATORY: highest pending family name like stateful_side_effect/core_entry/wire_payload_api_contract. This field CANNOT be omitted. Read ROUND_CONTRACT.md Requirement Family Ledger and write the highest priority family still requiring closure. Do NOT write TBD/unknown/placeholder.>
+first_slice_family: <MANDATORY: actual S1 family, e.g. core_entry/config_policy_threshold/wire_payload_api_contract. If S1 is a prerequisite config/wire/deploy slice before core_entry, write that prerequisite family here and keep core_entry scheduled in a later core tracer slice.>
 first_red_test: <test class or command>
 selected_real_entry: <real production entry from Phase0>
 public_entry_contract_coverage: <specific assertion or not_public_entry_with_reason>
@@ -450,14 +457,14 @@ pattern_evidence_source: <rg command + file path>
    - **测试 harness 选择规则（v289/v473/v475/v476）**：`first_red_test` 必须指向已有测试依赖的模块。默认使用当前 worktree 中真实存在的 `<test-module>/src/test/...` + `-pl <test-module> -am` 作为测试 harness；测试目标可以是 `<production-module>` 中的真实 Service/TaskProcessor carrier。`<production-module>` 若无 JUnit/Mockito/Spring Test 依赖，不得规划 `<production-module>/src/test/...` 测试；必须选择一个已证明依赖生产模块的既有 `<test-module>`，并通过依赖调用生产 carrier。所有 Maven RED/GREEN 命令必须包含 `-am`，PowerShell 下带 `-Dtest`/`#` 时使用 `mvn --% ...` 形态。禁止通过修改任何 `pom.xml` 或新增测试依赖来满足 RED。若无法在已有 harness 中证明，写 `PLAN_BLOCKED_TEST_HARNESS` 并把 `plan_status` 降为 `BLOCKED`。
      - **测试模块策略预检（v478/v479）**：在最终确定 plan 前，必须完成并记录 test infrastructure check：
        1. 识别生产目标模块与实际测试 harness 模块，例如 `<production-module>` 生产 carrier 可由 `<test-module>/src/test/...` 覆盖。
-       2. 读取候选测试模块 `pom.xml` 与已有 `src/test` 文件，确认 JUnit/TestNG、Mockito/Spring Test 等依赖和 import 风格真实存在。
+       2. 读取候选测试模块 `pom.xml` 与已有 `src/test` 文件，确认 JUnit/TestNG、Mockito/Spring Test 等依赖和 import 风格真实存在。`spring-boot-starter-test`、`spring-test`、`junit`、`testng` 或显式 `mockito-*` 都是已有测试 harness 的静态证据；Plan 禁止仅因递归 POM 文本没有直接出现 `mockito` 就写 `PLAN_BLOCKED_TEST_INFRASTRUCTURE`。如果候选模块已有测试源且存在上述测试依赖，必须输出 intended `test-compile` 命令并让 runner materialize `TEST_INFRASTRUCTURE_DRY_RUN.json`，只有 runner 证据或明确缺少测试模块/测试源/导入链时才能 BLOCKED。
        3. 确认测试模块能 import 目标生产类，不能靠修改任何 `pom.xml` 或新增测试依赖解决。
        4. **Do not execute Maven in Plan.** Plan 只能声明 intended isolated dry-run command：`mvn {{MAVEN_SETTINGS_ARG}} -f {{WORKTREE}}\pom.xml -pl <test-module> -am test-compile`，其中 `{{MAVEN_SETTINGS_ARG}}` 仅在 replay config 定义 `maven_settings` 时填入 `-s <settings.xml>`；并把 `compilation_dry_run_evidence_file` 设为 replay root 下的 `TEST_INFRASTRUCTURE_DRY_RUN.json`。runner 会在 Plan 返回后、schema gate 前 materialize `TEST_INFRASTRUCTURE_DRY_RUN.json`，并只允许使用隔离 worktree root POM。
        5. `PLAN_RESULT.json.test_infrastructure_check.compilation_dry_run_evidence_file` 必须引用该 replay-root 内证据文件；不得要求 Plan agent 自行运行 Maven 或写 stdout/stderr 摘要。所选 `<test-module>` 必须存在 `src/test` 且已有测试源；无测试依赖的生产模块不能作为测试 harness。
        6. 如果静态检查已经确认测试模块不可导入生产类、harness 不存在、或只能依赖 protected project root dry-run，`plan_status=BLOCKED`，`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`，不得进入 Phase 1。
      - **profile 专用测试 harness 硬规则（v480/v481）**：如果 replay profile 定义了 source-chain/rebuild 专用关键词和固定 test harness，则 `PLAN_RESULT.json.test_infrastructure_check.test_module_for_target` 必须等于 profile 声明的 `<required-test-module>`，`compilation_dry_run_command` 必须包含 `-pl <required-test-module> -am test-compile`，`expected_test_class` 必须规划在该模块的现有测试 harness 下。此类需求中 `<production-module>` 只能作为生产 carrier 模块，不能作为测试 harness；如果只能选择无测试依赖的生产模块或 dry-run 输出 `No sources to compile`，必须写 `plan_status=BLOCKED`、`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`，禁止输出 `PROCEED`。不得把生产类、DTO getter/setter 或 terminal payload reader 当作测试 harness 证据。`manual verification`、`manual check`、`manual inspection`、`none_with_manual_verification` 只能作为 BLOCKED 原因，绝不能出现在 `PROCEED` 的 `first_red_test`、`blocker_reason`、`next_action` 或 test infrastructure 字段中。
    - **TaskProcessor rebuild no-Spring 规则（v476/v477）**：当第一刀是 `TaskProcessor` / `rebuildTaskData` / source-chain，计划必须指定 no-Spring JUnit + Mockito/反射测试形态；不得规划继承 `AbstractTestClass`、`@SpringBootTest`、`@RunWith(SpringJUnit4ClassRunner.class)`、`@ContextConfiguration` 或 `@Resource` 注入 processor 的测试。对 primaryId/secondaryId rebuild，计划必须要求 mock `ExampleDataAssemblyHelper.buildRequestCommon(...)` 并在 `thenAnswer` 中调用真实 `ExampleDataAssemblyHelper.RequestBuildFunction`，用 `RequestBuildContext` 注入 `primaryId`/`secondaryId`，断言 `rebuildTaskData` 输出 taskData 字段等于 context 值。禁止依赖固定数据库 `caseId`、外部测试数据、完整 Spring ApplicationContext、`taskData == null` 后打印 WARN 继续通过、只测 terminal DTO getter/setter、只测 mock verify，或在 `thenAnswer` 中直接返回手工构造/手工 set 字段的 request。第一刀必须同时覆盖 `ExampleApplyTaskProcessor.rebuildTaskData(Long caseId)` 与 `ExampleCalculateTaskProcessor.rebuildTaskData(Long caseId)` 两个 sibling carrier；否则 `plan_status=BLOCKED` 或 `coverage_delta=0`。
-   - **公共入口证明规则（机器校验）**：如果 `selected_real_entry` 是 facade/controller/API/endpoint/route 等公共入口，则以下全部必须满足，否则 runner 拒绝 FIRST_SLICE_PROOF_PLAN 并 early stop：
+   - **公共入口证明规则（机器校验）**：如果 `first_slice_family: core_entry` 且 `selected_real_entry` 是 facade/controller/API/endpoint/route 等公共入口，则以下全部必须满足，否则 runner 拒绝 FIRST_SLICE_PROOF_PLAN 并 early stop；如果 S1 是 `config_policy_threshold` 等前置切片，`selected_real_entry` 仍必须保留 Phase0 入口，但 `selected_carrier` 可以是该前置切片的真实 Service/Mapper/DTO carrier，且必须写 `first_slice_family` 表明这不是 core_entry closure。
      1. `selected_carrier` 必须是该公共入口本身，或包含该公共入口全名的响应契约测试 carrier。禁止只写 Mapper/Entity/DTO/internal service。例如：entry 是 `ExampleModuleConfigController` → carrier 必须包含 `ExampleModuleConfigController` 或 `ExampleModuleConfigFacade`，不能只写 `TExampleModuleConfig entity` 或 `ExampleModuleConfigMapper`。
      2. `first_red_test` 必须通过该公共入口或其直接调用链发起，不能只测 Mapper/DAO 层。
      3. `public_entry_contract_coverage:` 必须写明请求参数、响应字段、状态码或错误分支中至少一个的可执行证明。仅写 "Full" 或 "existing contract accepts DTO" 不够，必须写具体断言内容（如 "assert ResultModel.success contains exemptReviewAmount field"、"assert POST /ai/claim/config/add returns 200 with updated config JSON"、"assert invalid param returns ResultModel.error with message"）。
@@ -467,7 +474,7 @@ pattern_evidence_source: <rg command + file path>
    - `minimum_side_effect_or_blocker` 必须写出第一刀最少要证明的真实生产调用、状态/落库/输出/payload/导出/template 副作用；如果找不到，写 `PLAN_BLOCKED_REAL_CARRIER`。
    - **v295_executable_first_slice_gate / v295 可执行第一刀硬门禁**：当 `plan_status: PROCEED` 时，第一刀不得是 `Contract & RED Tests`、`CONTRACT_ONLY`、`RED-only`、`test-only`、`production_boundary: NONE` 或 `expected_production_diff: NONE`。第一刀必须在同一 slice 内包含：一个 RED 测试、最小 GREEN 生产实现、以及 `minimum_side_effect_or_blocker` 中写明的真实生产副作用/payload/输出/导出/template 证明。禁止把 GREEN 或生产副作用延后到 S2/S3；如果第一刀只能写合同或 RED 测试，必须把 `plan_status` 改为 `BLOCKED`。
    - **source-chain GREEN 最小实现规则（v474）**：如果 `SOURCE_CHAIN_CONTRACT.json.required_source_chain=true`，第一刀 GREEN 必须闭合 `next_required_slice.entry` 中的 source -> request/task -> payload 链路。禁止把当前源码里已有的 downstream setter、DTO getter、payload key、或 taskData copy 当成“已实现”。若缺的是 request/buildContext 赋值，必须把该赋值列入 `expected_production_diff`；否则写 `PLAN_BLOCKED_SOURCE_CHAIN_UNPROVEN`。
-   - **v296_core_executable_tracer_selection**：如果 Phase 0 已发现 `selected_real_entry`，且最高权重 family 是 `core_entry`，候选计划必须至少包含一个以该真实入口为第一刀的 executable tracer bullet。最终 `selected_candidate` 不得选择只改 Constant/DTO/Entity/Mapper 的 exact-contract/static slice。`highest_weight_open_gate: core_entry` 时，`selected_carrier` 必须是真实入口/服务/方法，`proof_kind` 必须是 `real_entry_behavior` 或 `stateful_side_effect`，`real_carrier_kind` 必须是 `production_entry_or_service`、`production_service_method` 或 `production_service`。禁止用 `plan_status: BLOCKED` 逃避该选择，除非 Phase0 没有真实入口、测试 harness 不可用或 oracle overlap 在扩展后仍低于阈值。
+   - **v296/v595_core_executable_tracer_selection**：如果 Phase 0 已发现 `selected_real_entry`，且最高权重 family 是 `core_entry`，候选计划必须至少包含一个以该真实入口为 executable tracer bullet 的 core slice。最终 `selected_candidate` 不得选择只改 Constant/DTO/Entity/Mapper 的 exact-contract/static slice 来冒充 core closure。`first_slice_family: core_entry` 时，`selected_carrier` 必须是真实入口/服务/方法，`proof_kind` 必须是 `real_entry_behavior` 或 `stateful_side_effect`，`real_carrier_kind` 必须是 `production_entry_or_service`、`production_service_method` 或 `production_service`。如果 S1 是明确的前置配置/contract slice，则必须写 `first_slice_family` 为该前置 family，并在 PLAN_RESULT/REPLAY_PLAN 中把 core tracer 放入 S2；禁止把 Phase0 `selected_real_entry` 改成前置 Service，也禁止用前置 Service 关闭 core_entry。
    - `minimum_side_effect_or_blocker` 的值禁止写 `NONE`、`N/A`、`NOT_APPLICABLE`、`none_with_reason`、`no production code`、`contract definition only`、`to be implemented in Slice 2` 等绕过语。它必须是可执行证明，例如“service method writes state through mapper and test asserts mapper call + status value”，或写 `PLAN_BLOCKED_REAL_CARRIER` 并停止。
    - `production_boundary` 和 `expected_production_diff` 在 `plan_status: PROCEED` 时必须指向真实生产文件/方法/文件族，禁止写 `NONE` 或 “Slice 1 does not touch production code”。
    - `forbidden_substitute_check` 是机器校验字段，只允许以下两种值（逐字照写，不加点号、不加空格、不加描述）：
@@ -477,6 +484,11 @@ pattern_evidence_source: <rg command + file path>
    - 如果需求写明字段来源、来源表、来源字段或“后端自动填充”，第一刀或第二刀必须是 source-chain slice：`source carrier -> build context/request -> task data -> wire payload`。只验证终端 DTO/taskData/payload 写入不能关闭 core。
    - 字段默认写成单行 `field: value`；如必须换行，下一行只能使用 Markdown definition-list 的 `: value`，不能把值散落到普通段落里。`production_boundary:`、`selected_carrier:`、`target_subsurface_or_carrier:`、`expected_production_diff:` 这四个字段必须优先写成同一行逗号分隔值；禁止写成空冒号后接 bullet/list，否则 verifier 会判定 `first_slice_proof_schema_empty`。
    - 若第一刀无法用真实入口和 RED 测试证明，`PLAN_RESULT.md` 必须写 `plan_status=BLOCKED`，不得进入 Phase 1
+	   - **TaskProcessor Policy Rebuild Source-Chain 计划证据要求（Executable Evidence Gate）**：当计划承载点涉及 TaskProcessor/rebuild 模式且需求包含 policyNum/insureNum（或其他来源字段重建）时，PLAN_RESULT.md、REPLAY_PLAN.md、IMPLEMENTATION_CONTRACT.md、EXPECTED_DIFF_MATRIX.md、FIRST_SLICE_PROOF_PLAN.md 必须包含以下精确机器可读证据：
+	     - 上游构建/装配方法全限定名和上下文类型名（如构建辅助类的 buildRequestCommon、请求构建函数类型 RequestBuildFunction、构建上下文类型 RequestBuildContext），用于证明 source 到 request 的精确赋值链路。禁止只用描述性文字如"使用 source-chain 构建请求"而不写出正式全名。
+	     - 上游字段赋值精确字面量（如 req.setPolicyNum(buildContext.getPolicyNum()) 和 req.setInsureNum(buildContext.getInsureNum())），用于证明源字段重建的精确执行语句。禁止省略命名空间前缀或用泛化语句代替。
+	     - 兄弟 TaskProcessor rebuild 路径引用（如 apply 分支的 rebuildTaskData + calculate 分支的 rebuildTaskData），用于证明 sibling 重建覆盖。
+	     - 第一刀必须是上游 source-chain 赋值证明，不得是 DTO-only 或下游 taskData.setXxx(request.getXxx()) 证明。PLAN_RESULT.md 的 golden_slice_binding 或 next_action 字段必须包含精确的上游赋值字面量。
 	   - **v457 first_slice_proof schema 硬要求（Executable Evidence Gate）**：
 	     FIRST_SLICE_PROOF_PLAN 必须包含以下 V457 字段，且格式必须符合机器校验：
 	     - `target_carrier_file_path:` - 精确文件路径，不能是 TBD/unknown/占位词
@@ -487,6 +499,7 @@ pattern_evidence_source: <rg command + file path>
 	       ```text
 	       expected_assertions: ["assertEquals(35, caseStatus)", "verify(compensateDetailMapper).insert()", "assertNotNull(result)"]
 	       ```
+	       ⚠️ 断言字符串内的双引号必须转义为 `\"`。例如 `contains(\"expected status\")`，不能写成 `contains("expected status")`，否则 `PLAN_RESULT.json` 整体 JSON 解析会失败，runner 将拒绝本合同。
 	     - `expected_side_effects:` - JSON 数组格式，至少 1 个副作用，例如：
 	       ```text
 	       expected_side_effects: [{"table": "t_compensate_detail", "operation": "insert"}, {"table": "t_case_route", "operation": "update", "field": "status", "value": "35"}]
@@ -522,6 +535,7 @@ pattern_evidence_source: <rg command + file path>
 - implementation_model_recommendation: gpt-5.3-codex
 - required_files:
 - oracle_production_file_overlap:
+- first_slice_oracle_overlap_percent:
 - oracle_high_weight_coverage:
 - oracle_missing_high_weight_files:
 - oracle_expansion_plan:
@@ -584,7 +598,7 @@ pattern_evidence_source: <rg command + file path>
    - 禁止使用 "Status: TODO" 或其他占位格式，必须明确 slice 或 blocker
    - 验证器会检查 "closure" 关键词存在性
 7. `{{REPLAY_ROOT}}\SIDE_EFFECT_LEDGER.md` — entry → side effect → state/task/transaction → proof
-8. `{{REPLAY_ROOT}}\TEST_CHARTER.md` — RED/GREEN order + real entry tests + DB/transaction
+8. `{{REPLAY_ROOT}}\TEST_CHARTER.md` — machine `test_surface`/`entry_point`/`test_class`/`test_method` lines + RED/GREEN order + real entry tests + DB/transaction
 9. `{{REPLAY_ROOT}}\FIRST_SLICE_PROOF_PLAN.md` — first slice proof schema (见上方字段清单)
 
 `PLAN_RESULT.json` 最低格式：
@@ -616,6 +630,18 @@ pattern_evidence_source: <rg command + file path>
 当 `plan_status=PROCEED` 时，`target_carrier_file_path`、`target_carrier_line_number`、`expected_test_class`、`expected_test_method`、`side_effects` 必须非空。`target_carrier_line_number` 必须是从 baseline/worktree 源码读取到的精确整数行号，不能是 `null`、`TBD`、`unknown` 或占位符；如果无法确认，必须写 `plan_status=BLOCKED` 和 `blocker=PLAN_BLOCKED_LINE_NUMBER`。`test_infrastructure_check` 必须存在并满足：`test_module_has_dependencies=true`、`test_harness_available=true`、`can_import_production_classes=true`、`compilation_dry_run_exit_code=0`、`compilation_dry_run_command` 指向同一个测试模块且包含 `-pl`/`-am`/`test-compile`，并且必须指向 `{{WORKTREE}}\pom.xml` 或等价隔离 worktree root POM、绝不能指向 protected project root；`compilation_dry_run_evidence_file` 指向 replay root 内真实存在的 dry-run 证据（由 runner materialize），`blocker_reason=none` 或空值。当 `plan_status=BLOCKED` 时必须写 `blocker`；当 `plan_status=INVALID_PLAN` 时必须写 `invalid_reason`。
 
 如果 plan_status=BLOCKED，IMPLEMENTATION_CONTRACT 和 FIRST_SLICE_PROOF_PLAN 可以写简短 blocker 说明，但文件必须存在。
+
+【输出自检（v605）— 提交前必须逐条验证】
+
+在写入 `PLAN_RESULT.json` 之前，必须逐项确认以下字段全部存在且格式正确；任何缺失都会导致 runner 的 `Invoke-PlanSchemaFailFast` 拒绝合同并使本轮规划作废：
+
+1. `test_infrastructure_check.compilation_dry_run_command` — 必须是有效的 Maven test-compile 命令，包含 `-pl <test-module> -am test-compile`，指向 `{{WORKTREE}}\pom.xml`，绝不能指向 protected project root。
+2. `test_infrastructure_check.compilation_dry_run_evidence_file` — 必须指向 replay root 内的基线证据文件名（如 `TEST_INFRASTRUCTURE_DRY_RUN.json`），不能是相对路径或占位符。
+3. `test_infrastructure_check.compilation_dry_run_exit_code` — 如果证据尚未 materialize，暂填 `0`（假设编译可运行）；runner 的 `Ensure-PlanTestCompileEvidence` 会在 schema gate 前覆盖该值。
+4. `test_infrastructure_check.test_module_for_target` — 必须指向一个真实存在 `src/test` 的测试模块，且与 `compilation_dry_run_command` 中的 `-pl` 值一致。
+5. 如果上述任一字段无法填写（如不存在可用测试模块），必须写 `plan_status=BLOCKED`，`blocker=PLAN_BLOCKED_TEST_INFRASTRUCTURE`。
+
+runner 的 `Ensure-PlanTestCompileEvidence` 可作为安全网注入缺失的 command 和 evidence_file，但自检不依赖此安全网——主动填写正确值可避免 injection 降级。
 
 开始执行 Phase 0.5。只写上述规划产物。
 

@@ -32,8 +32,15 @@ try {
     Assert-True 'failure_audit_validate_valid' ($validate.status -eq 'VALID')
     $writeAuditText = Get-Content -LiteralPath $writeAudit -Raw -Encoding UTF8
     $writeControlText = Get-Content -LiteralPath $writeControl -Raw -Encoding UTF8
+    $goldenText = Get-Content -LiteralPath (Join-Path $scriptRoot 'Write-GoldenDeliverySlice.ps1') -Raw -Encoding UTF8
     Assert-True 'failure_audit_classifies_protected_root_isolation' ($writeAuditText -match 'protected_root_isolation_violation' -and $writeAuditText -match 'runner_isolation')
-    Assert-True 'control_summary_fingerprints_protected_root_isolation' ($writeControlText -match 'protected_root_isolation_violation' -and $writeControlText -match 'command_guard_violation')
+    Assert-True 'control_summary_fingerprints_protected_root_isolation' ($writeControlText -match 'protected_root_isolation_violation' -and $writeControlText -match 'protected_root_pom_forbidden')
+    Assert-True 'control_summary_does_not_treat_generic_command_guard_as_protected_root' (-not ($writeControlText -match "'protected_root_isolation_violation'\s*=\s*'[^']*command_guard_violation"))
+    Assert-True 'failure_audit_script_exits_zero_after_successful_write' ($writeAuditText -match '(?m)^\s*exit\s+0\s*$')
+    Assert-True 'golden_delivery_script_exits_zero_after_successful_write' ($goldenText -match '(?m)^\s*exit\s+0\s*$')
+    Assert-True 'control_summary_refreshes_auxiliary_exit_code' ($writeControlText -match '\$process\.Refresh\(\)\s*\r?\n\s*\$exitCode')
+    Assert-True 'control_summary_accepts_valid_failure_audit_artifact' ($writeControlText -match 'failureAuditArtifactValid' -and $writeControlText -match 'produced a valid artifact')
+    Assert-True 'control_summary_accepts_valid_golden_artifact' ($writeControlText -match 'goldenArtifactValid' -and $writeControlText -match 'Golden delivery slice generation reported exit code')
 
     $replayRoot = Join-Path $tempRoot 'feature-under-test\claim-codex-replay-v470-test-r01'
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null

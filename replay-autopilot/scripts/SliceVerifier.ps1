@@ -137,6 +137,14 @@ function Get-RemediationMap {
                     priority = 'CRITICAL'
                 }
             }
+            'forbidden_dependency_drift_gap' {
+                $remediationMap['forbidden_dependency_drift_gap'] = @{
+                    fix_command = 'Return BLOCKED SLICE_RESULT when the current harness lacks dependencies; do not edit pom.xml during slice execution'
+                    expected_output_pattern = 'BLOCKED.*forbidden_dependency_drift|forbidden_dependency_drift_gap'
+                    verification = 'SLICE_VERIFY contains no forbidden_dependency_drift_gap and current_slice_changed_files has no pom.xml'
+                    priority = 'CRITICAL'
+                }
+            }
             'mock_behavior_gap' {
                 $remediationMap['mock_behavior_gap'] = @{
                     fix_command = 'Generate-BusinessAssertionTest -UseRealBehavior -RequireProductionCall'
@@ -196,6 +204,70 @@ if ($SliceIndex -le 0) {
     $SliceIndex = Infer-SliceIndex -Path $sliceResultFull -Result $slice
 }
 
+$normalizerScript = Join-Path $PSScriptRoot 'Normalize-SliceResultSchema.ps1'
+if (Test-Path -LiteralPath $normalizerScript) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $normalizerScript `
+        -SliceResultPath $sliceResultFull `
+        -ReplayRoot $replayRootFull `
+        -SliceIndex $SliceIndex `
+        -InPlace | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Normalize-SliceResultSchema.ps1 failed with exit code $LASTEXITCODE"
+    }
+    $slice = Read-JsonObject -Path $sliceResultFull
+    # v632: Backfill compilation evidence from PREFLIGHT_TEST_COMPILATION.json
+    # when the slice lacks test_compilation_exit_code. This runs after schema
+    # normalization so the slice object has canonical structure before evidence
+    # injection. Downstream Verify-SliceClosure then reads the injected fields.
+    $existingCompileCode = $null
+    if ($slice.PSObject.Properties.Name -contains 'test_compilation_exit_code') { $existingCompileCode = $slice.test_compilation_exit_code }
+    if ($null -eq $existingCompileCode -and ($slice.PSObject.Properties.Name -contains 'test_compile_exit_code')) { $existingCompileCode = $slice.test_compile_exit_code }
+    $hasCompileExitCode = ($null -ne $existingCompileCode)
+    if (-not $hasCompileExitCode) {
+        $preflightPath = Join-Path $replayRootFull 'PREFLIGHT_TEST_COMPILATION.json'
+        if (Test-Path -LiteralPath $preflightPath -PathType Leaf) {
+            try {
+                $preflight = Get-Content -LiteralPath $preflightPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $preflightExit = $null
+                if ($null -ne $preflight.exit_code) { $preflightExit = [int]$preflight.exit_code }
+                if ($null -ne $preflightExit) {
+                    $setCompileEvidence = $false
+                    $preflightCmd = [string]$preflight.maven_command_args
+                    if (-not [string]::IsNullOrWhiteSpace($preflightCmd)) {
+                        if ($slice.PSObject.Properties.Name -contains 'test_compilation_command') {
+                            $slice.test_compilation_command = $preflightCmd
+                        } else {
+                            $slice | Add-Member -NotePropertyName 'test_compilation_command' -NotePropertyValue $preflightCmd
+                        }
+                    }
+                    if ($slice.PSObject.Properties.Name -contains 'test_compilation_exit_code') {
+                        $slice.test_compilation_exit_code = $preflightExit
+                    } else {
+                        $slice | Add-Member -NotePropertyName 'test_compilation_exit_code' -NotePropertyValue $preflightExit
+                    }
+                    if ($slice.PSObject.Properties.Name -contains 'test_compilation_evidence_source') {
+                        $slice.test_compilation_evidence_source = $preflightPath
+                    } else {
+                        $slice | Add-Member -NotePropertyName 'test_compilation_evidence_source' -NotePropertyValue $preflightPath
+                    }
+                    if ($preflightExit -eq 0) {
+                        if ($slice.PSObject.Properties.Name -contains 'test_compilation_evidence') {
+                            $slice.test_compilation_evidence = $true
+                        } else {
+                            $slice | Add-Member -NotePropertyName 'test_compilation_evidence' -NotePropertyValue $true
+                        }
+                        $setCompileEvidence = $true
+                    }
+                    # Persist the injected fields back to disk
+                    $slice | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $sliceResultFull -Encoding UTF8
+                }
+            } catch {
+                # Best-effort preflight backfill must not block verification
+            }
+        }
+    }
+}
+
 $verifyScript = Join-Path $PSScriptRoot 'Verify-SliceClosure.ps1'
 & powershell -NoProfile -ExecutionPolicy Bypass -File $verifyScript `
     -ReplayRoot $replayRootFull `
@@ -226,6 +298,29 @@ if ($featureExemptedGapFlags.Count -gt 0) {
 }
 $blockers = @(Get-StringArray $verify.authorization_blockers)
 $warnings = @(Get-StringArray $verify.warnings)
+$blockingGapFlags = @()
+$warningOnlyGapFlags = @()
+if ($null -ne $verify.PSObject.Properties['blocking_gap_flags']) {
+    $blockingGapFlags = @(Get-StringArray $verify.blocking_gap_flags)
+}
+if ($null -ne $verify.PSObject.Properties['warning_only_gap_flags']) {
+    $warningOnlyGapFlags = @(Get-StringArray $verify.warning_only_gap_flags)
+}
+$hasSeveritySplit = $blockingGapFlags.Count -gt 0 -or $warningOnlyGapFlags.Count -gt 0
+$metaAuthorizingFlags = if ($hasSeveritySplit) {
+    if ($blockingGapFlags.Count -gt 0) {
+        @($blockingGapFlags)
+    } else {
+        @($gapFlags)
+    }
+} else {
+    @($gapFlags)
+}
+foreach ($blocker in @($blockers)) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$blocker) -and $metaAuthorizingFlags -notcontains [string]$blocker) {
+        $metaAuthorizingFlags += [string]$blocker
+    }
+}
 
 $mustFailClosed = $false
 $mustFailReasons = New-Object System.Collections.Generic.List[string]
@@ -242,21 +337,28 @@ foreach ($flag in @(
     'shallow_module',
     'synthetic_carrier_gap',
     'tooling_enforcement_stop',
+    'forbidden_dependency_drift_gap',
     'mock_behavior_gap',
     'carrier_authorization_missing',
     'carrier_authorization_stop',
     'exact_contract_assertion_missing',
     'side_effect_evidence_missing',
     'side_effect_red_not_business_assertion',
+    'side_effect_ledger_gap',
+    'feedback_loop_blocker',
     'behavior_carrier_gap',
     'facade_direction_gap',
     'facade_direction_facade_class_missing',
     'facade_direction_method_signature_missing',
     'test_contract_mismatch',
     'return_value_vs_exception_mismatch',
-    'assertion_surface_mismatch'
+    'assertion_surface_mismatch',
+    'no_test_execution_evidence',
+    'test_command_evidence_missing',
+    'executable_surface_slice_gap',
+    'core_entry_unclosed'
 )) {
-    if ($gapFlags -contains $flag) {
+    if ($metaAuthorizingFlags -contains $flag -or $gapFlags -contains $flag) {
         $mustFailClosed = $true
         $mustFailReasons.Add($flag) | Out-Null
     }
@@ -276,18 +378,25 @@ $requiresCapTen = @($mustFailReasons | Where-Object {
         'subclass_only_proof',
         'empty_or_noop_production_carrier',
         'tooling_enforcement_stop',
+        'forbidden_dependency_drift_gap',
         'carrier_authorization_missing',
         'carrier_authorization_stop',
         'exact_contract_assertion_missing',
         'side_effect_evidence_missing',
         'side_effect_red_not_business_assertion',
+        'side_effect_ledger_gap',
+        'feedback_loop_blocker',
         'behavior_carrier_gap',
         'facade_direction_gap',
         'facade_direction_facade_class_missing',
         'facade_direction_method_signature_missing',
         'test_contract_mismatch',
         'return_value_vs_exception_mismatch',
-        'assertion_surface_mismatch'
+        'assertion_surface_mismatch',
+        'no_test_execution_evidence',
+        'test_command_evidence_missing',
+        'executable_surface_slice_gap',
+        'core_entry_unclosed'
     ) -contains [string]$_
 }).Count -gt 0
 

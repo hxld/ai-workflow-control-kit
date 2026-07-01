@@ -66,3 +66,13 @@ replay-autopilot/PREFLIGHT_TEST_COMPILATION.json
 
 replay-autopilot/scripts/.scan-results/
 **/.review-tmp/
+
+# ── 本地运行记录（保留本地，不提交）──
+custom-skills-history/
+workflow-history/
+
+# ── 本地 replay 环境配置 ──
+replay-autopilot/requirements/
+replay-autopilot/tools/
+replay-autopilot/test/
+replay-autopilot/tests/

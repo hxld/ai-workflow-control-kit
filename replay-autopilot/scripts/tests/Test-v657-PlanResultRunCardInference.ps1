@@ -26,7 +26,7 @@ try {
     New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
 
     @{
@@ -44,8 +44,8 @@ try {
 
     @{
         plan_status = 'PROCEED'
-        expected_test_class = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest'
-        expected_test_method = 'handleTaskResponse_successAiApplyClaimResult_triggersAutoFlow'
+        expected_test_class = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest'
+        expected_test_method = 'handleTaskResponse_successExampleApplyClaimResult_triggersAutoFlow'
         side_effects = @(
             'real processor entry invokes the auto-flow owner with caseId/task/result context',
             'completion log side effect is retained'
@@ -55,12 +55,12 @@ try {
             'verify(caseExamineLogService).saveExamineLog(...)'
         )
         test_infrastructure_check = @{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             blocker_reason = 'none'
         }
     } | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_RESULT.json') -Encoding UTF8
@@ -69,9 +69,9 @@ try {
         schema_version = 1
         slice_index = 1
         authorization = 'ALLOW'
-        real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)'
-        production_boundary = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+        real_entry = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+        selected_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)'
+        production_boundary = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
         downstream_side_effect_or_output = 'real processor entry invokes the auto-flow owner with caseId/task/result context'
         red_expectation = 'business assertion fails before the auto-flow owner is invoked'
         issues = @()
@@ -82,18 +82,18 @@ try {
         slice_index = 1
         authorization = 'ALLOW'
         can_proceed = $true
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)'
-        selected_real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        resolved_signature = @{ selected_carrier = @{ class_name = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor'; visibility = 'public'; formatted = 'void com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)' } }
+        selected_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)'
+        selected_real_entry = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+        resolved_signature = @{ selected_carrier = @{ class_name = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor'; visibility = 'public'; formatted = 'void com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)' } }
         blockers = @()
     } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $replayRoot 'CALLABLE_CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
 
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorAutoFlowTest.java#handleTaskResponse_successAiApplyClaimResult_triggersAutoFlow
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorAutoFlowTest.java#handleTaskResponse_successExampleApplyClaimResult_triggersAutoFlow
 downstream_output_or_side_effect: real processor entry invokes the auto-flow owner with caseId/task/result context
-production_boundary: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
+production_boundary: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 red_assertion: business assertion fails before the auto-flow owner is invoked
 expected_green_assertion: auto-flow owner receives caseId/task/result context
 must_not_behavior: do not use helper/static/mock/dto-only proof as closure
@@ -115,11 +115,11 @@ green_change_boundary: real task processor invokes production auto-flow owner
     $contextGate = Get-Content -LiteralPath (Join-Path $replayRoot 'REPLAY_CONTEXT_INDEX_CONTRACT_CHECK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 
     Assert-True ([string]$runCard.status -eq 'ALLOW') 'run card must be ALLOW after command inference'
-    Assert-True ([string]$runCard.existing_test_harness_module -eq 'claim-server') 'run card must infer claim-server harness from PLAN_RESULT.json'
-    Assert-True ([string]$runCard.red_command -match '-f\s+"?.*worktree\\pom\.xml"?\s+-pl\s+claim-server\s+-am') 'run card red command must use isolated root POM and claim-server -am'
-    Assert-True ([string]$runCard.red_command -match '-Dtest=com\.huize\.claim\.core\.ai\.task\.AiApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_successAiApplyClaimResult_triggersAutoFlow') 'run card red command must target expected class and method'
+    Assert-True ([string]$runCard.existing_test_harness_module -eq 'example-server') 'run card must infer example-server harness from PLAN_RESULT.json'
+    Assert-True ([string]$runCard.red_command -match '-f\s+"?.*worktree\\pom\.xml"?\s+-pl\s+example-server\s+-am') 'run card red command must use isolated root POM and example-server -am'
+    Assert-True ([string]$runCard.red_command -match '-Dtest=com\.huize\.claim\.core\.ai\.task\.ExampleApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_successExampleApplyClaimResult_triggersAutoFlow') 'run card red command must target expected class and method'
     Assert-True ([string]$runnable.status -eq 'AUTHORIZED') 'runnable authorization must pass after command inference'
-    Assert-True ([string]$runnable.test_harness_module -eq 'claim-server') 'runnable authorization must expose inferred harness module'
+    Assert-True ([string]$runnable.test_harness_module -eq 'example-server') 'runnable authorization must expose inferred harness module'
     Assert-True ([string]$preGate.status -eq 'PASS') 'pre-slice authorization gate must pass inferred run card'
     Assert-True ([string]$proofGate.status -eq 'PASS') 'proof-type gate must not compare proof_required assertions as proof_type'
     Assert-True ([string]$proofGate.proof_type -eq 'real_entry_behavior') 'core_entry forced exact_contract_slice must normalize to real_entry_behavior'

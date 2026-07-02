@@ -60,7 +60,7 @@ try {
         layer_summary = [ordered]@{ Service = 2 }
         files = @(
             [ordered]@{
-                path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+                path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
                 layer = 'Service'
                 weight = 'HIGH'
                 is_test = $false
@@ -69,7 +69,7 @@ try {
                 deletions = 0
             },
             [ordered]@{
-                path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+                path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java'
                 layer = 'Service'
                 weight = 'HIGH'
                 is_test = $false
@@ -88,11 +88,11 @@ try {
         forced_requirement_family = 'core_entry'
         forced_slice_type = 'exact_contract_slice'
         authorization = 'ALLOW'
-        real_entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-        selected_carrier = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
-        production_boundary = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
+        real_entry = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
+        selected_carrier = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
+        production_boundary = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
         downstream_side_effect_or_output = 'captured InputData.policy_num and InputData.insure_num are populated after rebuild'
-        red_expectation = 'business assertion should fail in AiPolicyNumSourceChainTest.shouldFillPolicyAndInsureFromBackendSources before production change'
+        red_expectation = 'business assertion should fail in AiPolicyNumSourceChainTest.shouldFillFromBackendSources before production change'
         authorization_note = 'test fixture'
     })
 
@@ -100,11 +100,11 @@ try {
         status = 'READY'
         red_result = 'PENDING_BUSINESS_ASSERTION'
         green_result = 'PENDING'
-        test_name = 'AiPolicyNumSourceChainTest.shouldFillPolicyAndInsureFromBackendSources'
-        entry_call = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+        test_name = 'AiPolicyNumSourceChainTest.shouldFillFromBackendSources'
+        entry_call = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
         expected_writes_or_outputs = @(
             'captured InputData.policy_num equals CaseRoute.policyNo from backend source extraction',
-            'captured InputData.insure_num equals Insure.insureNo queried by policy number'
+            'captured InputData.insure_num equals Insure.recordNo queried by policy number'
         )
     })
 
@@ -122,10 +122,10 @@ try {
     Write-JsonFile -Path (Join-Path $authRoot 'SOURCE_CHAIN_CONTRACT.json') -Value ([ordered]@{
         required_source_chain = $true
         next_required_slice = [ordered]@{
-            entry = 'AiClaimDataAssemblyHelper + AiApplyClaimService + AiCalculateLossService'
-            carrier = 'CaseRoute.policyNo / Insure.insureNo -> RequestBuildContext -> AiClaimBaseRequest -> AiClaimBaseTaskData -> InputData.policy_num/InputData.insure_num'
+            entry = 'ExampleDataAssemblyHelper + ExampleApplyClaimService + ExampleCalculatorService'
+            carrier = 'CaseRoute.policyNo / Insure.recordNo -> RequestBuildContext -> ExampleBaseRequest -> ExampleBaseTaskData -> InputData.policy_num/InputData.insure_num'
             slice_type = 'exact_contract_slice'
-            test_name = 'AiPolicyNumSourceChainTest.shouldFillPolicyAndInsureFromBackendSources'
+            test_name = 'AiPolicyNumSourceChainTest.shouldFillFromBackendSources'
         }
     })
 
@@ -133,9 +133,9 @@ try {
 # First Slice Proof Plan
 
 highest_weight_open_gate: core_entry
-first_red_test: AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum
-selected_carrier: AiApplyClaimApiTaskProcessor.rebuildTaskData()
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+first_red_test: ExampleApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum
+selected_carrier: ExampleApplyClaimApiTaskProcessor.rebuildTaskData()
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)
 '@ | Set-Content -LiteralPath (Join-Path $authRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $authorizePath `
@@ -143,7 +143,7 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
         -SliceIndex 1 `
         -ForcedRequirementFamily 'core_entry' `
         -ForcedSliceType 'exact_contract_slice' `
-        -ForcedSiblingSurface 'CaseRoute.policyNo / Insure.insureNo -> InputData.policy_num/InputData.insure_num' | Out-Null
+        -ForcedSiblingSurface 'CaseRoute.policyNo / Insure.recordNo -> InputData.policy_num/InputData.insure_num' | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Authorize-PreSliceEvidence failed with exit code $LASTEXITCODE" }
 
     $auth = Get-Content -LiteralPath (Join-Path $authRoot 'PRE_SLICE_AUTHORIZATION_01.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -164,8 +164,8 @@ input_data SHALL include policy_num and insure_num.
 
     $sourceContract = Get-Content -LiteralPath (Join-Path $sourceRoot 'SOURCE_CHAIN_CONTRACT.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $cases += (Assert-True -Name 'source_chain_uses_rebuild_mode' -Condition ([string]$sourceContract.source_chain_mode -eq 'task_processor_rebuild'))
-    $cases += (Assert-True -Name 'source_chain_binds_task_processors' -Condition ([string]$sourceContract.next_required_slice.entry -match 'AiApplyClaimApiTaskProcessor\.rebuildTaskData' -and [string]$sourceContract.next_required_slice.entry -match 'AiCalculateLossApiTaskProcessor\.rebuildTaskData'))
-    $cases += (Assert-True -Name 'source_chain_avoids_helper_expansion' -Condition ([string]$sourceContract.next_required_slice.entry -notmatch 'AiClaimDataAssemblyHelper \+ AiApplyClaimService'))
+    $cases += (Assert-True -Name 'source_chain_binds_task_processors' -Condition ([string]$sourceContract.next_required_slice.entry -match 'ExampleApplyClaimApiTaskProcessor\.rebuildTaskData' -and [string]$sourceContract.next_required_slice.entry -match 'ExampleCalculatorApiTaskProcessor\.rebuildTaskData'))
+    $cases += (Assert-True -Name 'source_chain_avoids_helper_expansion' -Condition ([string]$sourceContract.next_required_slice.entry -notmatch 'ExampleDataAssemblyHelper \+ ExampleApplyClaimService'))
 
     [ordered]@{
         status = 'PASS'

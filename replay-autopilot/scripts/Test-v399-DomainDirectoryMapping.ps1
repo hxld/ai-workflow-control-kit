@@ -19,9 +19,9 @@ if ($domainDirectoryMap.ContainsKey($oraclePrimaryDomain)) {
 }
 
 $oracleProdFiles = @(
-    'claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java',
-    'claim-core/src/main/java/com/huize/claim/core/calculate/service/ClaimCalculationBookService.java',
-    'claim-core/src/main/java/com/huize/claim/core/push/service/PushTaskService.java'
+    'example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java',
+    'example-core/src/main/java/com/example/project/core/calculate/service/ClaimCalculationBookService.java',
+    'example-core/src/main/java/com/example/project/core/push/service/PushTaskService.java'
 )
 
 $domainFilteredFiles = @($oracleProdFiles | Where-Object {

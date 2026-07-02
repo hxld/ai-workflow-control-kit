@@ -27,7 +27,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v541-green-bom-
 try {
     $worktree = Join-Path $tempRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $worktree | Out-Null
-    $implFile = Join-Path $worktree 'claim-core\src\main\java\Example.java'
+    $implFile = Join-Path $worktree 'example-core\src\main\java\Example.java'
     Write-TextFile -Path $implFile -Value @"
 class Example {
     void rebuild() {
@@ -38,7 +38,7 @@ class Example {
 
     $implementedJson = Join-Path $tempRoot 'implemented.json'
     $familiesJson = Join-Path $tempRoot 'families.json'
-    ConvertTo-Json -InputObject @('claim-core/src/main/java/Example.java') -Depth 6 |
+    ConvertTo-Json -InputObject @('example-core/src/main/java/Example.java') -Depth 6 |
         Set-Content -LiteralPath $implementedJson -Encoding UTF8
     '"core_entry"' | Set-Content -LiteralPath $familiesJson -Encoding UTF8
 

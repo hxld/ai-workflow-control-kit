@@ -33,7 +33,7 @@ try {
 # Test Charter
 
 ## Overview
-- test_surface: claim-server test harness (JUnit + Mockito, no Spring)
+- test_surface: example-server test harness (JUnit + Mockito, no Spring)
 - entry_point: AbstractSampleProcessor.handleTaskResponse -> SampleProcessor.handleTaskResponse
 - test_class: SampleProcessorTest (NEW)
 - test_method: shouldTriggerAutoFlow_whenConditionsMet

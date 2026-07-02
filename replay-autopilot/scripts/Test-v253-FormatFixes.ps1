@@ -30,7 +30,7 @@ try {
 
 ## Selected Real Entry
 
-Primary Entry: InsureCompanyPushFacade.returnTicket(ReturnTicketParam)
+Primary Entry: ExamplePushFacade.returnTicket(ExampleTicketParam)
 
 ## First Executable Slice
 
@@ -68,7 +68,7 @@ Phase 0 analysis complete.
 
 ## Selected Real Entry
 
-Primary Entry: InsureCompanyPushFacade.returnTicket(ReturnTicketParam)
+Primary Entry: ExamplePushFacade.returnTicket(ExampleTicketParam)
 
 ## First Executable Slice
 

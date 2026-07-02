@@ -212,8 +212,8 @@ function Get-RootFingerprints {
 
     $fps = New-Object System.Collections.Generic.List[string]
     $hasPolicyRebuildIssue = $Text -match 'policy_rebuild_(?:test_module_must_be_claim_server|expected_test_class_must_use_claim_server_harness|compile_dry_run_must_use_claim_server_am_test_compile|plan_invalid:test_harness_claim_core)'
-    $hasPolicyContext = $Text -match 'policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor'
-    $hasClaimCoreHarness = $Text -match 'test_module_for_target["''\s:=]+claim-core|-pl\s+claim-core\s+-am\s+test-compile'
+    $hasPolicyContext = $Text -match 'policyNum|insureNum|rebuildTaskData|ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor'
+    $hasClaimCoreHarness = $Text -match 'test_module_for_target["''\s:=]+example-core|-pl\s+example-core\s+-am\s+test-compile'
     if ($hasPolicyRebuildIssue -or ($hasPolicyContext -and $hasClaimCoreHarness)) {
         Add-UniqueString -List $fps -Value 'policy_rebuild_claim_core_harness'
     }

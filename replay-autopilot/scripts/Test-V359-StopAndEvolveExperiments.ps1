@@ -54,7 +54,7 @@ $carrierScript = Join-Path $PSScriptRoot '..\scripts\verify_carrier_signature.py
 
 # Test Case 1: Valid signature match
 $testInput1 = @{
-    plan_carrier = "AiClaimDataService.handle"
+    plan_carrier = "ExampleDataService.handle"
     worktree_path = $worktree
 } | ConvertTo-Json -Depth 3
 

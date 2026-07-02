@@ -45,11 +45,11 @@ try {
         slice_index = 4
         slice_status = 'DONE'
         implemented_files = @(
-            'claim-web/src/main/java/com/huize/claim/web/claim/system/controller/PushConfigController.java'
+            'example-web/src/main/java/com/example/project/web/claim/system/controller/PushConfigController.java'
         )
         current_slice_changed_files = @(
-            'claim-web/src/main/java/com/huize/claim/web/claim/system/controller/PushConfigController.java',
-            'claim-web/src/test/java/com/huize/claim/web/claim/system/controller/PushConfigControllerTest.java'
+            'example-web/src/main/java/com/example/project/web/claim/system/controller/PushConfigController.java',
+            'example-web/src/test/java/com/example/project/web/claim/system/controller/PushConfigControllerTest.java'
         )
         tests = @(
             [ordered]@{
@@ -84,11 +84,11 @@ try {
         slice_index = 5
         slice_status = 'DONE'
         implemented_files = @(
-            'claim-web/src/main/java/com/huize/claim/web/claim/system/controller/PushConfigController.java'
+            'example-web/src/main/java/com/example/project/web/claim/system/controller/PushConfigController.java'
         )
         current_slice_changed_files = @(
-            'claim-web/src/main/java/com/huize/claim/web/claim/system/controller/PushConfigController.java',
-            'claim-web/src/test/java/com/huize/claim/web/claim/system/controller/PushConfigControllerTest.java'
+            'example-web/src/main/java/com/example/project/web/claim/system/controller/PushConfigController.java',
+            'example-web/src/test/java/com/example/project/web/claim/system/controller/PushConfigControllerTest.java'
         )
         tests = @(
             [ordered]@{

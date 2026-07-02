@@ -24,7 +24,7 @@ function New-PlanFixture {
     New-Item -ItemType Directory -Force -Path $Root | Out-Null
     Write-Utf8 (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') (@{
         files = @(
-            @{ path = 'claim-core/src/main/java/com/acme/ExistingCoreFlowService.java'; is_production = $true; weight = 'HIGH' }
+            @{ path = 'example-core/src/main/java/com/acme/ExistingCoreFlowService.java'; is_production = $true; weight = 'HIGH' }
         )
     } | ConvertTo-Json -Depth 6)
     Write-Utf8 (Join-Path $Root 'PLAN_RESULT.md') @'
@@ -35,7 +35,7 @@ first_red_test: ExistingCoreFlowServiceTest.shouldCloseCoreFlow
 oracle_production_file_overlap: 100%
 oracle_high_weight_coverage: 1/1
 carrier_search: performed
-carrier_search_queries: rg "ExistingCoreFlowService" claim-core; rg "shouldCloseCoreFlow" claim-server; rg "process" claim-core
+carrier_search_queries: rg "ExistingCoreFlowService" example-core; rg "shouldCloseCoreFlow" example-server; rg "process" example-core
 existing_production_carriers: ExistingCoreFlowService.process
 selected_carrier_from_search: ExistingCoreFlowService.process
 new_service_proposed: false
@@ -71,7 +71,7 @@ real_carrier_kind: production_service_method
 minimum_side_effect_or_blocker: service triggers DB write
 forbidden_substitute_check: passed
 required_sibling_surfaces: none_with_reason: core entry only
-production_boundary: claim-core/src/main/java/com/acme/ExistingCoreFlowService.java
+production_boundary: example-core/src/main/java/com/acme/ExistingCoreFlowService.java
 expected_production_diff: ExistingCoreFlowService behavior
 red_expectation: assertion failure before implementation
 green_minimum_implementation: implement real service behavior
@@ -83,7 +83,7 @@ coverage_cap_if_missing: 0
 pattern_to_follow: ExistingCoreFlowService.process
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "ExistingCoreFlowService" claim-core
+pattern_evidence_source: rg "ExistingCoreFlowService" example-core
 '@
 
 $missingRoot = Join-Path $TestRoot 'missing-selected-real-entry'

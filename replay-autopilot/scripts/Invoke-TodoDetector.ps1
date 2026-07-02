@@ -42,11 +42,11 @@ try {
     if ($Paths) {
         $pythonArgs += $Paths
     } else {
-        # Default: check claim-core implementation directory
+        # Default: check example-core implementation directory
         $implDirs = @(
-            "claim-core\src\main\java",
-            "claim-domain\src\main\java",
-            "claim-provider\src\main\java"
+            "example-core\src\main\java",
+            "example-domain\src\main\java",
+            "example-provider\src\main\java"
         )
 
         foreach ($dir in $implDirs) {

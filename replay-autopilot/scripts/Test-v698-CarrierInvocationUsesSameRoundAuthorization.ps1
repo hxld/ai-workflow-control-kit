@@ -33,8 +33,8 @@ try {
     $replayRoot = Join-Path $tempRoot 'replay'
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null
 
-    $entry = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
-    $signature = 'void com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog(Long, String, String, String)'
+    $entry = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
+    $signature = 'void com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog(Long, String, String, String)'
     $contractPath = Join-Path $replayRoot 'SLICE_EXECUTION_CONTRACT_05.json'
     $indexPath = Join-Path $replayRoot 'replay-context-index.json'
     $outputPath = Join-Path $replayRoot 'CARRIER_INVOCATION_CONTRACT_05.json'
@@ -52,7 +52,7 @@ try {
     })
     Write-JsonFile $indexPath ([ordered]@{
         carrier_candidates = @(
-            [ordered]@{ signature = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse' }
+            [ordered]@{ signature = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse' }
         )
     })
 

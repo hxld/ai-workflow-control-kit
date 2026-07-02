@@ -49,7 +49,7 @@ try {
         slice_index = 1
         slice_status = 'PARTIAL'
         touched_requirement_families = @('core_entry')
-        implemented_files = @('claim-core/src/main/java/acme/TaskProcessor.java')
+        implemented_files = @('example-core/src/main/java/acme/TaskProcessor.java')
     })
     Write-JsonFile (Join-Path $tempRoot 'SLICE_VERIFY_01.json') ([ordered]@{
         slice_index = 1
@@ -68,7 +68,7 @@ try {
         slice_status = 'PARTIAL'
         touched_requirement_families = @('wire_payload_api_contract')
         closed_requirement_families = @()
-        implemented_files = @('claim-core/src/main/java/acme/PayloadProcessor.java')
+        implemented_files = @('example-core/src/main/java/acme/PayloadProcessor.java')
         gap_flags = @('exact_contract_gap', 'exact_contract_minimum_coverage_gap')
     })
     Write-JsonFile (Join-Path $tempRoot 'SLICE_VERIFY_02.json') ([ordered]@{
@@ -123,7 +123,7 @@ try {
     Write-JsonFile (Join-Path $tempRoot 'SLICE_RESULT_03.json') ([ordered]@{
         slice_index = 3
         slice_status = 'DONE'
-        implemented_files = @('claim-core/src/main/java/acme/Finalizer.java')
+        implemented_files = @('example-core/src/main/java/acme/Finalizer.java')
     })
     Write-JsonFile (Join-Path $tempRoot 'SLICE_VERIFY_03.json') ([ordered]@{
         slice_index = 3

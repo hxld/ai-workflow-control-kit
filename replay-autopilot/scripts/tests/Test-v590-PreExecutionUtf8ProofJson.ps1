@@ -28,12 +28,12 @@ try {
     if (Test-Path -LiteralPath $TestRoot) { Remove-Item -LiteralPath $TestRoot -Recurse -Force }
     $replayRoot = Join-Path $TestRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\com\example') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\com\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example') | Out-Null
 
-    Write-Utf8 (Join-Path $worktree 'claim-server\pom.xml') '<project />'
-    Write-Utf8 (Join-Path $worktree 'claim-server\src\test\java\com\example\ExistingTaskProcessorTest.java') 'public class ExistingTaskProcessorTest {}'
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\example\ExistingTaskProcessor.java') @'
+    Write-Utf8 (Join-Path $worktree 'example-server\pom.xml') '<project />'
+    Write-Utf8 (Join-Path $worktree 'example-server\src\test\java\com\example\ExistingTaskProcessorTest.java') 'public class ExistingTaskProcessorTest {}'
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\ExistingTaskProcessor.java') @'
 package com.example;
 public class ExistingTaskProcessor {
     public void handleTaskResponse() {}
@@ -42,23 +42,23 @@ public class ExistingTaskProcessor {
 
     $planResult = [ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/example/ExistingTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/ExistingTaskProcessor.java'
         expected_test_class = 'ExistingTaskProcessorTest'
         side_effects = @(@{ table = 't_case'; operation = 'update' })
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
     }
     $planResult | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $replayRoot 'PLAN_RESULT.json') -Encoding UTF8
     Write-Utf8 (Join-Path $replayRoot 'FEATURE_CLASSIFICATION.json') '{"classification":"data_migration","read_only":false,"verifier_adjustments":{"stateful_side_effect_required":true}}'
-    Write-Utf8 (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') '{"exit_code":0,"command":"mvn -f worktree/pom.xml -pl claim-server -am test-compile","stdout_tail":"BUILD SUCCESS"}'
+    Write-Utf8 (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') '{"exit_code":0,"command":"mvn -f worktree/pom.xml -pl example-server -am test-compile","stdout_tail":"BUILD SUCCESS"}'
     Write-Utf8 (Join-Path $replayRoot 'TEST_CHARTER.md') 'Entry Point: ExistingTaskProcessor.handleTaskResponse; Test Class: ExistingTaskProcessorTest; Side Effects: verify DB update'
     $utf8AssertionText = 'AI' + [string]([char]0x7ED3) + [string]([char]0x8BBA) + [string]([char]0x514D) + [string]([char]0x590D) + [string]([char]0x6838)
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
@@ -72,7 +72,7 @@ real_carrier_kind: production_entry_or_service
 minimum_side_effect_or_blocker: update t_case status
 forbidden_substitute_check: passed
 required_sibling_surfaces: none_with_reason: fixture
-production_boundary: claim-core/src/main/java/com/example/ExistingTaskProcessor.java
+production_boundary: example-core/src/main/java/com/example/ExistingTaskProcessor.java
 expected_production_diff: ExistingTaskProcessor.java
 red_expectation: assertion fails before production update
 green_minimum_implementation: update t_case status and emit log
@@ -84,8 +84,8 @@ coverage_cap_if_missing: 0
 pattern_to_follow: ExistingTaskProcessor.handleTaskResponse
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "class ExistingTaskProcessor" claim-core
-target_carrier_file_path: claim-core/src/main/java/com/example/ExistingTaskProcessor.java
+pattern_evidence_source: rg "class ExistingTaskProcessor" example-core
+target_carrier_file_path: example-core/src/main/java/com/example/ExistingTaskProcessor.java
 target_carrier_line_number: 2
 expected_test_class: ExistingTaskProcessorTest
 expected_test_method: testHandleTaskResponse

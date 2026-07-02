@@ -26,7 +26,7 @@ function New-NoProgressRoot {
     )
 
     New-Item -ItemType Directory -Force -Path $Root | Out-Null
-    Write-Text (Join-Path $Root 'PLAN_CONTRACT_VERIFY.json') '{"verification_status":"FAIL","issues":["policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.buildRequestCommon"]}'
+    Write-Text (Join-Path $Root 'PLAN_CONTRACT_VERIFY.json') '{"verification_status":"FAIL","issues":["policy_rebuild_plan_missing:ExampleDataAssemblyHelper.buildRequestCommon"]}'
     Write-Text (Join-Path $Root 'AUTOPILOT_DECISION.md') @'
 # Autopilot Decision
 

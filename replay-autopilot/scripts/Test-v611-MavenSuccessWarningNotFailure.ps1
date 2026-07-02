@@ -29,14 +29,14 @@ function New-PlanFixture {
     $replayRoot = Join-Path $Root 'replay'
     $worktree = Join-Path $Root 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\sample') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\sample') | Out-Null
     '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\pom.xml') -Encoding UTF8
-    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\pom.xml') -Encoding UTF8
+    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
 
     Write-JsonFile (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
-        module = 'claim-server'
+        command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
+        module = 'example-server'
         exit_code = $EvidenceExitCode
         raw_exit_code = $EvidenceExitCode
         timed_out = $false
@@ -46,9 +46,9 @@ function New-PlanFixture {
 
     Write-JsonFile (Join-Path $replayRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 461
-        expected_test_class = 'AiAutoClaimFlowServiceTest'
+        expected_test_class = 'ExampleFlowServiceTest'
         expected_test_method = 'testAutoFlow_AmountWithinFreeReview_CreatesCompensateData'
         side_effects = @(
             [ordered]@{
@@ -59,12 +59,12 @@ function New-PlanFixture {
         )
         expected_assertions = @('verify compensate insert')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = $EvidenceExitCode
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -74,12 +74,12 @@ function New-PlanFixture {
 # FIRST_SLICE_PROOF_PLAN
 
 highest_weight_open_gate: core_entry
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_carrier: AiApplyClaimApiTaskProcessor
-target_subsurface_or_carrier: AiApplyClaimApiTaskProcessor
-target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier: ExampleApplyClaimApiTaskProcessor
+target_subsurface_or_carrier: ExampleApplyClaimApiTaskProcessor
+target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
 target_carrier_line_number: 461
-expected_test_class: AiAutoClaimFlowServiceTest
+expected_test_class: ExampleFlowServiceTest
 expected_test_method: testAutoFlow_AmountWithinFreeReview_CreatesCompensateData
 expected_assertions: ["verify compensate detail insert","verify compensate info insert","verify case status update"]
 expected_side_effects: [{"service":"CompensateService","operation":"insert"}]
@@ -87,8 +87,8 @@ minimum_side_effect_or_blocker: compensate detail write
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
     @'
-Entry Point: AiApplyClaimApiTaskProcessor.handleTaskResponse
-Test Class: AiAutoClaimFlowServiceTest
+Entry Point: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+Test Class: ExampleFlowServiceTest
 DB Verification: mapper insert verification
 Side Effects: compensate detail write
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_CHARTER.md') -Encoding UTF8
@@ -121,8 +121,8 @@ try {
         -Worktree $successFixture.Worktree | Out-Null
     Assert-True 'schema_accepts_build_success_with_model_error_warning' ($LASTEXITCODE -eq 0) "exit=$LASTEXITCODE"
 
-    New-Item -ItemType Directory -Force -Path (Join-Path $successFixture.Worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
-    'class AiApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $successFixture.Worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $successFixture.Worktree 'example-core\src\main\java\com\example\project\core\ai\task') | Out-Null
+    'class ExampleApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $successFixture.Worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java') -Encoding UTF8
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $preExecutionScript `
         -ReplayRoot $successFixture.ReplayRoot `
         -Worktree $successFixture.Worktree `

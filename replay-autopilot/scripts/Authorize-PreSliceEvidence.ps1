@@ -143,7 +143,7 @@ function Get-PlanNewServiceWhitelist {
     carrier rank checks during creation. Format:
 
     ## NEW_SERVICE_WHITELIST
-    - AiAutoClaimFlowService
+    - ExampleFlowService
     - AiNewServiceProcessor
 
     Returns array of service name strings.

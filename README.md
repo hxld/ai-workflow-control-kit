@@ -213,7 +213,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\Run-Una
 
 `workflow-history/CHANGELOG.md` 是本 kit 工作流变更的内置主索引。每条具体变更放在 `workflow-history/changes/` 下，`workflow-history/latest.json` 指向最新的那条。
 
-`replay-autopilot` 会先从 `workflow-history` 发现最新工作流版本，对旧安装再回退到遗留的历史位置。这让干净的仓库保持自包含，避免对 `hxld_vault` 这类个人知识库的硬依赖。
+`replay-autopilot` 会先从 `workflow-history` 发现最新工作流版本，对旧安装再回退到遗留的历史位置。这让干净的仓库保持自包含，避免对个人知识库的硬依赖。
 
 当前 replay 控制面以 `workflow-history/latest.json` 为机器入口；`CURRENT_VERSION.md` 记录知识/技能演进版本，两者服务不同用途，不能互相替代。
 
@@ -259,6 +259,6 @@ Requirements:
 
 ## 可选的知识仓库
 
-本 kit 不需要 `hxld_vault` 或任何其他个人知识库。
+本 kit 不需要个人知识库或任何其他个人配置。
 
 如果存在知识备份仓库，可以作为可选的安装参数传入。如果不存在，工作流 kit 也应当能正常安装和运行。

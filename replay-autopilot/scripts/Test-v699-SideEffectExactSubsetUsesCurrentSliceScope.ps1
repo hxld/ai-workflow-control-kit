@@ -39,8 +39,8 @@ try {
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
 
     Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') @'
-The global feature still mentions `AiApplyClaimApiTaskProcessor.handleTaskResponse`,
-`AiCalculateLossApiTaskProcessor.handleTaskResponse`, `ClaimAgentFacadeImpl.batchQueryCaseDetail`,
+The global feature still mentions `ExampleApplyClaimApiTaskProcessor.handleTaskResponse`,
+`ExampleCalculatorApiTaskProcessor.handleTaskResponse`, `ClaimAgentFacadeImpl.batchQueryCaseDetail`,
 and `理算明细.png`; these belong to other families and must not be imposed on the lifecycle slice.
 '@
     Write-Utf8 (Join-Path $replayRoot 'ROUND_CONTRACT.md') ''
@@ -56,7 +56,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
                 id = 'lifecycle_cleanup_retention'
                 required = $true
                 status = 'OPEN'
-                first_executable_carrier = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+                first_executable_carrier = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
                 proof_required = @('ai_log_row', 'system_operator', 'task_completion_rows', 'negative_gate_failure_log')
                 forbidden_proof = @('log_message_constant_only', 'mock_only', 'helper_only')
             }
@@ -70,7 +70,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         -SliceIndex 5 `
         -ForcedRequirementFamily lifecycle_cleanup_retention `
         -ForcedSliceType stateful_success_slice `
-        -ForcedSiblingSurface 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog' | Out-Null
+        -ForcedSiblingSurface 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog' | Out-Null
     Assert-True 'prepare_contracts_exit_zero' ($LASTEXITCODE -eq 0)
 
     $matrix = Get-Content -LiteralPath (Join-Path $replayRoot 'EXACT_CONTRACT_ASSERTION_MATRIX_05.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -81,7 +81,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         (@('ai_log_row', 'system_operator', 'task_completion_rows', 'negative_gate_failure_log') | Where-Object { $matrixLiterals -notcontains $_ }).Count -eq 0
     ) ($matrixLiterals -join ',')
     Assert-True 'matrix_excludes_global_exact_contract_debt' (
-        ($matrixLiterals -join ',') -notmatch 'AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor|ClaimAgentFacadeImpl|理算明细'
+        ($matrixLiterals -join ',') -notmatch 'ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor|ClaimAgentFacadeImpl|理算明细'
     ) ($matrixLiterals -join ',')
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Build-NextSliceExactContract.ps1') `
@@ -106,11 +106,11 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         required_for_this_slice = $true
         rows = @(
             [ordered]@{
-                literal = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
-                symbol_or_field = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                literal = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+                symbol_or_field = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
                 db_or_wire_or_display = 'behavior'
                 boundary_type = 'behavior'
-                production_boundary = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+                production_boundary = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
                 test_assertion = 'global row must wait for its own slice'
                 status = 'OPEN'
             },
@@ -119,7 +119,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
                 symbol_or_field = 'ai_log_row'
                 db_or_wire_or_display = 'db'
                 boundary_type = 'db'
-                production_boundary = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+                production_boundary = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
                 test_assertion = 'assert ai log row through lifecycle carrier'
                 status = 'OPEN'
             }
@@ -138,7 +138,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
     Assert-True 'stale_global_row_skipped_from_subset' (
         ($filteredLiterals.Count -eq 1) -and
         ($filteredLiterals[0] -eq 'ai_log_row') -and
-        (($warnings -join ',') -match 'out_of_slice_exact_row_skipped:AiApplyClaimApiTaskProcessor.handleTaskResponse')
+        (($warnings -join ',') -match 'out_of_slice_exact_row_skipped:ExampleApplyClaimApiTaskProcessor.handleTaskResponse')
     ) ($filtered | ConvertTo-Json -Depth 16)
 
     Write-Host ''

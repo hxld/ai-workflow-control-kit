@@ -299,7 +299,7 @@ function Get-FingerprintsFromText {
     $fingerprints = New-Object System.Collections.Generic.List[string]
 
     $patterns = [ordered]@{
-        'policy_rebuild_claim_core_harness' = 'policy_rebuild_(?:test_module_must_be_claim_server|expected_test_class_must_use_claim_server_harness|compile_dry_run_must_use_claim_server_am_test_compile|plan_invalid:test_harness_claim_core)|(?s)(?=.*(?:policyNum|insureNum|rebuildTaskData|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor))(?=.*(?:test_module_for_target["''\s:=]+claim-core|-pl\s+claim-core\s+-am\s+test-compile))'
+        'policy_rebuild_claim_core_harness' = 'policy_rebuild_(?:test_module_must_be_claim_server|expected_test_class_must_use_claim_server_harness|compile_dry_run_must_use_claim_server_am_test_compile|plan_invalid:test_harness_claim_core)|(?s)(?=.*(?:policyNum|insureNum|rebuildTaskData|ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor))(?=.*(?:test_module_for_target["''\s:=]+example-core|-pl\s+example-core\s+-am\s+test-compile))'
         'wrong_test_surface' = 'wrong_test_surface|wrong test surface|helper/static green|static-only|mock-only|test surface'
         'core_entry_unclosed' = 'core_entry_unclosed|core entry|real entry.*missing|entry.*not closed'
         'side_effect_ledger_gap' = 'side_effect_ledger_gap|side effect|DB side effect|state.*progress|transaction'

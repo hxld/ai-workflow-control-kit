@@ -103,12 +103,12 @@ try {
   "plan_status": "BLOCKED",
   "blocker": "PLAN_BLOCKED_TEST_INFRASTRUCTURE",
   "test_infrastructure_check": {
-    "test_module_for_target": "claim-server",
+    "test_module_for_target": "example-server",
     "test_module_has_dependencies": false,
     "test_harness_available": false,
     "can_import_production_classes": true,
     "compilation_dry_run_exit_code": 1,
-    "compilation_dry_run_command": "mvn --% -f D:\\replay\\worktree\\pom.xml -pl claim-server -am test-compile",
+    "compilation_dry_run_command": "mvn --% -f D:\\replay\\worktree\\pom.xml -pl example-server -am test-compile",
     "compilation_dry_run_evidence_file": "D:\\replay\\TEST_INFRASTRUCTURE_DRY_RUN.json",
     "blocker_reason": "Mockito dependency not found in any allowed worktree POM; prompt forbids pom.xml edits"
   }

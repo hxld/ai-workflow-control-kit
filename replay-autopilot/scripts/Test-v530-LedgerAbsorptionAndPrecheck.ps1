@@ -109,7 +109,7 @@ try {
         production_boundary = 'TaskProcessor.rebuildTaskData'
         proof_kind = 'real_entry_behavior'
         red_expectation = 'policyNum and insureNum missing before fix'
-        implemented_files = @('claim-core/src/main/java/acme/TaskProcessor.java', 'claim-server/src/test/java/acme/TaskProcessorTest.java')
+        implemented_files = @('example-core/src/main/java/acme/TaskProcessor.java', 'example-server/src/test/java/acme/TaskProcessorTest.java')
         touched_requirement_families = @('core_entry')
         closed_requirement_families = @('core_entry')
         gap_flags = @()

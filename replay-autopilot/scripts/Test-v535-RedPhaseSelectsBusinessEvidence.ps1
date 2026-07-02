@@ -34,13 +34,13 @@ try {
     Write-JsonFile $slice ([ordered]@{
         slice_index = 1
         implemented_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java'
         )
         current_slice_changed_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
         tests = @(
             [ordered]@{ phase = 'RED'; command = 'test-compile'; result = 'pass'; evidence = 'Test class compiled successfully' },

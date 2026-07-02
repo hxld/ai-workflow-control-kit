@@ -62,11 +62,11 @@ first_red_test: ExampleTest#red
 
     $fqcnRoot = Join-Path $tmp 'fqcn-method-carrier'
     $fqcnWorktree = Join-Path $fqcnRoot 'worktree'
-    $fqcnCarrierFile = Join-Path $fqcnWorktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java'
+    $fqcnCarrierFile = Join-Path $fqcnWorktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java'
     Write-Utf8 $fqcnCarrierFile @'
-package com.huize.claim.core.ai.task;
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
+public class ExampleApplyClaimApiTaskProcessor {
     public void handleTaskResponse() {
     }
 }
@@ -76,9 +76,9 @@ public class AiApplyClaimApiTaskProcessor {
 
 plan_status: PROCEED
 carrier_search: performed
-carrier_search_queries: rg -n "class AiApplyClaimApiTaskProcessor" claim-core/src/main/java --glob "*.java"; rg -n "handleTaskResponse\(" claim-core/src/main/java --glob "*.java"; rg -n "AiApplyClaimApiTaskProcessor" claim-core/src/main/java --glob "*.java"
-existing_production_carriers: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_carrier_from_search: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
+carrier_search_queries: rg -n "class ExampleApplyClaimApiTaskProcessor" example-core/src/main/java --glob "*.java"; rg -n "handleTaskResponse\(" example-core/src/main/java --glob "*.java"; rg -n "ExampleApplyClaimApiTaskProcessor" example-core/src/main/java --glob "*.java"
+existing_production_carriers: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier_from_search: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 new_service_proposed: false
 first_slice: S1_core_entry
 first_red_test: ExampleTest#red
@@ -88,7 +88,7 @@ first_red_test: ExampleTest#red
     $fqcnVerify = Get-Content -LiteralPath (Join-Path $fqcnRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True (@($fqcnVerify.issues) -notcontains 'carrier_search_selected_carrier_not_found_in_codebase') "FQCN method carrier should resolve to class leaf, issues=$(@($fqcnVerify.issues) -join ';')"
     $assertions++
-    Assert-True ((@($fqcnVerify.warnings) -join "`n") -match "AiApplyClaimApiTaskProcessor'.*found") "Warning should show FQCN class leaf, warnings=$(@($fqcnVerify.warnings) -join ';')"
+    Assert-True ((@($fqcnVerify.warnings) -join "`n") -match "ExampleApplyClaimApiTaskProcessor'.*found") "Warning should show FQCN class leaf, warnings=$(@($fqcnVerify.warnings) -join ';')"
     $assertions++
 
     $missingRoot = Join-Path $tmp 'missing-path-carrier'

@@ -43,14 +43,14 @@ try {
     & git -C $worktree config user.email "replay-autopilot@example.invalid" | Out-Null
     & git -C $worktree config user.name "Replay Autopilot Eval" | Out-Null
 
-    $prodFile1 = 'claim-core/src/main/java/com/acme/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
-    $prodFile2 = 'claim-core/src/main/java/com/acme/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
-    $testFile = 'claim-server/src/test/java/com/acme/claim/core/ai/task/PolicyNumRebuildPathTest.java'
+    $prodFile1 = 'example-core/src/main/java/com/acme/claim/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
+    $prodFile2 = 'example-core/src/main/java/com/acme/claim/core/ai/task/ExampleCalculatorApiTaskProcessor.java'
+    $testFile = 'example-server/src/test/java/com/acme/claim/core/ai/task/PolicyNumRebuildPathTest.java'
 
     Write-Text (Join-Path $worktree $prodFile1) @'
 package com.acme.claim.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
+public class ExampleApplyClaimApiTaskProcessor {
     public TaskData rebuildTaskData(Request request) {
         TaskData taskData = new TaskData();
         taskData.setPolicyNum(request.getPolicyNum());
@@ -62,7 +62,7 @@ public class AiApplyClaimApiTaskProcessor {
     Write-Text (Join-Path $worktree $prodFile2) @'
 package com.acme.claim.core.ai.task;
 
-public class AiCalculateLossApiTaskProcessor {
+public class ExampleCalculatorApiTaskProcessor {
     public TaskData rebuildTaskData(Request request) {
         TaskData taskData = new TaskData();
         taskData.setPolicyNum(request.getPolicyNum());
@@ -91,8 +91,8 @@ import static org.junit.Assert.assertEquals;
 public class PolicyNumRebuildPathTest {
     @Test
     public void testApplyClaimRebuildTaskData_SourceChainAssignsPolicyNumAndInsureNum() {
-        AiApplyClaimApiTaskProcessor processor = new AiApplyClaimApiTaskProcessor();
-        AiCalculateLossApiTaskProcessor lossProcessor = new AiCalculateLossApiTaskProcessor();
+        ExampleApplyClaimApiTaskProcessor processor = new ExampleApplyClaimApiTaskProcessor();
+        ExampleCalculatorApiTaskProcessor lossProcessor = new ExampleCalculatorApiTaskProcessor();
         assertEquals("P2024001", processor.rebuildTaskData(new Request("P2024001", "I2024001")).getPolicyNum());
         assertEquals("I2024001", lossProcessor.rebuildTaskData(new Request("P2024001", "I2024001")).getInsureNum());
     }
@@ -115,8 +115,8 @@ public class PolicyNumRebuildPathTest {
 
     Write-Json (Join-Path $replayRoot 'CARRIER_AUTHORIZATION_01.json') ([ordered]@{
         authorization = 'ALLOW'
-        selected_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-        real_entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+        selected_carrier = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
+        real_entry = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
         downstream_side_effect_or_output = 'rebuildTaskData preserves policyNum and insureNum'
         requires_side_effect_evidence = $false
         requires_exact_contract_assertions = $false
@@ -135,12 +135,12 @@ public class PolicyNumRebuildPathTest {
 
     Write-Text (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
 first_red_test: testApplyClaimRebuildTaskData_SourceChainAssignsPolicyNumAndInsureNum
-selected_carrier: AiApplyClaimApiTaskProcessor and AiCalculateLossApiTaskProcessor
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+selected_carrier: ExampleApplyClaimApiTaskProcessor and ExampleCalculatorApiTaskProcessor
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)
 '@
     Write-Text (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') @'
 first_red_test: testApplyClaimRebuildTaskData_SourceChainAssignsPolicyNumAndInsureNum
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)
 '@
 
     $sliceResultPath = Join-Path $replayRoot 'SLICE_RESULT_01.json'
@@ -149,14 +149,14 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
         slice_status = 'DONE'
         slice_type = 'exact_contract_slice'
         coverage_delta = 100
-        target_subsurface_or_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-        production_boundary = 'AiApplyClaimApiTaskProcessor.java:406-407, AiCalculateLossApiTaskProcessor.java:374-375'
+        target_subsurface_or_carrier = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
+        production_boundary = 'ExampleApplyClaimApiTaskProcessor.java:406-407, ExampleCalculatorApiTaskProcessor.java:374-375'
         proof_kind = 'real_entry_behavior'
         red_expectation = 'GREEN-ONLY scenario - baseline contains oracle fix'
         implemented_files = @($testFile)
         current_slice_changed_files = @($testFile)
         tests = @([ordered]@{
-            command = 'mvn -pl claim-server -am -Dtest=PolicyNumRebuildPathTest test'
+            command = 'mvn -pl example-server -am -Dtest=PolicyNumRebuildPathTest test'
             phase = 'GREEN'
             result = 'pass'
             evidence = 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0'
@@ -167,7 +167,7 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
                 symbol_or_field = 'taskData.setPolicyNum()'
                 db_or_wire_or_display = 'behavior'
                 boundary_type = 'behavior'
-                production_boundary = 'AiApplyClaimApiTaskProcessor.java:406'
+                production_boundary = 'ExampleApplyClaimApiTaskProcessor.java:406'
                 closure_proof = 'Production boundary contains request to taskData assignment'
                 test_assertion = 'assertEquals("P2024001", result.getPolicyNum()) and assertEquals("I2024001", result.getInsureNum())'
                 status = 'CLOSED'
@@ -176,7 +176,7 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
         )
         side_effect_evidence = [ordered]@{
             status = 'CLOSED'
-            entry_call = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+            entry_call = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
             expected_writes_or_outputs = @(
                 'taskData.setPolicyNum(request.getPolicyNum())',
                 'taskData.setInsureNum(request.getInsureNum())'
@@ -187,12 +187,12 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
         }
         behavior_test_charter = [ordered]@{
             proof_kind = 'real_entry_behavior'
-            production_entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
+            production_entry = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
             state_or_output = 'taskData.getPolicyNum() and taskData.getInsureNum() correctly populated'
             must_not = ''
             RED_command = 'N/A (GREEN-ONLY scenario)'
             expected_RED_failure = 'N/A'
-            GREEN_command = 'mvn -pl claim-server -am -Dtest=PolicyNumRebuildPathTest test'
+            GREEN_command = 'mvn -pl example-server -am -Dtest=PolicyNumRebuildPathTest test'
             evidence_file = $testFile
         }
         touched_requirement_families = @('core_entry')
@@ -219,7 +219,7 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) a
         }).Count -eq 0
     ) $verifyJson
     Assert-True 'verifier_backfills_production_files_from_git_status' (
-        @(($verify.implemented_files) | Where-Object { [string]$_ -match 'claim-core/src/main/java/.+AiApplyClaimApiTaskProcessor\.java' }).Count -eq 1
+        @(($verify.implemented_files) | Where-Object { [string]$_ -match 'example-core/src/main/java/.+ExampleApplyClaimApiTaskProcessor\.java' }).Count -eq 1
     ) $verifyJson
 
     Write-Host 'PASS: v528 read-only verifier accepts real diff and behavior evidence'

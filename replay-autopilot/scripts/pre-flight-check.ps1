@@ -20,9 +20,9 @@ function Test-CarrierLayer {
     Validates that a carrier path is in an executable architectural layer.
 
     .DESCRIPTION
-    Checks if the carrier is in claim-api (Facade), claim-web (Controller),
-    or claim-core/facade (Facade implementation). Returns $false for
-    Service layer (claim-core without /facade/) and other internal layers.
+    Checks if the carrier is in example-api (Facade), example-web (Controller),
+    or example-core/facade (Facade implementation). Returns $false for
+    Service layer (example-core without /facade/) and other internal layers.
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -32,18 +32,18 @@ function Test-CarrierLayer {
     # Normalize path
     $CarrierPath = $CarrierPath -replace '\\', '/'
 
-    # Check for Facade layer (claim-api)
-    if ($CarrierPath -match 'claim-api/.*Facade\.java') {
+    # Check for Facade layer (example-api)
+    if ($CarrierPath -match 'example-api/.*Facade\.java') {
         return $true
     }
 
-    # Check for Controller layer (claim-web)
-    if ($CarrierPath -match 'claim-web/.*Controller\.java') {
+    # Check for Controller layer (example-web)
+    if ($CarrierPath -match 'example-web/.*Controller\.java') {
         return $true
     }
 
-    # Check for Facade implementation in claim-core
-    if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
+    # Check for Facade implementation in example-core
+    if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
         return $true
     }
 
@@ -240,7 +240,7 @@ function Test-BackendTaskProcessorOracleReplay {
         $className = [System.IO.Path]::GetFileNameWithoutExtension($path)
         $layer = if ($row.PSObject.Properties.Name -contains 'layer') { [string]$row.layer } else { '' }
         $isBackend = $layer -eq 'Service' -or $path -match '(?i)/(service|task|helper)/' -or $className -match '(?i)(Service|TaskProcessor|Processor)$'
-        $isPublic = $path -match '(?i)/(controller|facade)/|claim-api/|claim-web/'
+        $isPublic = $path -match '(?i)/(controller|facade)/|example-api/|example-web/'
         if ($className -match '(?i)TaskProcessor') { $hasTaskProcessor = $true }
         if (-not $isBackend -or $isPublic) {
             $allBackend = $false

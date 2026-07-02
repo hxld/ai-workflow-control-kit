@@ -45,19 +45,19 @@ function New-ReadOnlyPlanRoot {
     param([string]$Root)
 
     $worktree = Join-Path $Root 'worktree'
-    $testDir = Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\test'
-    $carrierDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
+    $testDir = Join-Path $worktree 'example-server\src\test\java\com\example\project\test'
+    $carrierDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
     New-Item -ItemType Directory -Force -Path $testDir | Out-Null
     New-Item -ItemType Directory -Force -Path $carrierDir | Out-Null
     Write-Text (Join-Path $worktree 'pom.xml') '<project />'
-    Write-Text (Join-Path $worktree 'claim-core\pom.xml') '<project />'
-    Write-Text (Join-Path $worktree 'claim-server\pom.xml') '<project />'
+    Write-Text (Join-Path $worktree 'example-core\pom.xml') '<project />'
+    Write-Text (Join-Path $worktree 'example-server\pom.xml') '<project />'
     Write-Text (Join-Path $testDir 'ExistingHarnessTest.java') 'class ExistingHarnessTest {}'
-    Write-Text (Join-Path $carrierDir 'AiApplyClaimApiTaskProcessor.java') 'public class AiApplyClaimApiTaskProcessor {}'
+    Write-Text (Join-Path $carrierDir 'ExampleApplyClaimApiTaskProcessor.java') 'public class ExampleApplyClaimApiTaskProcessor {}'
 
     $dryRun = [ordered]@{
         exit_code = 0
-        command = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl claim-server -am test-compile"
+        command = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl example-server -am test-compile"
         stdout = 'BUILD SUCCESS'
     }
     Write-Json (Join-Path $Root 'TEST_INFRASTRUCTURE_DRY_RUN.json') $dryRun
@@ -78,9 +78,9 @@ function New-ReadOnlyPlanRoot {
 
     Write-Json (Join-Path $Root 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 385
-        expected_test_class = 'AiApplyClaimApiTaskProcessorRebuildTest'
+        expected_test_class = 'ExampleApplyClaimApiTaskProcessorRebuildTest'
         expected_test_method = 'testRebuildTaskData_preservesPolicyNumAndInsureNum'
         side_effects = @(
             [ordered]@{ memory = 'request.policyNum'; operation = 'set'; value = 'from buildContext.getPolicyNum()' },
@@ -93,12 +93,12 @@ function New-ReadOnlyPlanRoot {
             'assertEquals("I2024001", taskData.getInsureNum())'
         )
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -107,9 +107,9 @@ function New-ReadOnlyPlanRoot {
     Write-Text (Join-Path $Root 'TEST_CHARTER.md') @'
 # Test Charter
 
-- test_surface: claim-server unit harness invoking rebuildTaskData through the selected TaskProcessor carrier
-- entry_point: AiApplyClaimApiTaskProcessor.rebuildTaskData
-- test_class: AiApplyClaimApiTaskProcessorRebuildTest
+- test_surface: example-server unit harness invoking rebuildTaskData through the selected TaskProcessor carrier
+- entry_point: ExampleApplyClaimApiTaskProcessor.rebuildTaskData
+- test_class: ExampleApplyClaimApiTaskProcessorRebuildTest
 - test_method: testRebuildTaskData_preservesPolicyNumAndInsureNum
 - test_scenario: read-only memory propagation from RequestBuildContext to request/taskData
 '@
@@ -118,10 +118,10 @@ function New-ReadOnlyPlanRoot {
 # First Slice Proof Plan
 
 - highest_weight_open_gate: core_entry
-- selected_carrier: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
-- target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+- selected_carrier: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
+- target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
 - target_carrier_line_number: 385
-- expected_test_class: AiApplyClaimApiTaskProcessorRebuildTest
+- expected_test_class: ExampleApplyClaimApiTaskProcessorRebuildTest
 - expected_test_method: testRebuildTaskData_preservesPolicyNumAndInsureNum
 - expected_assertions: ["assert policyNum propagated","assert insureNum propagated","assert taskData not null"]
 - expected_side_effects: [{"memory":"request.policyNum","operation":"set","value":"from buildContext.getPolicyNum()"}]

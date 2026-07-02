@@ -57,11 +57,11 @@ function Get-BlockerRule {
             return [ordered]@{
                 blocker = $Fingerprint
                 root_cause_layer = 'plan_authorization'
-                root_cause = 'Policy rebuild planning confuses the claim-core production carrier with the claim-server executable test harness.'
-                required_fix = 'Add a pre-Maven policy gate and Plan authorization rule: policyNum/insureNum rebuild may target claim-core production files, but tests and dry-run evidence must use claim-server with -pl claim-server -am test-compile.'
-                prevention_gate = 'Do not materialize Maven evidence for claim-core when policy rebuild keywords are present; stop or deterministically repair before Maven.'
-                regression_test = 'r17-shaped Plan fixture emits policy_rebuild_claim_core_harness and proves no claim-core Maven evidence is generated.'
-                next_validation = 'Next replay either uses claim-server harness and passes Plan authorization, or stops immediately with this fingerprint before Maven.'
+                root_cause = 'Policy rebuild planning confuses the example-core production carrier with the example-server executable test harness.'
+                required_fix = 'Add a pre-Maven policy gate and Plan authorization rule: policyNum/insureNum rebuild may target example-core production files, but tests and dry-run evidence must use example-server with -pl example-server -am test-compile.'
+                prevention_gate = 'Do not materialize Maven evidence for example-core when policy rebuild keywords are present; stop or deterministically repair before Maven.'
+                regression_test = 'r17-shaped Plan fixture emits policy_rebuild_claim_core_harness and proves no example-core Maven evidence is generated.'
+                next_validation = 'Next replay either uses example-server harness and passes Plan authorization, or stops immediately with this fingerprint before Maven.'
                 machine_gate = 'policy_rebuild_claim_server_harness_required'
                 severity = 'P0'
             }

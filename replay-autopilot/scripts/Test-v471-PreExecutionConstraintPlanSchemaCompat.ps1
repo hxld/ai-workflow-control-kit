@@ -19,43 +19,43 @@ $constraintCheckPath = Join-Path $scriptRoot 'Invoke-PreExecutionConstraintCheck
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v471-' + [guid]::NewGuid().ToString('N'))
 $replayRoot = Join-Path $testRoot 'replay'
 $worktree = Join-Path $testRoot 'worktree'
-$carrierRelPath = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+$carrierRelPath = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
 $carrierAbsPath = Join-Path $worktree $carrierRelPath
 
 try {
     New-Item -ItemType Directory -Force -Path $replayRoot | Out-Null
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $carrierAbsPath) | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\sample') | Out-Null
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\pom.xml') -Encoding UTF8
-    'class AiApplyClaimApiTaskProcessorTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\src\test\java\sample\AiApplyClaimApiTaskProcessorTest.java') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\sample') | Out-Null
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\pom.xml') -Encoding UTF8
+    'class ExampleApplyClaimApiTaskProcessorTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\src\test\java\sample\ExampleApplyClaimApiTaskProcessorTest.java') -Encoding UTF8
     @'
-package com.huize.claim.core.ai.task;
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
+public class ExampleApplyClaimApiTaskProcessor {
     public void rebuildTaskData() {
     }
 }
 '@ | Set-Content -LiteralPath $carrierAbsPath -Encoding UTF8
 
     [ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
         exit_code = 0
-        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to claim-server\target\test-classes'
+        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to example-server\target\test-classes'
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') -Encoding UTF8
 
     [ordered]@{
         plan_status = 'PROCEED'
         target_carrier_file_path = $carrierRelPath
-        expected_test_class = 'AiApplyClaimApiTaskProcessorTest'
+        expected_test_class = 'ExampleApplyClaimApiTaskProcessorTest'
         expected_test_method = 'testRebuildTaskData_SetsPolicyNum_WhenSourceExists'
         side_effects = @('MEMORY_SET: taskData.policyNum')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -66,17 +66,17 @@ public class AiApplyClaimApiTaskProcessor {
 
 ## Scenario
 
-**Entry Point**: `AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)`
+**Entry Point**: `ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)`
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_CHARTER.md') -Encoding UTF8
 
     @'
 # First Slice Proof Plan
 
 highest_weight_open_gate: core_entry
-selected_carrier: AiApplyClaimApiTaskProcessor.rebuildTaskData()
-target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+selected_carrier: ExampleApplyClaimApiTaskProcessor.rebuildTaskData()
+target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
 target_carrier_line_number: 10
-expected_test_class: AiApplyClaimApiTaskProcessorTest
+expected_test_class: ExampleApplyClaimApiTaskProcessorTest
 expected_test_method: testRebuildTaskData_SetsPolicyNum_WhenSourceExists
 expected_assertions: ["assertNotNull(taskData)", "assertEquals(\"P\", taskData.getPolicyNum())", "assertEquals(\"I\", taskData.getInsureNum())"]
 expected_side_effects: [{"operation":"MEMORY_SET","field":"taskData.policyNum","value":"from request"}]
@@ -98,7 +98,7 @@ minimum_side_effect_or_blocker: taskData.policyNum is assigned from request.poli
 
 ## RED Phase
 
-### Test Class: AiApplyClaimApiTaskProcessorTest
+### Test Class: ExampleApplyClaimApiTaskProcessorTest
 
 Scenario: backend TaskProcessor rebuild path preserves policy number.
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_CHARTER.md') -Encoding UTF8

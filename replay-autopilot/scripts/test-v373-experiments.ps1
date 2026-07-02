@@ -37,7 +37,7 @@ New-Item -ItemType Directory -Path $testDir -Force | Out-Null
 
 # Create test files
 $testJava1 = @"
-package com.huize.claim.service;
+package com.example.project.service;
 
 public class TestService {
     // TODO: implement this
@@ -49,7 +49,7 @@ public class TestService {
 "@
 
 $testJava2 = @"
-package com.huize.claim.service;
+package com.example.project.service;
 
 public class GoodService {
     public void realMethod(Long id) {

@@ -38,7 +38,7 @@ $cases += (Assert-True -Name 'phase1_no_facade_only_test_charter_rule' -Conditio
 $condition = -not $prompt.Contains('Exact Facade/Controller method to test')
 $cases += (Assert-True -Name 'phase1_no_exact_facade_only_entry_rule' -Condition $condition)
 
-$condition = -not $prompt.Contains('claim-core has no test')
+$condition = -not $prompt.Contains('example-core has no test')
 $cases += (Assert-True -Name 'phase1_no_unconditional_claim_core_test_ban' -Condition $condition)
 
 $condition = $prompt.Contains('rg') -and $prompt.Contains('@Test') -and $prompt.Contains('Mockito/JUnit import') -and $prompt.Contains('-pl <test-module>') -and $prompt.Contains('-am') -and $prompt.Contains('JUnit/Mockito/Spring Test') -and $prompt.Contains('cross_module_test_harness_depends_on_production_module')

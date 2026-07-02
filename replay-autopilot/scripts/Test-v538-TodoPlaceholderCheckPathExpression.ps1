@@ -30,7 +30,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v538-" + [guid]
 
 try {
     $cleanRoot = Join-Path $tempRoot 'clean'
-    Write-TextFile (Join-Path $cleanRoot 'claim-core\src\main\java\acme\Service.java') @'
+    Write-TextFile (Join-Path $cleanRoot 'example-core\src\main\java\acme\Service.java') @'
 package acme;
 public class Service {
     public String value() { return "ok"; }
@@ -42,7 +42,7 @@ public class Service {
     Assert-True 'TODO clean result is PASS' ([string]$cleanResult.validation_status -eq 'PASS' -and [bool]$cleanResult.can_proceed) ($cleanResult | ConvertTo-Json -Depth 12)
 
     $dirtyRoot = Join-Path $tempRoot 'dirty'
-    Write-TextFile (Join-Path $dirtyRoot 'claim-core\src\main\java\acme\Service.java') @'
+    Write-TextFile (Join-Path $dirtyRoot 'example-core\src\main\java\acme\Service.java') @'
 package acme;
 public class Service {
     // TODO implement after test
@@ -55,22 +55,22 @@ public class Service {
     Assert-True 'TODO dirty result is FAIL' ([string]$dirtyResult.validation_status -eq 'FAIL' -and (-not [bool]$dirtyResult.can_proceed)) ($dirtyResult | ConvertTo-Json -Depth 12)
 
     $scopedRoot = Join-Path $tempRoot 'scoped'
-    Write-TextFile (Join-Path $scopedRoot 'claim-core\src\main\java\acme\Legacy.java') @'
+    Write-TextFile (Join-Path $scopedRoot 'example-core\src\main\java\acme\Legacy.java') @'
 package acme;
 public class Legacy {
     // TODO legacy unrelated item
 }
 '@
-    Write-TextFile (Join-Path $scopedRoot 'claim-core\src\main\java\acme\Changed.java') @'
+    Write-TextFile (Join-Path $scopedRoot 'example-core\src\main\java\acme\Changed.java') @'
 package acme;
 public class Changed {
     public String value() { return "ok"; }
 }
 '@
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -Paths 'claim-core/src/main/java/acme/Changed.java' | Out-Null
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -Paths 'example-core/src/main/java/acme/Changed.java' | Out-Null
     Assert-True 'TODO placeholder check ignores legacy TODO outside provided paths' ($LASTEXITCODE -eq 0)
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -PathList ('claim-core/src/main/java/acme/Changed.java' + [System.IO.Path]::PathSeparator + 'claim-core/src/main/java/acme/Legacy.java') | Out-Null
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -PathList ('example-core/src/main/java/acme/Changed.java' + [System.IO.Path]::PathSeparator + 'example-core/src/main/java/acme/Legacy.java') | Out-Null
     Assert-True 'TODO placeholder check accepts PathList without array binding errors' ($LASTEXITCODE -eq 1)
 
     $defaultScopedResult = Join-Path $scopedRoot 'TODO_CHECK_RESULT.json'
@@ -78,10 +78,10 @@ public class Changed {
         Remove-Item -LiteralPath $defaultScopedResult -Force
     }
     $externalResult = Join-Path $tempRoot 'external\TODO_CHECK_RESULT.json'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -PathList 'claim-core/src/main/java/acme/Changed.java' -ResultPath $externalResult | Out-Null
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -PathList 'example-core/src/main/java/acme/Changed.java' -ResultPath $externalResult | Out-Null
     Assert-True 'TODO placeholder check can write result outside worktree' ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $externalResult) -and -not (Test-Path -LiteralPath (Join-Path $scopedRoot 'TODO_CHECK_RESULT.json')))
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -Paths 'claim-core/src/main/java/acme/Legacy.java' | Out-Null
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $script -Worktree $scopedRoot -Paths 'example-core/src/main/java/acme/Legacy.java' | Out-Null
     Assert-True 'TODO placeholder check fails when provided path has TODO' ($LASTEXITCODE -eq 1)
 
     Write-Host 'v538 TODO placeholder path expression regression passed.'

@@ -26,15 +26,15 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("v615-plan-phase1-norma
 
 try {
     $worktree = Join-Path $tempRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\com\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\com\example') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-server\pom.xml') '<project></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-server\src\test\java\com\example\AiAutoClaimFlowServiceTest.java') @'
+    Write-Utf8 (Join-Path $worktree 'example-server\pom.xml') '<project></project>'
+    Write-Utf8 (Join-Path $worktree 'example-server\src\test\java\com\example\ExampleFlowServiceTest.java') @'
 package com.example;
-class AiAutoClaimFlowServiceTest {}
+class ExampleFlowServiceTest {}
 '@
 
-    $compileCommand = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl claim-server -am test-compile"
+    $compileCommand = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl example-server -am test-compile"
     Write-Utf8 (Join-Path $tempRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') @"
 {
   "exit_code": 0,
@@ -46,9 +46,9 @@ class AiAutoClaimFlowServiceTest {}
     Write-Utf8 (Join-Path $tempRoot 'PLAN_RESULT.json') @"
 {
   "plan_status": "PROCEED",
-  "target_carrier_file_path": "claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java",
+  "target_carrier_file_path": "example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java",
   "target_carrier_line_number": 1,
-  "expected_test_class": "AiAutoClaimFlowServiceTest",
+  "expected_test_class": "ExampleFlowServiceTest",
   "expected_test_method": "testAutoFlowPersistsClaimSideEffects",
   "expected_assertions": [
     "verify(compensateInfoMapper).insert(any())",
@@ -61,7 +61,7 @@ class AiAutoClaimFlowServiceTest {}
     {"table":"t_case_flow_status","operation":"UPDATE","field":"statusId","value":"35"}
   ],
   "test_infrastructure_check": {
-    "test_module_for_target": "claim-server",
+    "test_module_for_target": "example-server",
     "test_module_has_dependencies": true,
     "test_harness_available": true,
     "can_import_production_classes": true,

@@ -62,7 +62,7 @@ try {
                 weight = 100
                 recommended_slice_type = 'exact_contract_slice'
                 open_sibling_surfaces = @()
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData'
                 proof_required = @('behavior_test')
                 forbidden_proof = @('helper_only')
                 last_gap_flags = @()
@@ -74,8 +74,8 @@ try {
                 touched_count = 0
                 weight = 88
                 recommended_slice_type = 'exact_contract_slice'
-                open_sibling_surfaces = @('AiApplyClaimApiTaskProcessor.doIt')
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.doIt'
+                open_sibling_surfaces = @('ExampleApplyClaimApiTaskProcessor.doIt')
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.doIt'
                 proof_required = @('payload_assertion')
                 forbidden_proof = @('helper_only')
                 last_gap_flags = @()

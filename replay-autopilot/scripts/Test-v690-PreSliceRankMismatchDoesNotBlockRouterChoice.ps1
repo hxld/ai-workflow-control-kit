@@ -51,7 +51,7 @@ proof_kind: stateful_behavior
     Write-JsonFile (Join-Path $replayRoot 'ORACLE_DIFF_ANALYSIS.json') ([ordered]@{
         files = @(
             [ordered]@{
-                path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+                path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
                 is_production = $true
                 weight = 'HIGH'
                 layer = 'Service'
@@ -73,14 +73,14 @@ proof_kind: stateful_behavior
                 required = $true
                 status = 'OPEN'
                 rank = 1
-                production_carrier = 'com.huize.claim.core.dock.facade.InsureCompanyPushFacadeImpl.push'
+                production_carrier = 'com.example.project.core.dock.facade.ExamplePushFacadeImpl.push'
             },
             [ordered]@{
                 family = 'stateful_side_effect'
                 required = $true
                 status = 'PARTIAL'
                 rank = 4
-                production_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                production_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
             }
         )
         missing_required_rank1 = @()
@@ -91,9 +91,9 @@ proof_kind: stateful_behavior
         slice_index = 2
         forced_requirement_family = 'stateful_side_effect'
         authorization = 'ALLOW'
-        real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
-        production_boundary = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+        real_entry = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+        selected_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+        production_boundary = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
         downstream_side_effect_or_output = 'compensate_info_row; compensate_detail_row; route_status_change'
         red_expectation = 'business assertion should fail before production change'
         requires_side_effect_evidence = $true
@@ -105,7 +105,7 @@ proof_kind: stateful_behavior
         slice_index = 2
         forced_requirement_family = 'stateful_side_effect'
         required_for_this_slice = $true
-        entry_call = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+        entry_call = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
         expected_writes_or_outputs = @('compensate_info_row', 'compensate_detail_row', 'route_status_change')
         red_result = 'PENDING_BUSINESS_ASSERTION'
         green_result = 'PENDING'
@@ -115,8 +115,8 @@ proof_kind: stateful_behavior
     Write-JsonFile (Join-Path $replayRoot 'EXACT_CONTRACT_ASSERTION_MATRIX_02.json') ([ordered]@{
         rows = @(
             [ordered]@{
-                literal = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
-                symbol_or_field = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                literal = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+                symbol_or_field = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
                 test_assertion = 'should invoke selected task processor entry'
             }
         )
@@ -125,8 +125,8 @@ proof_kind: stateful_behavior
         decision = 'ALLOW'
         rows = @(
             [ordered]@{
-                literal = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
-                symbol_or_field = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                literal = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
+                symbol_or_field = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
                 test_assertion = 'should invoke selected task processor entry'
             }
         )
@@ -138,7 +138,7 @@ proof_kind: stateful_behavior
         -SliceIndex 2 `
         -ForcedRequirementFamily stateful_side_effect `
         -ForcedSliceType stateful_success_slice `
-        -ForcedSiblingSurface 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse' | Out-Null
+        -ForcedSiblingSurface 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse' | Out-Null
     Assert-True 'pre_slice_authorization_exit_zero' ($LASTEXITCODE -eq 0)
 
     $auth = Get-Content -LiteralPath (Join-Path $replayRoot 'PRE_SLICE_AUTHORIZATION_02.json') -Raw -Encoding UTF8 | ConvertFrom-Json

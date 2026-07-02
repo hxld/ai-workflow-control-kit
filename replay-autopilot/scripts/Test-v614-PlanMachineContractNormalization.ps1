@@ -25,15 +25,15 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("v614-plan-machine-cont
 
 try {
     $worktree = Join-Path $tempRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\com\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\com\example') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-server\pom.xml') '<project></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-server\src\test\java\com\example\AiApplyClaimApiTaskProcessorTest.java') @'
+    Write-Utf8 (Join-Path $worktree 'example-server\pom.xml') '<project></project>'
+    Write-Utf8 (Join-Path $worktree 'example-server\src\test\java\com\example\ExampleApplyClaimApiTaskProcessorTest.java') @'
 package com.example;
-class AiApplyClaimApiTaskProcessorTest {}
+class ExampleApplyClaimApiTaskProcessorTest {}
 '@
 
-    $compileCommand = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl claim-server -am test-compile"
+    $compileCommand = "mvn -s D:\maven\settings\settings.xml -f $worktree\pom.xml -pl example-server -am test-compile"
     Write-Utf8 (Join-Path $tempRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') @"
 {
   "exit_code": 0,
@@ -45,9 +45,9 @@ class AiApplyClaimApiTaskProcessorTest {}
     Write-Utf8 (Join-Path $tempRoot 'PLAN_RESULT.json') @"
 {
   "plan_status": "PROCEED",
-  "target_carrier_file_path": "claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java",
+  "target_carrier_file_path": "example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java",
   "target_carrier_line_number": 461,
-  "expected_test_class": "AiApplyClaimApiTaskProcessorTest",
+  "expected_test_class": "ExampleApplyClaimApiTaskProcessorTest",
   "expected_test_method": "testHandleTaskResponse_triggersAutoFlow",
   "expected_assertions": [
     "verify(aiAutoClaimFlowService).autoFlow(any(), any(), any())",
@@ -59,7 +59,7 @@ class AiApplyClaimApiTaskProcessorTest {}
     {"table":"t_case_route","operation":"update","field":"case_status_id","value":"35"}
   ],
   "test_infrastructure_check": {
-    "test_module_for_target": "claim-server",
+    "test_module_for_target": "example-server",
     "test_module_has_dependencies": true,
     "test_harness_available": true,
     "can_import_production_classes": true,

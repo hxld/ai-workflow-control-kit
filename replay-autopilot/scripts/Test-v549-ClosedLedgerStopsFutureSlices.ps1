@@ -176,7 +176,7 @@ try {
                 status = 'OPEN'
                 touched_count = 0
                 weight = 88
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.doIt'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.doIt'
                 proof_required = @('payload_assertion')
                 forbidden_proof = @('helper_only')
             }

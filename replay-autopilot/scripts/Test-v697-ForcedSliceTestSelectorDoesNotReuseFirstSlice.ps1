@@ -36,32 +36,32 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v697-forced-sli
 try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\examine\service') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\examine\service') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\examine\service\CaseExamineLogService.java') @'
-package com.huize.claim.core.examine.service;
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\examine\service\CaseExamineLogService.java') @'
+package com.example.project.core.examine.service;
 public class CaseExamineLogService {
     public void saveExamineLog() {
     }
 }
 '@
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') @'
-package com.huize.claim.core.ai.task;
-public class AiApplyClaimApiTaskProcessor {
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java') @'
+package com.example.project.core.ai.task;
+public class ExampleApplyClaimApiTaskProcessor {
     public void handleTaskResponse() {
     }
 }
 '@
 
-    $firstSliceTest = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor'
+    $firstSliceTest = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor'
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @"
 first_red_test: $firstSliceTest
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-red_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl claim-server -am -Dtest=$firstSliceTest test
-green_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl claim-server -am -Dtest=$firstSliceTest test
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+red_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl example-server -am -Dtest=$firstSliceTest test
+green_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl example-server -am -Dtest=$firstSliceTest test
 downstream_output_or_side_effect: first_slice_ai_log_row
 "@
     Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') ''
@@ -69,14 +69,14 @@ downstream_output_or_side_effect: first_slice_ai_log_row
     Write-Utf8 (Join-Path $replayRoot 'BASELINE_INDEX.md') ''
     Write-Utf8 (Join-Path $replayRoot 'REPLAY_PLAN.md') @'
 | Slice | Family | Carrier | Boundary | Proof | Tests | Extra | Test selector |
-| S5 | lifecycle_cleanup_retention | com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog | stateful | exact | stale | old | cap 65 until integration proof |
+| S5 | lifecycle_cleanup_retention | com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog | stateful | exact | stale | old | cap 65 until integration proof |
 '@
     Write-JsonFile (Join-Path $replayRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        expected_test_class = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest'
-        expected_test_method = 'handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor'
+        expected_test_class = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest'
+        expected_test_method = 'handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor'
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
         }
     })
     Write-JsonFile (Join-Path $replayRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.json') ([ordered]@{ status = 'PASS' })
@@ -91,7 +91,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
                 touched_count = 3
                 coverage_cap_if_open = 70
                 recommended_slice_type = 'exact_contract_slice'
-                first_executable_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                first_executable_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
                 proof_required = @('payload_contract')
                 forbidden_proof = @('dto_only')
             },
@@ -103,7 +103,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
                 touched_count = 0
                 coverage_cap_if_open = 60
                 recommended_slice_type = 'stateful_success_slice'
-                first_executable_carrier = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+                first_executable_carrier = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
                 proof_required = @('ai_log_row', 'system_operator', 'task_completion_rows')
                 forbidden_proof = @('log_message_constant_only', 'mock_only', 'helper_only')
             }
@@ -111,7 +111,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
     })
 
     $forcedFamily = 'lifecycle_cleanup_retention'
-    $forcedCarrier = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+    $forcedCarrier = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
     $expectedSelector = 'CaseExamineLogServiceTest#shouldCoverLifecycleCleanupRetention'
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Prepare-SliceEvidenceContracts.ps1') `
@@ -163,7 +163,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
         [string]$slicePlan.red_test_name,
         [string]$slicePlan.validation_command
     ) -join "`n"
-    Assert-True 'first_slice_test_selector_not_reused' (-not ($selectorText -match 'AiApplyClaimApiTaskProcessorAutoFlowTest|handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor|cap 65 until integration proof')) $selectorText
+    Assert-True 'first_slice_test_selector_not_reused' (-not ($selectorText -match 'ExampleApplyClaimApiTaskProcessorAutoFlowTest|handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor|cap 65 until integration proof')) $selectorText
 
     Write-Host ''
     Write-Host 'v697 Forced Slice Test Selector Does Not Reuse First Slice: ALL PASSED'

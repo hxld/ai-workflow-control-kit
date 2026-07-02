@@ -93,12 +93,12 @@ try {
                 first_slice = $null
                 last_slice = $null
                 slices = @()
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData'
                 planned_slice = 'S1'
                 proof_required = @('behavior_test', 'code_inspection')
                 forbidden_proof = @('helper_only')
                 coverage_cap_if_open = 0
-                open_sibling_surfaces = @('TaskProcessor rebuildTaskData -> AiClaimBaseTaskData.policyNum/insureNum -> InputData.policy_num/InputData.insure_num')
+                open_sibling_surfaces = @('TaskProcessor rebuildTaskData -> ExampleBaseTaskData.policyNum/insureNum -> InputData.policy_num/InputData.insure_num')
                 open_sibling_count = 1
                 last_next_recommended_slice_type = ''
                 last_gap_flags = @()
@@ -116,12 +116,12 @@ try {
                 first_slice = $null
                 last_slice = $null
                 slices = @()
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.doIt'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.doIt'
                 planned_slice = 'S1'
                 proof_required = @('code_inspection', 'payload_assertion')
                 forbidden_proof = @('helper_only')
                 coverage_cap_if_open = 0
-                open_sibling_surfaces = @('AiApplyClaimApiTaskProcessor.doIt')
+                open_sibling_surfaces = @('ExampleApplyClaimApiTaskProcessor.doIt')
                 open_sibling_count = 1
                 last_next_recommended_slice_type = ''
                 last_gap_flags = @()
@@ -137,14 +137,14 @@ try {
         slice_type = 'exact_contract_slice'
         coverage_delta = 100
         target_subsurface_or_carrier = 'private rebuildTaskData(Long caseId) method in both processors'
-        required_sibling_surfaces = @('AiClaimDataAssemblyHelper.buildRequestCommon', 'RequestBuildContext.policyNum', 'RequestBuildContext.insureNum')
-        production_boundary = 'AiApplyClaimApiTaskProcessor.rebuildTaskData, AiCalculateLossApiTaskProcessor.rebuildTaskData'
+        required_sibling_surfaces = @('ExampleDataAssemblyHelper.buildRequestCommon', 'RequestBuildContext.policyNum', 'RequestBuildContext.insureNum')
+        production_boundary = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData, ExampleCalculatorApiTaskProcessor.rebuildTaskData'
         proof_kind = 'real_entry_behavior'
         red_expectation = 'policyNum and insureNum missing before fix'
         implemented_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java',
-            'claim-server/src/test/java/com/huize/claim/core/ai/task/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java',
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java',
+            'example-server/src/test/java/com/example/project/core/ai/task/PolicyNumRebuildPathTest.java'
         )
         closed_assertions = @('policyNum source-chain propagation', 'insureNum source-chain propagation')
         touched_requirement_families = @('core_entry')

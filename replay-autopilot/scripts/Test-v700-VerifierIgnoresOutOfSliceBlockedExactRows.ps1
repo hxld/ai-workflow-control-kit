@@ -101,7 +101,7 @@ try {
             [ordered]@{ literal = 'system_operator'; symbol_or_field = 'system_operator'; db_or_wire_or_display = 'db'; boundary_type = 'db'; production_boundary = 'SampleCarrier.execute'; closure_proof = 'service behavior assertion proves database row persistence'; test_assertion = 'assert system operator'; status = 'CLOSED'; source_type = 'code_fact' },
             [ordered]@{ literal = 'task_completion_rows'; symbol_or_field = 'task_completion_rows'; db_or_wire_or_display = 'db'; boundary_type = 'db'; production_boundary = 'SampleCarrier.execute'; closure_proof = 'service behavior assertion proves database row persistence'; test_assertion = 'assert task completion rows'; status = 'CLOSED'; source_type = 'code_fact' },
             [ordered]@{ literal = 'negative_gate_failure_log'; symbol_or_field = 'negative_gate_failure_log'; db_or_wire_or_display = 'db'; boundary_type = 'db'; production_boundary = 'SampleCarrier.execute'; closure_proof = 'service behavior assertion proves database row persistence'; test_assertion = 'assert negative gate no write'; status = 'CLOSED'; source_type = 'code_fact' },
-            [ordered]@{ literal = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'; symbol_or_field = 'AiApplyClaimApiTaskProcessor.handleTaskResponse'; db_or_wire_or_display = 'behavior'; boundary_type = 'behavior'; production_boundary = 'SampleCarrier.execute'; closure_proof = ''; test_assertion = 'matrix row remains unclosed'; status = 'BLOCKED'; source_type = 'requirement' },
+            [ordered]@{ literal = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'; symbol_or_field = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse'; db_or_wire_or_display = 'behavior'; boundary_type = 'behavior'; production_boundary = 'SampleCarrier.execute'; closure_proof = ''; test_assertion = 'matrix row remains unclosed'; status = 'BLOCKED'; source_type = 'requirement' },
             [ordered]@{ literal = '理算明细.png'; symbol_or_field = '理算明细.png'; db_or_wire_or_display = 'behavior'; boundary_type = 'behavior'; production_boundary = 'SampleCarrier.execute'; closure_proof = ''; test_assertion = 'matrix row remains unclosed'; status = 'BLOCKED'; source_type = 'requirement' }
         )
         side_effect_evidence = [ordered]@{
@@ -147,10 +147,10 @@ try {
     $gapFlags = @($verify.gap_flags | ForEach-Object { [string]$_ })
     $blockers = @($verify.authorization_blockers | ForEach-Object { [string]$_ })
 
-    Assert-True 'out_of_slice_blocked_rows_are_reported_not_counted' (($warnings -join ',') -match 'out_of_slice_blocked_exact_assertions_ignored:AiApplyClaimApiTaskProcessor.handleTaskResponse') ($warnings -join ',')
+    Assert-True 'out_of_slice_blocked_rows_are_reported_not_counted' (($warnings -join ',') -match 'out_of_slice_blocked_exact_assertions_ignored:ExampleApplyClaimApiTaskProcessor.handleTaskResponse') ($warnings -join ',')
     Assert-True 'matrix_keeps_only_current_slice_lifecycle_rows' (
         ($matrixLiterals.Count -eq 4) -and
-        (($matrixLiterals -join ',') -notmatch 'AiApplyClaimApiTaskProcessor|理算明细')
+        (($matrixLiterals -join ',') -notmatch 'ExampleApplyClaimApiTaskProcessor|理算明细')
     ) ($matrixLiterals -join ',')
     Assert-True 'minimum_exact_contract_gap_not_added_for_out_of_slice_rows' (-not ($gapFlags -contains 'exact_contract_minimum_coverage_gap')) ($gapFlags -join ',')
     Assert-True 'v348_blocker_not_expected_from_verifier_output' (-not ($blockers -contains 'exact_contract_post_green_not_closed')) ($blockers -join ',')

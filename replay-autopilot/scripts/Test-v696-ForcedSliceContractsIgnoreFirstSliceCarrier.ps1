@@ -36,30 +36,30 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v696-forced-sli
 try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\examine\service') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\examine\service') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\examine\service\CaseExamineLogService.java') @'
-package com.huize.claim.core.examine.service;
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\examine\service\CaseExamineLogService.java') @'
+package com.example.project.core.examine.service;
 public class CaseExamineLogService {
     public void saveExamineLog() {
     }
 }
 '@
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') @'
-package com.huize.claim.core.ai.task;
-public class AiApplyClaimApiTaskProcessor {
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java') @'
+package com.example.project.core.ai.task;
+public class ExampleApplyClaimApiTaskProcessor {
     public void handleTaskResponse() {
     }
 }
 '@
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
-first_red_test: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-red_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl claim-server -am -Dtest=com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor test
-green_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl claim-server -am -Dtest=com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForAiApplyClaimApiTaskProcessor test
+first_red_test: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+red_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl example-server -am -Dtest=com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor test
+green_command: mvn --% -f "FIRST_SLICE_ONLY/pom.xml" -pl example-server -am -Dtest=com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessorAutoFlowTest#handleTaskResponse_shouldPreserveExactContractForExampleApplyClaimApiTaskProcessor test
 downstream_output_or_side_effect: first_slice_ai_log_row
 '@
     Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') ''
@@ -77,7 +77,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
                 touched_count = 3
                 coverage_cap_if_open = 70
                 recommended_slice_type = 'exact_contract_slice'
-                first_executable_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse'
+                first_executable_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse'
                 proof_required = @('payload_contract')
                 forbidden_proof = @('dto_only')
             },
@@ -89,7 +89,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
                 touched_count = 0
                 coverage_cap_if_open = 60
                 recommended_slice_type = 'stateful_success_slice'
-                first_executable_carrier = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+                first_executable_carrier = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
                 proof_required = @('ai_log_row', 'system_operator', 'task_completion_rows')
                 forbidden_proof = @('log_message_constant_only', 'mock_only', 'helper_only')
             }
@@ -97,7 +97,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
     })
 
     $forcedFamily = 'lifecycle_cleanup_retention'
-    $forcedCarrier = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+    $forcedCarrier = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Prepare-SliceEvidenceContracts.ps1') `
         -ReplayRoot $replayRoot `
         -Worktree $worktree `
@@ -146,7 +146,7 @@ downstream_output_or_side_effect: first_slice_ai_log_row
         [string]$runnable.real_entry_fqn,
         [string]$charter.real_entry_method,
         [string]$slicePlan.selected_carrier
-    ) -join "`n") -match 'AiApplyClaimApiTaskProcessor')) ($slicePlan | ConvertTo-Json -Depth 12)
+    ) -join "`n") -match 'ExampleApplyClaimApiTaskProcessor')) ($slicePlan | ConvertTo-Json -Depth 12)
 
     Write-Host ''
     Write-Host 'v696 Forced Slice Contracts Ignore First Slice Carrier: ALL PASSED'

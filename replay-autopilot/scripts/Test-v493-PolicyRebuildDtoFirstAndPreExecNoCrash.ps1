@@ -21,27 +21,27 @@ function New-PolicyDtoFirstFixture {
     param([string]$Root)
 
     $worktree = Join-Path $Root 'worktree'
-    $applyProcessor = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java'
-    $lossProcessor = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiCalculateLossApiTaskProcessor.java'
-    $applyDto = Join-Path $worktree 'claim-domain\src\main\java\com\huize\claim\domain\ai\dto\AiApplyClaimRequest.java'
-    $lossDto = Join-Path $worktree 'claim-domain\src\main\java\com\huize\claim\domain\ai\dto\AiCalculateLossRequest.java'
-    $testPath = Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessorTest.java'
+    $applyProcessor = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java'
+    $lossProcessor = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleCalculatorApiTaskProcessor.java'
+    $applyDto = Join-Path $worktree 'example-domain\src\main\java\com\example\project\domain\ai\dto\ExampleApplyClaimRequest.java'
+    $lossDto = Join-Path $worktree 'example-domain\src\main\java\com\example\project\domain\ai\dto\ExampleCalculatorRequest.java'
+    $testPath = Join-Path $worktree 'example-server\src\test\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessorTest.java'
 
-    Write-Text $applyProcessor 'package com.huize.claim.core.ai.task; public class AiApplyClaimApiTaskProcessor { void rebuildTaskData() {} }'
-    Write-Text $lossProcessor 'package com.huize.claim.core.ai.task; public class AiCalculateLossApiTaskProcessor { void rebuildTaskData() {} }'
-    Write-Text $applyDto 'package com.huize.claim.domain.ai.dto; public class AiApplyClaimRequest {}'
-    Write-Text $lossDto 'package com.huize.claim.domain.ai.dto; public class AiCalculateLossRequest {}'
-    Write-Text $testPath 'package com.huize.claim.core.ai.task; public class AiApplyClaimApiTaskProcessorTest {}'
+    Write-Text $applyProcessor 'package com.example.project.core.ai.task; public class ExampleApplyClaimApiTaskProcessor { void rebuildTaskData() {} }'
+    Write-Text $lossProcessor 'package com.example.project.core.ai.task; public class ExampleCalculatorApiTaskProcessor { void rebuildTaskData() {} }'
+    Write-Text $applyDto 'package com.example.project.domain.ai.dto; public class ExampleApplyClaimRequest {}'
+    Write-Text $lossDto 'package com.example.project.domain.ai.dto; public class ExampleCalculatorRequest {}'
+    Write-Text $testPath 'package com.example.project.core.ai.task; public class ExampleApplyClaimApiTaskProcessorTest {}'
     Write-Text (Join-Path $worktree 'pom.xml') '<project />'
-    Write-Text (Join-Path $worktree 'claim-server\pom.xml') '<project />'
+    Write-Text (Join-Path $worktree 'example-server\pom.xml') '<project />'
 
     Write-Text (Join-Path $Root 'PHASE0_RESULT.md') @'
 phase0_status: PROCEED
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)
 '@
     Write-Text (Join-Path $Root 'ROUND_CONTRACT.md') 'Requirement Family Ledger: core_entry stateful_side_effect'
-    Write-Text (Join-Path $Root 'FAMILY_CONTRACT.json') '{"families":[{"id":"core_entry","required":true,"weight":100,"proof_required":["RED","GREEN"]}],"selected_real_entry":"AiApplyClaimApiTaskProcessor.rebuildTaskData","first_executable_slice":"S1"}'
-    Write-Text (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') '{"production_files":2,"high_weight_files":2,"files":[{"path":"claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java","is_production":true,"weight":"HIGH"},{"path":"claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java","is_production":true,"weight":"HIGH"}]}'
+    Write-Text (Join-Path $Root 'FAMILY_CONTRACT.json') '{"families":[{"id":"core_entry","required":true,"weight":100,"proof_required":["RED","GREEN"]}],"selected_real_entry":"ExampleApplyClaimApiTaskProcessor.rebuildTaskData","first_executable_slice":"S1"}'
+    Write-Text (Join-Path $Root 'ORACLE_DIFF_ANALYSIS.json') '{"production_files":2,"high_weight_files":2,"files":[{"path":"example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java","is_production":true,"weight":"HIGH"},{"path":"example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java","is_production":true,"weight":"HIGH"}]}'
     Write-Text (Join-Path $Root 'SOURCE_CHAIN_CONTRACT.json') '{"required_source_chain":true}'
     Write-Text (Join-Path $Root 'PLAN_CANDIDATE_1.md') 'candidate'
     Write-Text (Join-Path $Root 'PLAN_CANDIDATE_2.md') 'candidate'
@@ -49,37 +49,37 @@ selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId)
     Write-Text (Join-Path $Root 'PLAN_SELECTION.md') 'selection'
     Write-Text (Join-Path $Root 'PLAN_RESULT.md') @'
 plan_status: PROCEED
-required_files: claim-domain/src/main/java/com/huize/claim/domain/ai/dto/AiApplyClaimRequest.java, claim-domain/src/main/java/com/huize/claim/domain/ai/dto/AiCalculateLossRequest.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java
+required_files: example-domain/src/main/java/com/example/project/domain/ai/dto/ExampleApplyClaimRequest.java, example-domain/src/main/java/com/example/project/domain/ai/dto/ExampleCalculatorRequest.java, example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java, example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java
 oracle_production_file_overlap: 100%
 oracle_high_weight_coverage: 100%
 oracle_missing_high_weight_files: none
 oracle_expansion_plan: none
 oracle_out_of_scope_files: none
-golden_slice_binding: exact_contract_gap -> AiClaimDataAssemblyHelper.RequestBuildFunction -> AiApplyClaimApiTaskProcessor.rebuildTaskData -> req.setPolicyNum(buildContext.getPolicyNum()) -> rebuild lambda executes
+golden_slice_binding: exact_contract_gap -> ExampleDataAssemblyHelper.RequestBuildFunction -> ExampleApplyClaimApiTaskProcessor.rebuildTaskData -> req.setPolicyNum(buildContext.getPolicyNum()) -> rebuild lambda executes
 carrier_search: performed
-carrier_search_queries: rg "class.*AiApplyClaimRequest" --type java; rg "interface.*RequestBuildFunction" --type java
-existing_production_carriers: AiApplyClaimRequest; AiCalculateLossRequest; AiClaimDataAssemblyHelper; AiApplyClaimApiTaskProcessor; AiCalculateLossApiTaskProcessor
-selected_carrier_from_search: AiClaimDataAssemblyHelper.RequestBuildFunction
+carrier_search_queries: rg "class.*ExampleApplyClaimRequest" --type java; rg "interface.*RequestBuildFunction" --type java
+existing_production_carriers: ExampleApplyClaimRequest; ExampleCalculatorRequest; ExampleDataAssemblyHelper; ExampleApplyClaimApiTaskProcessor; ExampleCalculatorApiTaskProcessor
+selected_carrier_from_search: ExampleDataAssemblyHelper.RequestBuildFunction
 new_service_proposed: false
 new_service_justification: none
 first_slice: S1
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorTest.java
 '@
     Write-Text (Join-Path $Root 'PLAN_RESULT.json') @'
 {
   "plan_status": "PROCEED",
-  "target_carrier_file_path": "claim-domain/src/main/java/com/huize/claim/domain/ai/dto/AiApplyClaimRequest.java",
-  "expected_test_class": "claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java",
+  "target_carrier_file_path": "example-domain/src/main/java/com/example/project/domain/ai/dto/ExampleApplyClaimRequest.java",
+  "expected_test_class": "example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorTest.java",
   "expected_test_method": "testRebuildTaskData_PreservesPolicyNumAndInsureNum",
   "side_effects": ["TaskData.setPolicyNum()", "TaskData.setInsureNum()"],
   "expected_assertions": ["assertNotNull(result)", "assertEquals(policyNum, result.getPolicyNum())", "assertEquals(insureNum, result.getInsureNum())"],
   "test_infrastructure_check": {
-    "test_module_for_target": "claim-server",
+    "test_module_for_target": "example-server",
     "test_module_has_dependencies": true,
     "test_harness_available": true,
     "can_import_production_classes": true,
     "compilation_dry_run_exit_code": 0,
-    "compilation_dry_run_command": "mvn -s D:\\maven\\settings\\settings.xml -f <worktree>\\pom.xml -pl claim-server -am test-compile",
+    "compilation_dry_run_command": "mvn -s D:\\maven\\settings\\settings.xml -f <worktree>\\pom.xml -pl example-server -am test-compile",
     "compilation_dry_run_evidence_file": "TEST_INFRASTRUCTURE_DRY_RUN.json",
     "blocker_reason": "none"
   }
@@ -95,31 +95,31 @@ first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyC
 - None (compile-time validation only)
 
 ## Slice 2: Core Rebuild Logic
-- AiApplyClaimApiTaskProcessor lambda copies policyNum from buildContext
-- AiCalculateLossApiTaskProcessor lambda copies insureNum from buildContext
+- ExampleApplyClaimApiTaskProcessor lambda copies policyNum from buildContext
+- ExampleCalculatorApiTaskProcessor lambda copies insureNum from buildContext
 '@
-    Write-Text (Join-Path $Root 'IMPLEMENTATION_CONTRACT.md') 'AiClaimDataAssemblyHelper.buildRequestCommon AiClaimDataAssemblyHelper.RequestBuildFunction RequestBuildContext req.setPolicyNum(buildContext.getPolicyNum()) req.setInsureNum(buildContext.getInsureNum()) AiApplyClaimApiTaskProcessor.rebuildTaskData AiCalculateLossApiTaskProcessor.rebuildTaskData'
-    Write-Text (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') 'Slice 1 Contract Definition FIELD_ADD compile-time validation only; Slice 2 LOGIC_FIX claim-core processors; -pl claim-server -am'
+    Write-Text (Join-Path $Root 'IMPLEMENTATION_CONTRACT.md') 'ExampleDataAssemblyHelper.buildRequestCommon ExampleDataAssemblyHelper.RequestBuildFunction RequestBuildContext req.setPolicyNum(buildContext.getPolicyNum()) req.setInsureNum(buildContext.getInsureNum()) ExampleApplyClaimApiTaskProcessor.rebuildTaskData ExampleCalculatorApiTaskProcessor.rebuildTaskData'
+    Write-Text (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') 'Slice 1 Contract Definition FIELD_ADD compile-time validation only; Slice 2 LOGIC_FIX example-core processors; -pl example-server -am'
     Write-Text (Join-Path $Root 'SIDE_EFFECT_LEDGER.md') 'TaskData.setPolicyNum TaskData.setInsureNum req.setPolicyNum(buildContext.getPolicyNum()) req.setInsureNum(buildContext.getInsureNum())'
     Write-Text (Join-Path $Root 'TEST_CHARTER.md') @'
 ## RED Phase
 Test harness: No-Spring JUnit with Mockito; do NOT extend AbstractTestClass or use Spring context
-claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java
+example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorTest.java
 '@
     Write-Text (Join-Path $Root 'FIRST_SLICE_PROOF_PLAN.md') @'
 first_slice: S1
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum
-golden_slice_binding: exact_contract_gap -> AiClaimDataAssemblyHelper.RequestBuildFunction -> RED -> GREEN -> stateful_side_effect
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum
+golden_slice_binding: exact_contract_gap -> ExampleDataAssemblyHelper.RequestBuildFunction -> RED -> GREEN -> stateful_side_effect
 highest_weight_open_gate: core_entry
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId), AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
-selected_carrier: AiClaimDataAssemblyHelper.RequestBuildFunction
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId), ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)
+selected_carrier: ExampleDataAssemblyHelper.RequestBuildFunction
 target_subsurface_or_carrier: Rebuild lambda implementation
-production_boundary: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java
+production_boundary: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java, example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java
 proof_kind: real_entry_behavior
 real_carrier_kind: production_service_method
 minimum_side_effect_or_blocker: Lambda assigns buildContext values to request fields
-required_sibling_surfaces: AiCalculateLossApiTaskProcessor.rebuildTaskData
-expected_production_diff: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java, claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java
+required_sibling_surfaces: ExampleCalculatorApiTaskProcessor.rebuildTaskData
+expected_production_diff: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java, example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java
 red_expectation: request fields missing before implementation
 green_minimum_implementation: req.setPolicyNum(buildContext.getPolicyNum()) and req.setInsureNum(buildContext.getInsureNum())
 forbidden_substitute_proof: production RequestBuildFunction only
@@ -130,14 +130,14 @@ pattern_to_follow: EXISTING_PATTERN
 pattern_return_type: REQUEST
 pattern_error_handling: existing behavior
 pattern_evidence_source: rg "RequestBuildFunction"
-target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
 target_carrier_line_number: 374
-expected_test_class: AiApplyClaimApiTaskProcessorTest
+expected_test_class: ExampleApplyClaimApiTaskProcessorTest
 expected_test_method: testRebuildTaskData_PreservesPolicyNumAndInsureNum
 expected_assertions: ["assertNotNull(result)", "assertEquals(policyNum, result.getPolicyNum())", "assertEquals(insureNum, result.getInsureNum())"]
 expected_side_effects: [{"memory":"request.policyNum","operation":"set","value":"from buildContext.getPolicyNum()"}]
 '@
-    Write-Text (Join-Path $Root 'TEST_INFRASTRUCTURE_DRY_RUN.json') '{"command":"mvn -s D:\\maven\\settings\\settings.xml -f <worktree>\\pom.xml -pl claim-server -am test-compile","exit_code":0,"stdout_tail":"BUILD SUCCESS"}'
+    Write-Text (Join-Path $Root 'TEST_INFRASTRUCTURE_DRY_RUN.json') '{"command":"mvn -s D:\\maven\\settings\\settings.xml -f <worktree>\\pom.xml -pl example-server -am test-compile","exit_code":0,"stdout_tail":"BUILD SUCCESS"}'
 
     return $worktree
 }

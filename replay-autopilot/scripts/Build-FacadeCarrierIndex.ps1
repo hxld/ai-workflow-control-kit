@@ -7,7 +7,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$OutputPath,
     [string]$BaselineCommit = '',
-    [string[]]$Modules = @('claim-api', 'claim-api-open', 'claim-core')
+    [string[]]$Modules = @('example-api', 'example-api-open', 'example-core')
 )
 
 $ErrorActionPreference = 'Stop'

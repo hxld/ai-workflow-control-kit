@@ -33,55 +33,55 @@ try {
     $worktree = Join-Path $tempRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
 
-    $facadeDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\facade'
-    $serviceDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\service'
-    $testDir = Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\core\ai'
+    $facadeDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\facade'
+    $serviceDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\service'
+    $testDir = Join-Path $worktree 'example-server\src\test\java\com\example\project\core\ai'
     New-Item -ItemType Directory -Force -Path $facadeDir, $serviceDir, $testDir | Out-Null
-    'class AiClaimModuleConfigFacadeImpl { void save(Object dto) {} }' | Set-Content -LiteralPath (Join-Path $facadeDir 'AiClaimModuleConfigFacadeImpl.java') -Encoding UTF8
-    'class AiClaimModuleConfigService { void save(Object dto) {} }' | Set-Content -LiteralPath (Join-Path $serviceDir 'AiClaimModuleConfigService.java') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\pom.xml') -Encoding UTF8
+    'class ExampleModuleConfigFacadeImpl { void save(Object dto) {} }' | Set-Content -LiteralPath (Join-Path $facadeDir 'ExampleModuleConfigFacadeImpl.java') -Encoding UTF8
+    'class ExampleModuleConfigService { void save(Object dto) {} }' | Set-Content -LiteralPath (Join-Path $serviceDir 'ExampleModuleConfigService.java') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\pom.xml') -Encoding UTF8
     'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $testDir 'ExistingHarnessTest.java') -Encoding UTF8
 
     Write-JsonFile (Join-Path $replayRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/service/AiClaimModuleConfigService.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/service/ExampleModuleConfigService.java'
         target_carrier_line_number = 216
-        expected_test_class = 'AiClaimModuleConfigServiceTest'
+        expected_test_class = 'ExampleModuleConfigServiceTest'
         expected_test_method = 'testConvertPreservesFreeReviewAmount'
         side_effects = @('DB insert t_ai_claim_module_config.free_review_amount')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
     })
     Write-JsonFile (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
         exit_code = 0
-        command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+        command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
     })
     @'
 # FIRST_SLICE_PROOF_PLAN
 
 highest_weight_open_gate: core_entry
-selected_real_entry: com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save(AiClaimModuleConfigDto)
-selected_carrier: AiClaimModuleConfigFacadeImpl
-target_subsurface_or_carrier: AiClaimModuleConfigService
-target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/service/AiClaimModuleConfigService.java
+selected_real_entry: com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save(ExampleModuleConfigDto)
+selected_carrier: ExampleModuleConfigFacadeImpl
+target_subsurface_or_carrier: ExampleModuleConfigService
+target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/service/ExampleModuleConfigService.java
 target_carrier_line_number: 216
-expected_test_class: AiClaimModuleConfigServiceTest
+expected_test_class: ExampleModuleConfigServiceTest
 expected_test_method: testConvertPreservesFreeReviewAmount
 expected_assertions: ["entity gets freeReviewAmount","mapper captures freeReviewAmount","null input clears field"]
 expected_side_effects: [{"table":"t_ai_claim_module_config","operation":"INSERT","field":"free_review_amount"}]
 minimum_side_effect_or_blocker: mapper insert/update captures free_review_amount
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
     @'
-Entry Point: AiClaimModuleConfigFacadeImpl.save
-Test Class: AiClaimModuleConfigServiceTest
+Entry Point: ExampleModuleConfigFacadeImpl.save
+Test Class: ExampleModuleConfigServiceTest
 DB Verification: mapper capture verifies free_review_amount
 Side Effects: verify insert/update field propagation
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_CHARTER.md') -Encoding UTF8
@@ -94,11 +94,11 @@ Side Effects: verify insert/update field propagation
 
     $preExecution = Get-Content -LiteralPath (Join-Path $replayRoot 'PRE_EXECUTION_CONSTRAINT_CHECK.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True 'pre_execution_passes' ([string]$preExecution.status -eq 'PASS') ($preExecution | ConvertTo-Json -Depth 10)
-    Assert-True 'selected_target_remains_service_file' ([string]$preExecution.selected_carrier -match 'AiClaimModuleConfigService\.java$') ([string]$preExecution.selected_carrier)
-    Assert-True 'selected_entry_uses_facade' ([string]$preExecution.selected_entry_carrier -match 'AiClaimModuleConfigFacadeImpl') ([string]$preExecution.selected_entry_carrier)
+    Assert-True 'selected_target_remains_service_file' ([string]$preExecution.selected_carrier -match 'ExampleModuleConfigService\.java$') ([string]$preExecution.selected_carrier)
+    Assert-True 'selected_entry_uses_facade' ([string]$preExecution.selected_entry_carrier -match 'ExampleModuleConfigFacadeImpl') ([string]$preExecution.selected_entry_carrier)
     $layerCheck = @($preExecution.checks | Where-Object { [string]$_.name -eq 'carrier_in_valid_layer' }) | Select-Object -First 1
-    Assert-True 'layer_check_uses_facade_carrier' ([string]$layerCheck.carrier -match 'AiClaimModuleConfigFacadeImpl') ($layerCheck | ConvertTo-Json -Depth 5)
-    Assert-True 'layer_check_preserves_target_file' ([string]$layerCheck.target_carrier_file_path -match 'AiClaimModuleConfigService\.java$') ($layerCheck | ConvertTo-Json -Depth 5)
+    Assert-True 'layer_check_uses_facade_carrier' ([string]$layerCheck.carrier -match 'ExampleModuleConfigFacadeImpl') ($layerCheck | ConvertTo-Json -Depth 5)
+    Assert-True 'layer_check_preserves_target_file' ([string]$layerCheck.target_carrier_file_path -match 'ExampleModuleConfigService\.java$') ($layerCheck | ConvertTo-Json -Depth 5)
 
     $controllerText = Get-Content -LiteralPath $controllerScript -Raw -Encoding UTF8
     $runnerText = Get-Content -LiteralPath $runnerScript -Raw -Encoding UTF8

@@ -33,9 +33,9 @@ function New-PolicyRebuildRoot {
     )
 
     $worktree = Join-Path $Root 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core') | Out-Null
     '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-core\pom.xml') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-core\pom.xml') -Encoding UTF8
 
     Write-Json (Join-Path $Root 'EXECUTOR_AUDIT.json') ([ordered]@{
         schema = 'replay_executor_audit.v1'
@@ -47,9 +47,9 @@ function New-PolicyRebuildRoot {
 
     Write-Json (Join-Path $Root 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 384
-        expected_test_class = 'AiApplyClaimApiTaskProcessorTest'
+        expected_test_class = 'ExampleApplyClaimApiTaskProcessorTest'
         expected_test_method = 'testRebuildTaskData_MissingPolicyNumAndInsureNum'
         side_effects = @(
             [ordered]@{
@@ -61,12 +61,12 @@ function New-PolicyRebuildRoot {
         )
         expected_assertions = @('assert policyNum', 'assert insureNum')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-core'
+            test_module_for_target = 'example-core'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -80,7 +80,7 @@ function New-PolicyRebuildRoot {
         checks = [ordered]@{
             plan_status = 'PROCEED'
             test_infrastructure_issues = @(
-                'test_module_missing_src_test:claim-core',
+                'test_module_missing_src_test:example-core',
                 'policy_rebuild_test_module_must_be_claim_server',
                 'policy_rebuild_expected_test_class_must_use_claim_server_harness',
                 'policy_rebuild_compile_dry_run_must_use_claim_server_am_test_compile'

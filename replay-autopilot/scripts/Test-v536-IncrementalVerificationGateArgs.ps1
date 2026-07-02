@@ -57,7 +57,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v536-" + [guid]
 try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    $testRel = 'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+    $testRel = 'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
     $testAbs = Join-Path $worktree ($testRel -replace '/', '\')
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
     Write-TextFile $testAbs @'
@@ -78,8 +78,8 @@ public class PolicyNumRebuildPathTest {
     Write-JsonFile (Join-Path $replayRoot 'SLICE_RESULT_01.json') ([ordered]@{
         slice_index = 1
         implemented_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java'
         )
         tests = @(
             [ordered]@{ phase = 'RED'; command = 'test-compile'; result = 'pass'; evidence = 'Test class compiled successfully' },
@@ -98,7 +98,7 @@ public class PolicyNumRebuildPathTest {
     Assert-True 'RED incremental gate succeeds with named -Files splat' ([bool]$result.CanProceed) ($result | ConvertTo-Json -Depth 12)
     $gate = Read-JsonFile (Join-Path $replayRoot 'INCREMENTAL_VERIFICATION_RED_01.json')
     Assert-True 'RED incremental gate uses worktree as working directory' ([string]$gate.work_dir -eq $worktree) ($gate | ConvertTo-Json -Depth 12)
-    Assert-True 'RED incremental gate checks test evidence file, not production files' (@($gate.files_checked) -contains $testRel -and @($gate.files_checked | Where-Object { [string]$_ -match 'claim-core' }).Count -eq 0) ($gate | ConvertTo-Json -Depth 12)
+    Assert-True 'RED incremental gate checks test evidence file, not production files' (@($gate.files_checked) -contains $testRel -and @($gate.files_checked | Where-Object { [string]$_ -match 'example-core' }).Count -eq 0) ($gate | ConvertTo-Json -Depth 12)
 
     Write-Host 'v536 incremental verification gate args regression passed.'
 }

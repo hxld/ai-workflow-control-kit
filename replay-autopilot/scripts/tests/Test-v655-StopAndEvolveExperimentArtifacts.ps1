@@ -157,7 +157,7 @@ try {
     @{
         schema = 'slice_execution_contract.v1'
         family_id = 'config_policy_threshold'
-        production_entry_qn = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+        production_entry_qn = 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save'
         side_effect_or_output_probe = 'persist_free_review_amount; clear_updates_database; reject_invalid_amounts; auto_flow_gate_reads_config'
         must_not_assertion = 'do not insert invalid zero-threshold config'
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $sliceExecutionContract -Encoding UTF8
@@ -165,10 +165,10 @@ try {
         slice_index = 1
         slice_status = 'DONE'
         proof_kind = 'real_entry_behavior'
-        production_boundary = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+        production_boundary = 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save'
         side_effect_evidence = @{
             status = 'CLOSED'
-            entry_call = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+            entry_call = 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save'
             expected_writes_or_outputs = @('persist_free_review_amount', 'clear_updates_database', 'reject_invalid_amounts', 'auto_flow_gate_reads_config')
         }
         must_not_assertions = @('invalid zero-threshold request must not call mapper.insertSelective')

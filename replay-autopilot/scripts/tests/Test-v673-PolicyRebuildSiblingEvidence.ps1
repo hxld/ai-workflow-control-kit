@@ -31,9 +31,9 @@ function Write-PlanFixture {
 
 plan_status: PROCEED
 carrier_search: performed
-carrier_search_queries: rg -n "rebuildTaskData" claim-core/src/main/java --glob "*.java"; rg -n "policyNum" claim-core/src/main/java --glob "*.java"; rg -n "insureNum" claim-core/src/main/java --glob "*.java"
+carrier_search_queries: rg -n "rebuildTaskData" example-core/src/main/java --glob "*.java"; rg -n "policyNum" example-core/src/main/java --glob "*.java"; rg -n "insureNum" example-core/src/main/java --glob "*.java"
 existing_production_carriers: $Carriers
-selected_carrier_from_search: AiApplyClaimApiTaskProcessor.rebuildTaskData
+selected_carrier_from_search: ExampleApplyClaimApiTaskProcessor.rebuildTaskData
 new_service_proposed: false
 oracle_production_file_overlap: 100%
 oracle_missing_high_weight_files: none
@@ -41,12 +41,12 @@ first_slice: S1_source_chain
 first_red_test: PolicyRebuildSourceChainTest#propagatesPolicyAndInsureNum
 
 Required source-chain contract:
-- AiClaimDataAssemblyHelper.buildRequestCommon
-- AiClaimDataAssemblyHelper.RequestBuildFunction
+- ExampleDataAssemblyHelper.buildRequestCommon
+- ExampleDataAssemblyHelper.RequestBuildFunction
 - RequestBuildContext
 - policyNum and insureNum must flow through RequestBuildFunction
-- claim-server/src/test/java contains the no-Spring test harness
-- mvn --% -f worktree/pom.xml -pl claim-server -am -Dtest=PolicyRebuildSourceChainTest#propagatesPolicyAndInsureNum -Dsurefire.failIfNoSpecifiedTests=false test
+- example-server/src/test/java contains the no-Spring test harness
+- mvn --% -f worktree/pom.xml -pl example-server -am -Dtest=PolicyRebuildSourceChainTest#propagatesPolicyAndInsureNum -Dsurefire.failIfNoSpecifiedTests=false test
 - req.setPolicyNum(buildContext.getPolicyNum())
 - req.setInsureNum(buildContext.getInsureNum())
 $ExtraPlanText
@@ -55,8 +55,8 @@ $ExtraPlanText
     @{
         expected_test_class = 'PolicyRebuildSourceChainTest'
         test_infrastructure_check = @{
-            test_module_for_target = 'claim-server'
-            compilation_dry_run_command = 'mvn --% -f worktree/pom.xml -pl claim-server -am test-compile'
+            test_module_for_target = 'example-server'
+            compilation_dry_run_command = 'mvn --% -f worktree/pom.xml -pl example-server -am test-compile'
         }
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $Root 'PLAN_RESULT.json') -Encoding UTF8
 }
@@ -67,8 +67,8 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("replay-v673-policy-sib
 
 try {
     $missingCalculateRoot = Join-Path $tempRoot 'missing-calculate'
-    Write-PlanFixture -Root $missingCalculateRoot -Carriers 'AiApplyClaimApiTaskProcessor.rebuildTaskData' -ExtraPlanText @'
-- AiApplyClaimApiTaskProcessor.rebuildTaskData
+    Write-PlanFixture -Root $missingCalculateRoot -Carriers 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData' -ExtraPlanText @'
+- ExampleApplyClaimApiTaskProcessor.rebuildTaskData
 '@
     & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $missingCalculateRoot -Stage Plan 2>$null | Out-Null
     Assert-True ($LASTEXITCODE -ne 0) 'plan verifier fails closed when calculate sibling is missing'
@@ -77,12 +77,12 @@ try {
     $siblingEvidence = @($missingVerify.issue_evidence | Where-Object { [string]$_.issue -eq 'policy_rebuild_plan_missing:apply_and_calculate_siblings' })[0]
     Assert-True ($null -ne $siblingEvidence) 'missing sibling issue includes evidence row'
     Assert-True ([string]$siblingEvidence.machine_gate -eq 'Surface Coverage Gate') 'evidence row names Surface Coverage Gate'
-    Assert-True ([string]$siblingEvidence.snippet -match 'AiCalculateLossApiTaskProcessor\.rebuildTaskData') 'evidence row names missing calculate sibling'
+    Assert-True ([string]$siblingEvidence.snippet -match 'ExampleCalculatorApiTaskProcessor\.rebuildTaskData') 'evidence row names missing calculate sibling'
 
     $completeRoot = Join-Path $tempRoot 'complete-siblings'
-    Write-PlanFixture -Root $completeRoot -Carriers 'AiApplyClaimApiTaskProcessor.rebuildTaskData; AiCalculateLossApiTaskProcessor.rebuildTaskData' -ExtraPlanText @'
-- AiApplyClaimApiTaskProcessor.rebuildTaskData
-- AiCalculateLossApiTaskProcessor.rebuildTaskData
+    Write-PlanFixture -Root $completeRoot -Carriers 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData; ExampleCalculatorApiTaskProcessor.rebuildTaskData' -ExtraPlanText @'
+- ExampleApplyClaimApiTaskProcessor.rebuildTaskData
+- ExampleCalculatorApiTaskProcessor.rebuildTaskData
 '@
     & powershell -NoProfile -ExecutionPolicy Bypass -File $verifier -ReplayRoot $completeRoot -Stage Plan | Out-Null
     $completeVerify = Get-Content -LiteralPath (Join-Path $completeRoot 'PLAN_CONTRACT_VERIFY.json') -Raw -Encoding UTF8 | ConvertFrom-Json

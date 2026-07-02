@@ -51,25 +51,25 @@ function Write-PlanFixture {
     New-Item -ItemType Directory -Force -Path $worktree | Out-Null
 
     $intentLine = if ($WithExplicitRebuildIntent) {
-        'source_chain_intent: AiApplyClaimApiTaskProcessor.rebuildTaskData preserves policyNum and insureNum through RequestBuildContext'
+        'source_chain_intent: ExampleApplyClaimApiTaskProcessor.rebuildTaskData preserves policyNum and insureNum through RequestBuildContext'
     } else {
-        'side_effect_field_mapping: AiApplyClaimApiTaskProcessor.handleTaskResponse writes compensate detail fields protectionItemId, compensateAmount, policyNum, insureNum'
+        'side_effect_field_mapping: ExampleApplyClaimApiTaskProcessor.handleTaskResponse writes compensate detail fields protectionItemId, compensateAmount, policyNum, insureNum'
     }
 
     $planMd = @"
 plan_status: PROCEED
 carrier_search: performed
-carrier_search_queries: rg "class AiApplyClaimApiTaskProcessor"; rg "handleTaskResponse"; rg "AiAutoClaimFlowService"
-existing_production_carriers: AiApplyClaimApiTaskProcessor; AiAutoClaimFlowService; CaseRouteService
-selected_carrier_from_search: AiApplyClaimApiTaskProcessor.handleTaskResponse
+carrier_search_queries: rg "class ExampleApplyClaimApiTaskProcessor"; rg "handleTaskResponse"; rg "ExampleFlowService"
+existing_production_carriers: ExampleApplyClaimApiTaskProcessor; ExampleFlowService; CaseRouteService
+selected_carrier_from_search: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 new_service_proposed: false
 oracle_production_file_overlap: 80%
 oracle_missing_high_weight_files: none
 oracle_expansion_plan: none
 oracle_out_of_scope_files: none
-golden_slice_binding: stateful_side_effect -> AiApplyClaimApiTaskProcessor.handleTaskResponse -> RED auto-flow side effects absent -> GREEN compensate writes and status change -> executable mapper assertions
+golden_slice_binding: stateful_side_effect -> ExampleApplyClaimApiTaskProcessor.handleTaskResponse -> RED auto-flow side effects absent -> GREEN compensate writes and status change -> executable mapper assertions
 first_slice: S1-CORE auto-flow trigger
-first_red_test: AiApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
+first_red_test: ExampleApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
 core_closure_required: true
 blocker: none
 next_action: PROCEED_TO_SLICE_1
@@ -79,20 +79,20 @@ $intentLine
 
     Write-JsonFile (Join-Path $Root 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/example/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 42
-        expected_test_class = 'AiApplyClaimApiTaskProcessorTest'
+        expected_test_class = 'ExampleApplyClaimApiTaskProcessorTest'
         expected_test_method = 'testHandleTaskResponse_AutoFlowTriggered_Success'
         side_effects = @('insert compensate detail with policyNum and insureNum fields')
         expected_side_effects = @([ordered]@{ state = 'compensate_detail'; operation = 'insert'; proof = 'mapper assertion includes policyNum and insureNum field mapping' })
         expected_assertions = @('verify compensate detail mapper receives policyNum and insureNum field values')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -f worktree/pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -f worktree/pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -102,50 +102,50 @@ $intentLine
 
     Write-Utf8 (Join-Path $Root 'PHASE0_RESULT.md') @'
 phase0_status: PROCEED
-selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)
 '@
-    Write-Utf8 (Join-Path $Root 'REPLAY_PLAN.md') "Slice 1: stateful_side_effect auto-flow through AiApplyClaimApiTaskProcessor.handleTaskResponse."
+    Write-Utf8 (Join-Path $Root 'REPLAY_PLAN.md') "Slice 1: stateful_side_effect auto-flow through ExampleApplyClaimApiTaskProcessor.handleTaskResponse."
     Write-Utf8 (Join-Path $Root 'PLAN_SELECTION.md') "Selected: stateful_side_effect core-entry plan."
-    Write-Utf8 (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') "requirement -> AiApplyClaimApiTaskProcessor.handleTaskResponse -> LOGIC_FIX -> mapper assertions."
+    Write-Utf8 (Join-Path $Root 'EXPECTED_DIFF_MATRIX.md') "requirement -> ExampleApplyClaimApiTaskProcessor.handleTaskResponse -> LOGIC_FIX -> mapper assertions."
     Write-Utf8 (Join-Path $Root 'IMPLEMENTATION_CONTRACT.md') @"
-selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)
-first_red_test: AiApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)
+first_red_test: ExampleApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
 shallow_green_ban: no helper-only or DTO-only proof
 "@
-    Write-Utf8 (Join-Path $Root 'SIDE_EFFECT_LEDGER.md') "entry -> side effect -> state -> proof`nAiApplyClaimApiTaskProcessor.handleTaskResponse -> insert compensate detail -> policyNum/insureNum mapped -> mapper assertion"
+    Write-Utf8 (Join-Path $Root 'SIDE_EFFECT_LEDGER.md') "entry -> side effect -> state -> proof`nExampleApplyClaimApiTaskProcessor.handleTaskResponse -> insert compensate detail -> policyNum/insureNum mapped -> mapper assertion"
     Write-Utf8 (Join-Path $Root 'TEST_CHARTER.md') @"
-test_surface: AiApplyClaimApiTaskProcessor.handleTaskResponse
-entry_point: AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)
-test_class: AiApplyClaimApiTaskProcessorTest
+test_surface: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+entry_point: ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)
+test_class: ExampleApplyClaimApiTaskProcessorTest
 test_method: testHandleTaskResponse_AutoFlowTriggered_Success
 DB Verification: mapper argument captures compensate detail with policyNum and insureNum field mapping
 Side Effects: verify compensate detail insert and case route update
 "@
     Write-Utf8 (Join-Path $Root 'FIRST_SLICE_PROOF_PLAN.md') @"
 first_slice: S1-CORE auto-flow trigger
-golden_slice_binding: stateful_side_effect -> AiApplyClaimApiTaskProcessor.handleTaskResponse -> RED auto-flow side effects absent -> GREEN compensate writes and status change -> executable mapper assertions
+golden_slice_binding: stateful_side_effect -> ExampleApplyClaimApiTaskProcessor.handleTaskResponse -> RED auto-flow side effects absent -> GREEN compensate writes and status change -> executable mapper assertions
 highest_weight_open_gate: core_entry
 first_slice_family: core_entry
-first_red_test: AiApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
-selected_real_entry: AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)
+first_red_test: ExampleApplyClaimApiTaskProcessorTest.testHandleTaskResponse_AutoFlowTriggered_Success
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)
 public_entry_contract_coverage: real public task processor entry
-selected_carrier: AiApplyClaimApiTaskProcessor
-target_subsurface_or_carrier: AiApplyClaimApiTaskProcessor.handleTaskResponse
-production_boundary: AiApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier: ExampleApplyClaimApiTaskProcessor
+target_subsurface_or_carrier: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+production_boundary: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 proof_kind: stateful_side_effect
 real_carrier_kind: production_entry_or_service
 required_sibling_surfaces: none
 minimum_side_effect_or_blocker: compensate detail insert
-expected_production_diff: AiApplyClaimApiTaskProcessor.handleTaskResponse conditional auto-flow call
+expected_production_diff: ExampleApplyClaimApiTaskProcessor.handleTaskResponse conditional auto-flow call
 red_expectation: auto-flow side effects absent before production change
 green_minimum_implementation: invoke auto-flow and persist side effects
 forbidden_substitute_check: passed
 forbidden_substitute_proof: real entry with mapper assertions
 fail_closed_condition: block if no executable mapper assertion
 coverage_cap_if_not_closed: 10 if no stateful side effect proof
-target_carrier_file_path: claim-core/src/main/java/com/example/AiApplyClaimApiTaskProcessor.java
+target_carrier_file_path: example-core/src/main/java/com/example/ExampleApplyClaimApiTaskProcessor.java
 target_carrier_line_number: 42
-expected_test_class: AiApplyClaimApiTaskProcessorTest
+expected_test_class: ExampleApplyClaimApiTaskProcessorTest
 expected_test_method: testHandleTaskResponse_AutoFlowTriggered_Success
 expected_assertions: ["mapper receives compensate detail","case route updated","progress inserted"]
 expected_side_effects: [{"state":"compensate_detail","operation":"insert","proof":"mapper assertion"}]

@@ -2,7 +2,7 @@
 # Regression test for v407 domain-aware oracle overlap filtering in ORACLE_OVERLAP_GATE
 
 param(
-    [string]$ReplayRoot = 'D:\opt\replay-evidence\aiClaimV2\claim-codex-replay-v404-autopilot-20260517-r03'
+    [string]$ReplayRoot = 'D:\opt\replay-evidence\example-feature\claim-codex-replay-v404-autopilot-20260517-r03'
 )
 
 $ErrorActionPreference = 'Stop'

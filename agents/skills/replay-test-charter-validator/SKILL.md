@@ -193,7 +193,7 @@ public void test<Method>_<SideEffect>() {
 ```bash
 # 运行 3 轮带副作用验证器的 replay
 for i in {1..3}; do
-  ./run-replay.sh --feature=aiClaimV2 --side-effect-validator
+  ./run-replay.sh --feature=example-feature --side-effect-validator
   # 检查测试文件的副作用断言
   # 检查 side_effect_ledger 的闭包 > 0%
 done
@@ -217,4 +217,4 @@ done
 
 ---
 
-**演化来源**: aiClaimV2 replay v278-v293 deep review, RC5: Tests prove helper logic only, not executable behavior (side effects)
+**演化来源**: example-feature replay v278-v293 deep review, RC5: Tests prove helper logic only, not executable behavior (side effects)

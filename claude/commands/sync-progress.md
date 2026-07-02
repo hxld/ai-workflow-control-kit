@@ -15,7 +15,7 @@ description: 强制同步进度并检查所有文件一致性
 
 **执行步骤**:
 1. **识别当前项目并读取 MEMORY.md 中的错误速查表**
-   - 根据当前工作目录确定项目标识符（如 `d:\opt\claim` → `d--opt-claim`）
+   - 根据当前工作目录确定项目标识符（如 `d:\projects\my-project` → `d--projects--my-project`）
    - 文件路径: `~/.claude/projects/{项目标识符}/memory/MEMORY.md`
    - 重点关注 "常见错误速查" 章节
 
@@ -44,16 +44,16 @@ description: 强制同步进度并检查所有文件一致性
 **用户应在会话开始时指定需求文档路径**，格式如：
 
 ```
-"需求文档在 D:\document\慧择\理赔系统\一期迭代\AI核赔一期迭代需求文档.md"
+"需求文档在 D:\docs\requirements.md"
 ```
 
 **系统将自动推断以下路径**：
 
 | 文件类型 | 推断规则 | 示例 |
 |---------|---------|------|
-| 技术文档 | 同目录 + "技术文档.md" | `D:\document\...\AI核赔一期迭代技术文档.md` |
-| 改动说明 | 同目录 + "改动说明.md" 或 "代码改动说明.md" | `D:\document\...\AI核赔V1.01代码改动说明.md` |
-| OpenSpec变更 | 根据"一期迭代"或需求关键词匹配 | `openspec/changes/ai-claim-iteration-v101/` |
+| 技术文档 | 同目录 + "技术文档.md" | `D:\...\technical-doc.md` |
+| 改动说明 | 同目录 + "改动说明.md" 或 "代码改动说明.md" | `D:\...\changelog.md` |
+| OpenSpec变更 | 根据"my-feature"或需求关键词匹配 | `openspec/changes/my-feature-v101/` |
 
 **如果未在会话开始时指定路径**：
 
@@ -61,12 +61,12 @@ description: 强制同步进度并检查所有文件一致性
 ⚠️ 未找到需求文档路径
 
 请提供需求文档路径，我将自动推断技术文档和改动说明的位置：
-例如："D:\document\项目\需求文档.md"
+例如："D:\docs\requirements.md"
 
 或者分别提供：
 1. 技术文档路径
 2. 改动说明路径
-3. OpenSpec变更ID（如：ai-claim-iteration-v101）
+3. OpenSpec变更ID（如：my-feature-v101）
 ```
 
 ---
@@ -128,29 +128,29 @@ description: 强制同步进度并检查所有文件一致性
 
 ```python
 # 假设需求文档路径为：
-需求文档 = "D:\document\慧择\理赔系统\一期迭代\AI核赔一期迭代需求文档.md"
+需求文档 = "D:\docs\requirements.md"
 
 # 推断技术文档：
-目录 = "D:\document\慧择\理赔系统\一期迭代\"
+目录 = "D:\docs\"
 技术文档 = 目录 + 同前缀 + "技术文档.md"
-# 例如：AI核赔一期迭代技术文档.md
+# 例如：technical-doc.md
 
 # 推断改动说明：
-改动说明 = 目录 + "AI核赔V1.01代码改动说明.md" 或 类似命名
+改动说明 = 目录 + "changelog.md" 或 类似命名
 # 通过 glob 目录下 *改动说明*.md 或 *代码改动*.md 查找
 
 # 推断 OpenSpec 变更：
-变更ID = 根据"一期迭代"匹配 openspec/changes/ 下的目录
-# 例如：ai-claim-iteration-v101
+变更ID = 根据"my-feature"匹配 openspec/changes/ 下的目录
+# 例如：my-feature-v101
 ```
 
 **输出**：
 ```
 📋 路径确认
-- 需求文档: D:\document\...\AI核赔一期迭代需求文档.md
-- 技术文档: D:\document\...\AI核赔一期迭代技术文档.md ✓
-- 改动说明: D:\document\...\AI核赔V1.01代码改动说明.md ✓
-- OpenSpec: openspec/changes/ai-claim-iteration-v101/ ✓
+- 需求文档: D:\...\requirements.md
+- 技术文档: D:\...\technical-doc.md ✓
+- 改动说明: D:\...\changelog.md ✓
+- OpenSpec: openspec/changes/my-feature-v101/ ✓
 ```
 
 ---

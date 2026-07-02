@@ -22,7 +22,7 @@ Assert-True ($replayText.Contains('$hasPolicyNum = $PlanText -match')) 'Run-Repl
 Assert-True ($replayText.Contains('$hasInsureNum = $PlanText -match')) 'Run-ReplayLoop policy rebuild detector must require insureNum.'
 Assert-True ($replayText.Contains('$hasRebuildBoundary = $PlanText -match')) 'Run-ReplayLoop policy rebuild detector must require a rebuild/source-chain boundary.'
 Assert-True ($replayText.Contains('return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)')) 'Run-ReplayLoop policy rebuild detector must use conjunctive matching.'
-Assert-True ($replayText -notmatch 'return \(\$PlanText -match ''\(\?i\)policyNum\|insureNum\|rebuildTaskData\|AiApplyClaimApiTaskProcessor') 'Run-ReplayLoop must not use broad OR matching for policy rebuild detection.'
+Assert-True ($replayText -notmatch 'return \(\$PlanText -match ''\(\?i\)policyNum\|insureNum\|rebuildTaskData\|ExampleApplyClaimApiTaskProcessor') 'Run-ReplayLoop must not use broad OR matching for policy rebuild detection.'
 
 Assert-True ($schemaText.Contains('$hasPolicyNum = $PlanText -match')) 'Plan schema fail-fast policy rebuild detector must require policyNum.'
 Assert-True ($schemaText.Contains('$hasInsureNum = $PlanText -match')) 'Plan schema fail-fast policy rebuild detector must require insureNum.'

@@ -47,24 +47,24 @@ function New-PlanFixture {
     $worktree = Join-Path $Root 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
     '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Encoding UTF8
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\sample') | Out-Null
-    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\sample') | Out-Null
+    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
 
     Write-JsonFile (Join-Path $replayRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/acme/Carrier.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/acme/Carrier.java'
         target_carrier_line_number = 12
         expected_test_class = 'ExistingHarnessTest'
         expected_test_method = 'shouldCompile'
         side_effects = @('stateful proof row')
         expected_assertions = @('assert side effect')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 1
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -113,7 +113,7 @@ try {
     Assert-True 'phase0_precheck_exits_zero' ($LASTEXITCODE -eq 0) "exit=$LASTEXITCODE"
     $captured = Get-Content -LiteralPath $capturePath -Raw -Encoding UTF8
     Assert-True 'phase0_precheck_uses_settings' ($captured.Contains("-s`n$settingsPath")) $captured
-    Assert-True 'phase0_precheck_test_compile_uses_am' ($captured.Contains("test-compile`n-pl`nclaim-server`n-am")) $captured
+    Assert-True 'phase0_precheck_test_compile_uses_am' ($captured.Contains("test-compile`n-pl`nexample-server`n-am")) $captured
     Assert-True 'phase0_precheck_uses_utf8_properties' ($captured.Contains('-Dproject.build.sourceEncoding=UTF-8') -and $captured.Contains('-Dfile.encoding=UTF-8')) $captured
 
     Set-Content -LiteralPath $capturePath -Value '' -Encoding UTF8

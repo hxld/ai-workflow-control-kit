@@ -53,17 +53,17 @@ try {
     Assert-True ($emptyText -match 'Total Executable Carriers: 0') 'empty/non-Java project should produce a zero-carrier index'
 
     $javaRepo = Join-Path $tempRoot 'java-repo'
-    Write-Utf8 (Join-Path $javaRepo 'claim-api\src\main\java\com\acme\PolicyFacade.java') 'public interface PolicyFacade {}'
-    Write-Utf8 (Join-Path $javaRepo 'claim-web\src\main\java\com\acme\PolicyController.java') 'public class PolicyController {}'
-    Write-Utf8 (Join-Path $javaRepo 'claim-core\src\main\java\com\acme\facade\PolicyFacadeImpl.java') 'public class PolicyFacadeImpl {}'
+    Write-Utf8 (Join-Path $javaRepo 'example-api\src\main\java\com\acme\PolicyFacade.java') 'public interface PolicyFacade {}'
+    Write-Utf8 (Join-Path $javaRepo 'example-web\src\main\java\com\acme\PolicyController.java') 'public class PolicyController {}'
+    Write-Utf8 (Join-Path $javaRepo 'example-core\src\main\java\com\acme\facade\PolicyFacadeImpl.java') 'public class PolicyFacadeImpl {}'
     $javaOut = Join-Path $tempRoot 'java-SURFACE_CARRIER_INDEX.md'
     $javaResult = Invoke-CarrierIndex -ProjectRoot $javaRepo -OutputPath $javaOut -TempRoot $tempRoot
     $javaText = Get-Content -LiteralPath $javaOut -Raw -Encoding UTF8
 
     Assert-True ($javaResult.exit_code -eq 0) 'Java project should still generate carrier index successfully'
-    Assert-True ($javaText -match 'PolicyFacade - claim-api/src/main/java/com/acme/PolicyFacade.java') 'Facade interface should be detected'
-    Assert-True ($javaText -match 'PolicyController - claim-web/src/main/java/com/acme/PolicyController.java') 'Controller class should be detected'
-    Assert-True ($javaText -match 'PolicyFacadeImpl - claim-core/src/main/java/com/acme/facade/PolicyFacadeImpl.java') 'FacadeImpl class should be detected'
+    Assert-True ($javaText -match 'PolicyFacade - example-api/src/main/java/com/acme/PolicyFacade.java') 'Facade interface should be detected'
+    Assert-True ($javaText -match 'PolicyController - example-web/src/main/java/com/acme/PolicyController.java') 'Controller class should be detected'
+    Assert-True ($javaText -match 'PolicyFacadeImpl - example-core/src/main/java/com/acme/facade/PolicyFacadeImpl.java') 'FacadeImpl class should be detected'
     Assert-True ($javaText -match 'Total Executable Carriers: 3') 'Java project should report three executable carriers'
 
     Write-Host ''

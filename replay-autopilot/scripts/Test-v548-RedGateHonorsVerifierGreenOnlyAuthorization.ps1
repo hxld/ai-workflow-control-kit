@@ -47,18 +47,18 @@ try {
         tests = @(
             [ordered]@{
                 phase = 'VERIFY'
-                command = 'mvn -pl claim-server -am -Dtest=PolicyNumRebuildPathTest test'
+                command = 'mvn -pl example-server -am -Dtest=PolicyNumRebuildPathTest test'
                 result = 'pass'
                 evidence = 'Tests run: 5, Failures: 0, Errors: 0, Skipped: 0'
             }
         )
         implemented_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java',
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java'
         )
         current_slice_changed_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java',
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java'
         )
     })
 

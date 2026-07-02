@@ -35,11 +35,11 @@ try {
     & git -C $worktree init | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "git init failed" }
 
-    $prodFile = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\service\AiAutoClaimFlowService.java'
-    $testFile = Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task\AiApplyClaimAutoFlowTriggerTest.java'
+    $prodFile = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\service\ExampleFlowService.java'
+    $testFile = Join-Path $worktree 'example-server\src\test\java\com\example\project\core\ai\task\ExampleApplyClaimAutoFlowTriggerTest.java'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $prodFile), (Split-Path -Parent $testFile) | Out-Null
-    'class AiAutoClaimFlowService {}' | Set-Content -LiteralPath $prodFile -Encoding UTF8
-    'class AiApplyClaimAutoFlowTriggerTest {}' | Set-Content -LiteralPath $testFile -Encoding UTF8
+    'class ExampleFlowService {}' | Set-Content -LiteralPath $prodFile -Encoding UTF8
+    'class ExampleApplyClaimAutoFlowTriggerTest {}' | Set-Content -LiteralPath $testFile -Encoding UTF8
 
     Import-RunSliceLoopFunctions
 
@@ -58,8 +58,8 @@ try {
     $auditJson = Get-Content -LiteralPath $audit.JsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ($auditJson.schema -eq 'partial_worktree_diff_audit.v1') 'audit schema mismatch'
     Assert-True ($auditJson.status -eq 'PARTIAL_DIFF_DETECTED') 'audit status must detect partial diff'
-    Assert-True (@($auditJson.production_files) -contains 'claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java') 'audit must include production file'
-    Assert-True (@($auditJson.test_files) -contains 'claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimAutoFlowTriggerTest.java') 'audit must include test file'
+    Assert-True (@($auditJson.production_files) -contains 'example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java') 'audit must include production file'
+    Assert-True (@($auditJson.test_files) -contains 'example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimAutoFlowTriggerTest.java') 'audit must include test file'
 
     $sliceResult = Join-Path $replayRoot 'SLICE_RESULT_01.json'
     $forced = [pscustomobject]@{
@@ -84,8 +84,8 @@ try {
     Assert-True (@($slice.gap_flags) -contains 'partial_worktree_diff_detected') 'fallback slice must include partial diff gap flag'
     Assert-True (@($slice.gap_flags) -contains 'executor_silent_no_output') 'fallback slice must retain executor failure category'
     Assert-True ($slice.proof_kind -eq 'partial_worktree_diff_audit') 'fallback slice must use partial diff proof kind'
-    Assert-True (@($slice.current_slice_changed_files) -contains 'claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java') 'fallback slice must keep production changed file'
-    Assert-True (@($slice.current_slice_changed_files) -contains 'claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimAutoFlowTriggerTest.java') 'fallback slice must keep test changed file'
+    Assert-True (@($slice.current_slice_changed_files) -contains 'example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java') 'fallback slice must keep production changed file'
+    Assert-True (@($slice.current_slice_changed_files) -contains 'example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimAutoFlowTriggerTest.java') 'fallback slice must keep test changed file'
     Assert-True ([string]$slice.partial_worktree_diff_audit -eq [string]$audit.JsonPath) 'fallback slice must point to audit JSON'
 
     $sliceLoopText = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Run-SliceLoop.ps1') -Raw -Encoding UTF8

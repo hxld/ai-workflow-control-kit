@@ -25,24 +25,24 @@ function New-PlanFixture {
     $replayRoot = Join-Path $Root 'replay'
     $worktree = Join-Path $Root 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\sample') | Out-Null
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\pom.xml') -Encoding UTF8
-    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\sample') | Out-Null
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\pom.xml') -Encoding UTF8
+    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\src\test\java\sample\ExistingHarnessTest.java') -Encoding UTF8
 
     Write-JsonFile (Join-Path $replayRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
-        module = 'claim-server'
+        command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
+        module = 'example-server'
         exit_code = 0
         timed_out = $false
-        stdout_tail = '[INFO] --- compiler:testCompile ---' + "`n" + '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project claim-domain: Compilation failure'
+        stdout_tail = '[INFO] --- compiler:testCompile ---' + "`n" + '[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.13.0:compile (default-compile) on project example-domain: Compilation failure'
         stderr_tail = ''
     })
 
     Write-JsonFile (Join-Path $replayRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 495
-        expected_test_class = 'AiApplyClaimAutoFlowTriggerTest'
+        expected_test_class = 'ExampleApplyClaimAutoFlowTriggerTest'
         expected_test_method = 'shouldTriggerAutoFlowWhenAiResultSuccess'
         side_effects = @(
             [ordered]@{
@@ -53,12 +53,12 @@ function New-PlanFixture {
         )
         expected_assertions = @('verify autoFlow service is called')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl claim-server -am test-compile"
+            compilation_dry_run_command = "mvn -f $worktree\pom.xml -pl example-server -am test-compile"
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -68,21 +68,21 @@ function New-PlanFixture {
 # FIRST_SLICE_PROOF_PLAN
 
 highest_weight_open_gate: core_entry
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)
-selected_carrier: AiApplyClaimApiTaskProcessor
-target_subsurface_or_carrier: AiApplyClaimApiTaskProcessor
-target_carrier_file_path: claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)
+selected_carrier: ExampleApplyClaimApiTaskProcessor
+target_subsurface_or_carrier: ExampleApplyClaimApiTaskProcessor
+target_carrier_file_path: example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java
 target_carrier_line_number: 495
-expected_test_class: AiApplyClaimAutoFlowTriggerTest
+expected_test_class: ExampleApplyClaimAutoFlowTriggerTest
 expected_test_method: shouldTriggerAutoFlowWhenAiResultSuccess
 expected_assertions: ["verify autoFlow service is called"]
-expected_side_effects: [{"service":"AiAutoClaimFlowService","operation":"autoFlow"}]
+expected_side_effects: [{"service":"ExampleFlowService","operation":"autoFlow"}]
 minimum_side_effect_or_blocker: autoFlow service called after AI result save
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
     @'
-Entry Point: AiApplyClaimApiTaskProcessor.handleTaskResponse
-Test Class: AiApplyClaimAutoFlowTriggerTest
+Entry Point: ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+Test Class: ExampleApplyClaimAutoFlowTriggerTest
 DB Verification: not applicable for first trigger slice
 Side Effects: verify autoFlow service call
 '@ | Set-Content -LiteralPath (Join-Path $replayRoot 'TEST_CHARTER.md') -Encoding UTF8
@@ -112,8 +112,8 @@ try {
     Assert-True 'schema_reports_failure_signal' ($schemaIssues -match 'compilation_dry_run_evidence_contains_failure_signal') $schemaIssues
 
     $preFixture = New-PlanFixture -Root (Join-Path $tempRoot 'pre-execution')
-    New-Item -ItemType Directory -Force -Path (Join-Path $preFixture.Worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
-    'class AiApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $preFixture.Worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $preFixture.Worktree 'example-core\src\main\java\com\example\project\core\ai\task') | Out-Null
+    'class ExampleApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $preFixture.Worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java') -Encoding UTF8
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $preExecutionScript `
         -ReplayRoot $preFixture.ReplayRoot `
         -Worktree $preFixture.Worktree `

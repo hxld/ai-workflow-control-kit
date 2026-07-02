@@ -40,14 +40,14 @@ try {
     Assert-True 'retry_prompt_writes_command_guard_blocker' ($sliceLoopText.Contains('command_guard_blocker'))
 
     $evidenceRoot = Join-Path $tempRoot 'evidence'
-    $replayRoot = Join-Path $evidenceRoot 'aiClaimV2\claim-codex-replay-v605-autopilot-20260517-r01'
+    $replayRoot = Join-Path $evidenceRoot 'example-feature\claim-codex-replay-v605-autopilot-20260517-r01'
     $controlRoot = Join-Path $evidenceRoot '_control'
     $logDir = Join-Path $replayRoot 'logs\phase1-slices\slice01'
     New-Item -ItemType Directory -Force -Path $logDir, $controlRoot | Out-Null
 
     Write-JsonFile (Join-Path $replayRoot 'RUN_CONTROL_SUMMARY.json') ([ordered]@{
         latest = [ordered]@{
-            feature = 'aiClaimV2'
+            feature = 'example-feature'
             verification_capped_coverage = 0
             oracle_adjusted_coverage = $null
             fingerprints = @('protected_root_isolation_violation', 'low_verification_cap')
@@ -63,7 +63,7 @@ try {
     Write-JsonFile (Join-Path $controlRoot 'RUN_CONTROL_LATEST.json') ([ordered]@{
         latest = [ordered]@{
             replay_root = $replayRoot
-            feature = 'aiClaimV2'
+            feature = 'example-feature'
             verification_capped_coverage = 0
             oracle_adjusted_coverage = $null
             fingerprints = @('protected_root_isolation_violation', 'low_verification_cap')

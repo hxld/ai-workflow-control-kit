@@ -24,8 +24,8 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("v596-first-slice-proof
 
 try {
     $worktree = Join-Path $tempRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\example') | Out-Null
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\example\ConfigCarrier.java') @'
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example') | Out-Null
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\ConfigCarrier.java') @'
 package com.example;
 class ConfigCarrier {
   void save(Object dto) {}
@@ -74,19 +74,19 @@ first_red_test: ConfigCarrierTest.savesThreshold'
 - **public_entry_contract_coverage**: not_public_entry_with_reason:service_threshold_slice
 - **selected_carrier**: ConfigCarrier
 - **target_subsurface_or_carrier**: ConfigCarrier.save
-- **production_boundary**: claim-core/src/main/java/com/example/ConfigCarrier.java
+- **production_boundary**: example-core/src/main/java/com/example/ConfigCarrier.java
 - **proof_kind**: stateful_side_effect
 - **real_carrier_kind**: production_service_method
 - **required_sibling_surfaces**: none
 - **minimum_side_effect_or_blocker**: mapper insert/update persists threshold
-- **expected_production_diff**: claim-core/src/main/java/com/example/ConfigCarrier.java
+- **expected_production_diff**: example-core/src/main/java/com/example/ConfigCarrier.java
 - **red_expectation**: test fails before threshold persistence exists
 - **green_minimum_implementation**: add minimum service/entity/mapper threshold persistence
 - **forbidden_substitute_check**: passed
 - **forbidden_substitute_proof**: not helper-only or static-only
 - **fail_closed_condition**: fail if no executable state assertion
 - **coverage_cap_if_not_closed**: none
-- **target_carrier_file_path**: claim-core/src/main/java/com/example/ConfigCarrier.java
+- **target_carrier_file_path**: example-core/src/main/java/com/example/ConfigCarrier.java
 - **target_carrier_line_number**: 3
 - **expected_test_class**: ConfigCarrierTest
 - **expected_test_method**: savesThreshold

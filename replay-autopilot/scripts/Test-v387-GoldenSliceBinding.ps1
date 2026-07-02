@@ -114,7 +114,7 @@ coverage_cap_if_missing: 0
 pattern_to_follow: DemoService.handle
 pattern_return_type: void
 pattern_error_handling: exception_propagation
-pattern_evidence_source: rg "class DemoService" claim-server/src/main/java
+pattern_evidence_source: rg "class DemoService" example-server/src/main/java
 '@
 
     Write-Utf8 -Path (Join-Path $tempRoot 'PLAN_RESULT.md') -Value $planWithoutBinding

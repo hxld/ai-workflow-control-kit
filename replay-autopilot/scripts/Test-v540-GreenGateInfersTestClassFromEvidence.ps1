@@ -44,19 +44,19 @@ try {
     $slice = [pscustomobject]@{
         tests = @([pscustomobject]@{ phase = 'GREEN'; command = 'test execution'; result = 'pass' })
         behavior_test_charter = [pscustomobject]@{
-            evidence_file = 'claim-server/src/test/java/com/huize/claim/core/ai/task/PolicyNumRebuildPathTest.java'
+            evidence_file = 'example-server/src/test/java/com/example/project/core/ai/task/PolicyNumRebuildPathTest.java'
         }
         current_slice_changed_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-server/src/test/java/com/huize/claim/core/ai/task/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java',
+            'example-server/src/test/java/com/example/project/core/ai/task/PolicyNumRebuildPathTest.java'
         )
     }
 
     Import-RunSliceLoopFunctions
     $class = Get-TestClassFromSliceEvidence -SliceResultObject $slice
-    $module = Get-TestModuleFromSliceEvidence -SliceResultObject $slice -ImplementedFiles @('claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java')
+    $module = Get-TestModuleFromSliceEvidence -SliceResultObject $slice -ImplementedFiles @('example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java')
     Assert-True 'GREEN gate infers test class from behavior evidence file' ([string]$class -eq 'PolicyNumRebuildPathTest') $class
-    Assert-True 'GREEN gate still infers test module from evidence path' ([string]$module -eq 'claim-server') $module
+    Assert-True 'GREEN gate still infers test module from evidence path' ([string]$module -eq 'example-server') $module
 
     Write-Host 'v540 GREEN gate test class inference regression passed.'
 }

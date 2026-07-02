@@ -60,7 +60,7 @@ function Get-RemediationMap {
             'wrong_test_surface' {
                 $remediationMap['wrong_test_surface'] = @{
                     fix_command = 'Search-BaselineCarrier -Layer Facade,Controller -Family core_entry -Exclude Helpers'
-                    expected_output_pattern = 'AiApplyClaimApiTaskProcessor.*handleTaskResponse|ExamineFlowFacade.*autoClose'
+                    expected_output_pattern = 'ExampleApplyClaimApiTaskProcessor.*handleTaskResponse|ExamineFlowFacade.*autoClose'
                     verification = 'Layer validation output contains layer_class=valid'
                     priority = 'HIGH'
                 }
@@ -75,8 +75,8 @@ function Get-RemediationMap {
             }
             'core_entry_unclosed' {
                 $remediationMap['core_entry_unclosed'] = @{
-                    fix_command = 'Search-CoreEntryCarrier -TriggerSource AiApplyClaimApiTaskProcessor -Exclude Parsers,Helpers'
-                    expected_output_pattern = 'AiAutoClaimFlowService.*executeAutoFlow|AiApplyClaimApiTaskProcessor.*handleTaskResponse'
+                    fix_command = 'Search-CoreEntryCarrier -TriggerSource ExampleApplyClaimApiTaskProcessor -Exclude Parsers,Helpers'
+                    expected_output_pattern = 'ExampleFlowService.*executeAutoFlow|ExampleApplyClaimApiTaskProcessor.*handleTaskResponse'
                     verification = 'Family closure ledger shows core_entry.touched_count > 0'
                     priority = 'CRITICAL'
                 }

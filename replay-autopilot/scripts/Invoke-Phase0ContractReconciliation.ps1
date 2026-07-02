@@ -19,7 +19,7 @@
     Returns reconciliation result with status, contradictions, and metrics.
 
 .EXAMPLE
-    $result = Invoke-Phase0ContractReconciliation -ReplayRoot "D:\replay-evidence\test"
+    $result = Invoke-Phase0ContractReconciliation -ReplayRoot "<REPLAY_EVIDENCE_ROOT>"
 #>
 
 [CmdletBinding()]

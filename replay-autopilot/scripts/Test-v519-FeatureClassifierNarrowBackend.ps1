@@ -60,9 +60,9 @@ try {
     & git -C $worktree config user.email "replay-autopilot@example.invalid" | Out-Null
     & git -C $worktree config user.name "Replay Autopilot Eval" | Out-Null
 
-    $prodFile1 = 'claim-core/src/main/java/com/acme/claim/core/task/ApplyTaskProcessor.java'
-    $prodFile2 = 'claim-core/src/main/java/com/acme/claim/core/task/CalculateTaskProcessor.java'
-    $testFile = 'claim-server/src/test/java/com/acme/claim/core/task/TaskProcessorRebuildTest.java'
+    $prodFile1 = 'example-core/src/main/java/com/acme/claim/core/task/ApplyTaskProcessor.java'
+    $prodFile2 = 'example-core/src/main/java/com/acme/claim/core/task/CalculateTaskProcessor.java'
+    $testFile = 'example-server/src/test/java/com/acme/claim/core/task/TaskProcessorRebuildTest.java'
 
     New-TextFile -Path (Join-Path $worktree $prodFile1) -Content @'
 package com.acme.claim.core.task;
@@ -174,7 +174,7 @@ Nullable compatibility proof must show no new mandatory validation/schema/fronte
         tests = @(
             [ordered]@{
                 phase = 'GREEN'
-                command = 'mvn -pl claim-server -Dtest=TaskProcessorRebuildTest test'
+                command = 'mvn -pl example-server -Dtest=TaskProcessorRebuildTest test'
                 result = 'pass'
                 evidence = 'BUILD SUCCESS; asserts rebuilt request carries identifier into input_data payload'
             }
@@ -186,7 +186,7 @@ Nullable compatibility proof must show no new mandatory validation/schema/fronte
             must_not = 'does not write database, does not change frontend'
             RED_command = 'not required: feature classifier accepts GREEN-only read-only propagation evidence'
             expected_RED_failure = 'missing propagated identifier in rebuilt payload'
-            GREEN_command = 'mvn -pl claim-server -Dtest=TaskProcessorRebuildTest test'
+            GREEN_command = 'mvn -pl example-server -Dtest=TaskProcessorRebuildTest test'
             evidence_file = $testFile
         }
         exact_contract_assertions = @(
@@ -268,7 +268,7 @@ Nullable compatibility proof must show no new mandatory validation/schema/fronte
     Write-JsonFile -Path (Join-Path $replayRoot 'GREEN_PHASE_TEST_EXECUTION_01.json') -Value ([ordered]@{
         execution_status = 'PASSED'
         exit_code = 0
-        command = 'mvn -pl claim-server -Dtest=TaskProcessorRebuildTest test'
+        command = 'mvn -pl example-server -Dtest=TaskProcessorRebuildTest test'
     })
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File $closureScript -ReplayRoot $replayRoot -Worktree $worktree -SliceResult (Join-Path $replayRoot 'SLICE_RESULT_01.json') -SliceIndex 1 | Out-Null

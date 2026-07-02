@@ -48,14 +48,14 @@ class Example {
         slice_status = 'PARTIAL'
         implemented_files = @(
             'src/main/java/Example.java',
-            'claim-server/src/test/java/ExampleTest.java'
+            'example-server/src/test/java/ExampleTest.java'
         )
         touched_requirement_families = @('core_entry')
         tests = @(
             [ordered]@{
                 phase = 'GREEN'
-                command = 'mvn test -pl claim-server -Dtest=ExampleTest'
-                evidence_file = 'claim-server/src/test/java/ExampleTest.java'
+                command = 'mvn test -pl example-server -Dtest=ExampleTest'
+                evidence_file = 'example-server/src/test/java/ExampleTest.java'
             }
         )
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $sliceResultPath -Encoding UTF8

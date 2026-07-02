@@ -132,14 +132,14 @@ function Test-TestFramework {
     $compileArgs += @(
         '-f', $pomPath,
         'test-compile',
-        '-pl', 'claim-server',
+        '-pl', 'example-server',
         '-am',
         '-q'
     )
     $compileResult = & mvn @compileArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Test compilation failed" -ForegroundColor Red
-        Write-Host "Fix required in claim-server/pom.xml test dependencies" -ForegroundColor Yellow
+        Write-Host "Fix required in example-server/pom.xml test dependencies" -ForegroundColor Yellow
         return @{
             IsValid = $false
             Reason = 'test_compile_failed'

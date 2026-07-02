@@ -72,7 +72,7 @@ db write
 cap
 
 ## Expected Diff Matrix
-claim-core service
+example-core service
 '@
 
     Write-Utf8 (Join-Path $tempRoot 'FAMILY_CONTRACT.json') @'

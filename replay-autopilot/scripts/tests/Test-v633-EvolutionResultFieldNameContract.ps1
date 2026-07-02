@@ -103,7 +103,7 @@ try {
     Assert-False ($skillPrompt -match 'stop_and_veolve_satisfied') 'skill-evolution prompt must not contain the misspelled field'
     Assert-True ($phase0Prompt -match '- selected_real_entry: <baseline-existing\.package\.ClassName\.methodName>') 'Phase0 prompt must require a parseable selected_real_entry machine line'
     Assert-True ($phase0Prompt -match 'ClassName\.methodName') 'Phase0 prompt must describe class.method selected entry format'
-    $pollutionPattern = '(?i)(com\.huize|claim-core|claim-server|claim-web|claim-api|claim-domain|claim-provider|AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor)'
+    $pollutionPattern = '(?i)(com\.huize|example-core|example-server|example-web|example-api|example-domain|example-provider|ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor)'
     Assert-False ($phase0Prompt -match $pollutionPattern) 'Phase0 prompt must not contain project-specific claim examples'
     $assertionCount += 5
 

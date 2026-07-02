@@ -85,7 +85,7 @@ try {
 
 ## Selected Real Entry
 
-Primary Entry: InsureCompanyPushFacade.returnTicket()
+Primary Entry: ExamplePushFacade.returnTicket()
 
 ## First Executable Slice
 
@@ -110,7 +110,7 @@ Type: core_path
 Candidate 1: Core-Path-First
 
 - first_slice: S1 - Return ticket callback
-- first_red_test: InsureCompanyPushServiceTest#testReturnTicket()
+- first_red_test: ExamplePushServiceTest#testExampleTicket()
 - selected_strategy: core_path_first
 "@ | Set-Content -LiteralPath (Join-Path $t5Root 'PLAN_RESULT.md') -Encoding UTF8
 

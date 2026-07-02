@@ -20,7 +20,7 @@ function Write-Json {
 function New-TestHarnessFixture {
     param(
         [string]$Worktree,
-        [string]$Module = 'claim-server'
+        [string]$Module = 'example-server'
     )
     New-Item -ItemType Directory -Force -Path (Join-Path $Worktree "$Module\src\test\java\sample") | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $Worktree $Module) | Out-Null
@@ -63,15 +63,15 @@ try {
     $goodProceedRoot = Join-Path $tempRoot 'good-proceed'
     $goodWorktree = Join-Path $goodProceedRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $goodProceedRoot | Out-Null
-    New-TestHarnessFixture -Worktree $goodWorktree -Module 'claim-server'
+    New-TestHarnessFixture -Worktree $goodWorktree -Module 'example-server'
     Write-Json (Join-Path $goodProceedRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
         exit_code = 0
-        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to claim-server\target\test-classes'
+        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to example-server\target\test-classes'
     })
     Write-Json (Join-Path $goodProceedRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
@@ -84,12 +84,12 @@ try {
         )
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -102,17 +102,17 @@ try {
     $goodPolicyRoot = Join-Path $tempRoot 'good-policy-rebuild'
     $goodPolicyWorktree = Join-Path $goodPolicyRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $goodPolicyRoot | Out-Null
-    New-TestHarnessFixture -Worktree $goodPolicyWorktree -Module 'claim-server'
+    New-TestHarnessFixture -Worktree $goodPolicyWorktree -Module 'example-server'
     Write-Json (Join-Path $goodPolicyRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
         exit_code = 0
-        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to claim-server\target\test-classes'
+        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to example-server\target\test-classes'
     })
     Write-Json (Join-Path $goodPolicyRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 385
-        expected_test_class = 'claim-server/src/test/java/com/huize/claim/test/AiTaskProcessorRebuildTest.java'
+        expected_test_class = 'example-server/src/test/java/com/example/project/test/AiTaskProcessorRebuildTest.java'
         expected_test_method = 'testRebuildTaskData_PreservesPolicyNumAndInsureNum'
         side_effects = @(
             [ordered]@{
@@ -122,12 +122,12 @@ try {
         )
         expected_assertions = @('assert taskData.policyNum from RequestBuildContext', 'assert taskData.insureNum from RequestBuildContext')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -161,22 +161,22 @@ try {
     $badMissingEvidenceRoot = Join-Path $tempRoot 'bad-missing-evidence'
     $badMissingEvidenceWorktree = Join-Path $badMissingEvidenceRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $badMissingEvidenceRoot | Out-Null
-    New-TestHarnessFixture -Worktree $badMissingEvidenceWorktree -Module 'claim-server'
+    New-TestHarnessFixture -Worktree $badMissingEvidenceWorktree -Module 'example-server'
     Write-Json (Join-Path $badMissingEvidenceRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
         side_effects = @('DB state update')
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'missing-test-compile-evidence.log'
             blocker_reason = 'none'
         }
@@ -189,27 +189,27 @@ try {
     $badNullBlockerRoot = Join-Path $tempRoot 'bad-null-blocker'
     $badNullBlockerWorktree = Join-Path $badNullBlockerRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $badNullBlockerRoot | Out-Null
-    New-TestHarnessFixture -Worktree $badNullBlockerWorktree -Module 'claim-server'
+    New-TestHarnessFixture -Worktree $badNullBlockerWorktree -Module 'example-server'
     Write-Json (Join-Path $badNullBlockerRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
         exit_code = 0
-        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to claim-server\target\test-classes'
+        stdout_tail = 'BUILD SUCCESS; Compiling 1 source files to example-server\target\test-classes'
     })
     Write-Json (Join-Path $badNullBlockerRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
         side_effects = @('DB state update')
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = $null
         }
@@ -221,23 +221,23 @@ try {
 
     $badPolicyRoot = Join-Path $tempRoot 'bad-policy-rebuild'
     $badPolicyWorktree = Join-Path $badPolicyRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $badPolicyWorktree 'claim-core') | Out-Null
-    '<project />' | Set-Content -LiteralPath (Join-Path $badPolicyWorktree 'claim-core\pom.xml') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $badPolicyWorktree 'example-core') | Out-Null
+    '<project />' | Set-Content -LiteralPath (Join-Path $badPolicyWorktree 'example-core\pom.xml') -Encoding UTF8
     Write-Json (Join-Path $badPolicyRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 385
-        expected_test_class = 'claim-core/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorTest.java'
+        expected_test_class = 'example-core/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorTest.java'
         expected_test_method = 'testRebuildTaskData_PreservesPolicyNumAndInsureNum'
         side_effects = @('rebuildTaskData preserves policyNum and insureNum')
         expected_assertions = @('manual verification if no test harness')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-core'
+            test_module_for_target = 'example-core'
             test_module_has_dependencies = $false
             test_harness_available = $false
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none_with_manual_verification'
         }
@@ -252,27 +252,27 @@ try {
     $badInfraRoot = Join-Path $tempRoot 'bad-infra'
     $badInfraWorktree = Join-Path $badInfraRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $badInfraRoot | Out-Null
-    New-TestHarnessFixture -Worktree $badInfraWorktree -Module 'claim-core'
+    New-TestHarnessFixture -Worktree $badInfraWorktree -Module 'example-core'
     Write-Json (Join-Path $badInfraRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
         exit_code = 1
         stdout_tail = 'BUILD FAILURE'
     })
     Write-Json (Join-Path $badInfraRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
         side_effects = @('DB state update')
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-core'
+            test_module_for_target = 'example-core'
             test_module_has_dependencies = $false
             test_harness_available = $false
             can_import_production_classes = $false
             compilation_dry_run_exit_code = 1
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'junit_missing'
         }
@@ -284,28 +284,28 @@ try {
 
     $badNoTestsRoot = Join-Path $tempRoot 'bad-no-tests'
     $badNoTestsWorktree = Join-Path $badNoTestsRoot 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $badNoTestsWorktree 'claim-core') | Out-Null
-    '<project />' | Set-Content -LiteralPath (Join-Path $badNoTestsWorktree 'claim-core\pom.xml') -Encoding UTF8
+    New-Item -ItemType Directory -Force -Path (Join-Path $badNoTestsWorktree 'example-core') | Out-Null
+    '<project />' | Set-Content -LiteralPath (Join-Path $badNoTestsWorktree 'example-core\pom.xml') -Encoding UTF8
     Write-Json (Join-Path $badNoTestsRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
         exit_code = 0
         stdout_tail = 'BUILD SUCCESS; No sources to compile'
     })
     Write-Json (Join-Path $badNoTestsRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
         side_effects = @('DB state update')
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-core'
+            test_module_for_target = 'example-core'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl claim-core -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f <worktree>\pom.xml -pl example-core -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }
@@ -313,7 +313,7 @@ try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File $schemaGate -ReplayRoot $badNoTestsRoot -PlanResultPath (Join-Path $badNoTestsRoot 'PLAN_RESULT.json') -Worktree $badNoTestsWorktree | Out-Null
     Assert-True 'schema_rejects_testless_module_even_with_zero_exit' ($LASTEXITCODE -ne 0)
     $badNoTestsSchema = Get-Content -LiteralPath (Join-Path $badNoTestsRoot 'PLAN_SCHEMA_FAILFAST.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    Assert-True 'schema_reports_missing_src_test' ((@($badNoTestsSchema.checks.test_infrastructure_issues) -join ' ') -match 'test_module_missing_src_test:claim-core')
+    Assert-True 'schema_reports_missing_src_test' ((@($badNoTestsSchema.checks.test_infrastructure_issues) -join ' ') -match 'test_module_missing_src_test:example-core')
 
     Write-Host 'PASS: v469 plan machine contract required'
     exit 0

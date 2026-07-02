@@ -95,13 +95,13 @@ try {
     $output += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     $output += "Project Root: $ProjectRoot"
     $output += ""
-    $output += "## Facade Layer (claim-api / claim-api-open)"
+    $output += "## Facade Layer (example-api / example-api-open)"
     $output += ""
 
     # Find all Facade interfaces. Native enumeration keeps empty/non-Java repos from
     # turning ripgrep's "no files searched" diagnostic into a hard replay failure.
     $facades = @(Find-JavaClassMatches "public interface.*Facade" |
-                Where-Object { $_ -and $_.Path -match '(^|/)(claim-api|claim-api-open)(/|$)' })
+                Where-Object { $_ -and $_.Path -match '(^|/)(example-api|example-api-open)(/|$)' })
 
     foreach ($facade in ($facades | Sort-Object Name)) {
         if ($facade) {
@@ -110,7 +110,7 @@ try {
     }
 
     $output += ""
-    $output += "## Controller Layer (claim-web)"
+    $output += "## Controller Layer (example-web)"
     $output += ""
 
     # Find all Controllers
@@ -124,7 +124,7 @@ try {
     }
 
     $output += ""
-    $output += "## Facade Implementation Layer (claim-core/.../facade/)"
+    $output += "## Facade Implementation Layer (example-core/.../facade/)"
     $output += ""
 
     # Find all FacadeImpl classes

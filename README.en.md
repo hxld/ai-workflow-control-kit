@@ -176,7 +176,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\replay-autopilot\scripts\R
 
 `workflow-history/CHANGELOG.md` is the built-in master index for this kit's workflow changes. Each concrete change lives under `workflow-history/changes/`, and `workflow-history/latest.json` points to the newest entry.
 
-`replay-autopilot` discovers the latest workflow version from `workflow-history` first, then falls back to legacy history locations for older installations. This keeps the clean repository self-contained and avoids a hard dependency on a personal knowledge base such as `hxld_vault`.
+`replay-autopilot` discovers the latest workflow version from `workflow-history` first, then falls back to legacy history locations for older installations. This keeps the clean repository self-contained and avoids a hard dependency on a personal knowledge base.
 
 Key regression checks:
 
@@ -217,6 +217,6 @@ Requirements:
 
 ## Optional Knowledge Repository
 
-This kit does not require `hxld_vault` or any other personal knowledge repository.
+This kit does not require any personal knowledge repository or configuration.
 
 If a knowledge backup repository exists, pass it as an optional install parameter. If it does not exist, the workflow kit should still install and run.

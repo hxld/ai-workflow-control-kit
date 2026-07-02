@@ -31,19 +31,19 @@ function Test-CarrierLayer {
     Validates that a carrier path is in an executable architectural layer.
 
     .DESCRIPTION
-    Checks if the carrier is in claim-api (Facade), claim-web (Controller),
-    or claim-core/facade (Facade implementation). Returns $false for
-    Service layer (claim-core without /facade/) and other internal layers.
+    Checks if the carrier is in example-api (Facade), example-web (Controller),
+    or example-core/facade (Facade implementation). Returns $false for
+    Service layer (example-core without /facade/) and other internal layers.
 
     .PARAMETER CarrierPath
     The file path to the carrier class.
 
     .EXAMPLE
-    Test-CarrierLayer "claim-core/src/main/java/com/huize/claim/core/ai/service/AiAutoClaimFlowService.java"
+    Test-CarrierLayer "example-core/src/main/java/com/example/project/core/ai/service/ExampleFlowService.java"
     Returns $false (Service layer)
 
     .EXAMPLE
-    Test-CarrierLayer "claim-api/src/main/java/com/huize/claim/api/facade/AiClaimFacade.java"
+    Test-CarrierLayer "example-api/src/main/java/com/example/project/api/facade/ExampleFacade.java"
     Returns $true (Facade layer)
     #>
     param(
@@ -54,18 +54,18 @@ function Test-CarrierLayer {
     # Normalize path
     $CarrierPath = $CarrierPath -replace '\\', '/'
 
-    # Check for Facade layer (claim-api)
-    if ($CarrierPath -match 'claim-api/.*Facade\.java') {
+    # Check for Facade layer (example-api)
+    if ($CarrierPath -match 'example-api/.*Facade\.java') {
         return $true
     }
 
-    # Check for Controller layer (claim-web)
-    if ($CarrierPath -match 'claim-web/.*Controller\.java') {
+    # Check for Controller layer (example-web)
+    if ($CarrierPath -match 'example-web/.*Controller\.java') {
         return $true
     }
 
-    # Check for Facade implementation in claim-core
-    if ($CarrierPath -match 'claim-core/.*facade/.*FacadeImpl\.java') {
+    # Check for Facade implementation in example-core
+    if ($CarrierPath -match 'example-core/.*facade/.*FacadeImpl\.java') {
         return $true
     }
 
@@ -146,9 +146,9 @@ function Test-TodoPlaceholder {
         [string]$WorkDir,
 
         [string[]]$ForbiddenPaths = @(
-            "claim-core/src/main/java",
-            "claim-api/src/main/java",
-            "claim-web/src/main/java"
+            "example-core/src/main/java",
+            "example-api/src/main/java",
+            "example-web/src/main/java"
         )
     )
 
@@ -1076,7 +1076,7 @@ $automationGuard = @(
     '- If the target production carrier is in a module without test dependencies, place tests in an existing test-harness module; do not edit any `pom.xml` to add JUnit/Mockito/Spring Test.',
     '- Editing `pom.xml` or any dependency configuration file during slice execution is FORBIDDEN. If existing harness dependencies are insufficient, write BLOCKED SLICE_RESULT instead of modifying pom.xml.',
     '- For TaskProcessor/rebuildTaskData/source-chain tests, do not start a full Spring context: do not extend AbstractTestClass and do not add @SpringBootTest, @RunWith(SpringJUnit4ClassRunner.class), @ContextConfiguration, or @Resource injection. Use no-Spring JUnit with Mockito/reflection and deterministic inputs.',
-    '- For policyNum/insureNum rebuild slices, mock AiClaimDataAssemblyHelper.buildRequestCommon and invoke the real RequestBuildFunction with a RequestBuildContext containing policyNum and insureNum. Do not directly return a hand-built request from thenAnswer. Do not rely on fixed database caseIds or allow taskData == null to pass.',
+    '- For policyNum/insureNum rebuild slices, mock ExampleDataAssemblyHelper.buildRequestCommon and invoke the real RequestBuildFunction with a RequestBuildContext containing policyNum and insureNum. Do not directly return a hand-built request from thenAnswer. Do not rely on fixed database caseIds or allow taskData == null to pass.',
     ''
 ) -join "`n"
 

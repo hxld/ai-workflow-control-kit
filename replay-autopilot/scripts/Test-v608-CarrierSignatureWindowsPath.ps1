@@ -16,21 +16,21 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v608-' + [guid]
 
 try {
     $worktree = Join-Path $tempRoot 'worktree'
-    $sourceDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
+    $sourceDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
     New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
     @'
-package com.huize.claim.core.ai.task;
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
+public class ExampleApplyClaimApiTaskProcessor {
     @Override
-    public void handleTaskResponse(AiApplyClaimApiTask aiClaimApiTask, AiApplyClaimApiTaskResponse taskResponse) {
+    public void handleTaskResponse(ExampleApplyClaimApiTask example-featureApiTask, ExampleApplyClaimApiTaskResponse taskResponse) {
     }
 }
-'@ | Set-Content -LiteralPath (Join-Path $sourceDir 'AiApplyClaimApiTaskProcessor.java') -Encoding UTF8
+'@ | Set-Content -LiteralPath (Join-Path $sourceDir 'ExampleApplyClaimApiTaskProcessor.java') -Encoding UTF8
 
     $input = @{
-        plan_carrier = 'AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask, AiApplyClaimApiTaskResponse)'
+        plan_carrier = 'ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask, ExampleApplyClaimApiTaskResponse)'
         worktree_path = $worktree
     } | ConvertTo-Json -Compress
 
@@ -39,7 +39,7 @@ public class AiApplyClaimApiTaskProcessor {
     Assert-True 'carrier_signature_passes_windows_absolute_rg_path' ($exitCode -eq 0) "exit=$exitCode output=$output"
     $json = $output | ConvertFrom-Json
     Assert-True 'carrier_signature_status_pass' ([string]$json.status -eq 'PASS') $output
-    Assert-True 'carrier_signature_file_path_preserved' ([string]$json.file_path -match 'AiApplyClaimApiTaskProcessor\.java$') ([string]$json.file_path)
+    Assert-True 'carrier_signature_file_path_preserved' ([string]$json.file_path -match 'ExampleApplyClaimApiTaskProcessor\.java$') ([string]$json.file_path)
 
     [ordered]@{
         status = 'PASS'

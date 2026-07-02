@@ -37,13 +37,13 @@ try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $tempRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
-    $facadeDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\facade'
+    $facadeDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\facade'
     New-Item -ItemType Directory -Force -Path $facadeDir | Out-Null
-    Write-Utf8 (Join-Path $facadeDir 'AiClaimModuleConfigFacadeImpl.java') @'
-package com.huize.claim.core.ai.facade;
+    Write-Utf8 (Join-Path $facadeDir 'ExampleModuleConfigFacadeImpl.java') @'
+package com.example.project.core.ai.facade;
 
-public class AiClaimModuleConfigFacadeImpl {
-    public Object save(Object aiClaimModuleConfigDto) {
+public class ExampleModuleConfigFacadeImpl {
+    public Object save(Object example-featureModuleConfigDto) {
         return null;
     }
 
@@ -54,14 +54,14 @@ public class AiClaimModuleConfigFacadeImpl {
 '@
 
     Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') @'
-The global feature still mentions `AiApplyClaimApiTaskProcessor.handleTaskResponse`,
-`AiCalculateLossApiTaskProcessor.handleTaskResponse`, `ClaimAgentFacadeImpl.batchQueryCaseDetail`,
+The global feature still mentions `ExampleApplyClaimApiTaskProcessor.handleTaskResponse`,
+`ExampleCalculatorApiTaskProcessor.handleTaskResponse`, `ClaimAgentFacadeImpl.batchQueryCaseDetail`,
 and `理算明细.png`; these belong to other families and must not be imposed on the config slice.
 '@
     Write-Utf8 (Join-Path $replayRoot 'ROUND_CONTRACT.md') ''
     Write-Utf8 (Join-Path $replayRoot 'EXPECTED_DIFF_MATRIX.md') ''
     Write-Utf8 (Join-Path $replayRoot 'TEST_CHARTER.md') ''
-    Write-Utf8 (Join-Path $replayRoot 'BASELINE_INDEX.md') 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl'
+    Write-Utf8 (Join-Path $replayRoot 'BASELINE_INDEX.md') 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl'
     Write-JsonFile (Join-Path $replayRoot 'SOURCE_CHAIN_CONTRACT.json') ([ordered]@{
         required_source_chain = $false
     })
@@ -73,7 +73,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
                 required = $true
                 status = 'OPEN'
                 rank = 1
-                first_executable_carrier = 'com.huize.claim.core.dock.facade.InsureCompanyPushFacadeImpl'
+                first_executable_carrier = 'com.example.project.core.dock.facade.ExamplePushFacadeImpl'
                 proof_required = @('insurer_push_task_or_status')
             },
             [ordered]@{
@@ -81,7 +81,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
                 required = $true
                 status = 'PARTIAL'
                 rank = 2
-                first_executable_carrier = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl'
+                first_executable_carrier = 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl'
                 proof_required = @('persist_free_review_amount', 'clear_updates_database', 'reject_invalid_amounts', 'auto_flow_gate_reads_config')
                 forbidden_proof = @('front_end_only', 'constant_only', 'mock_only')
             }
@@ -105,16 +105,16 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         -SliceIndex 6 `
         -ForcedRequirementFamily config_policy_threshold `
         -ForcedSliceType exact_contract_slice `
-        -ForcedSiblingSurface 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl' | Out-Null
+        -ForcedSiblingSurface 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl' | Out-Null
     Assert-True 'prepare_contracts_exit_zero' ($LASTEXITCODE -eq 0)
 
     $carrier = Get-Content -LiteralPath (Join-Path $replayRoot 'CARRIER_AUTHORIZATION_06.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True 'facade_impl_default_test_name_inferred' `
-        ([string]$carrier.red_expectation -match 'AiClaimModuleConfigFacadeImplTest#shouldCoverConfigPolicyThreshold') `
+        ([string]$carrier.red_expectation -match 'ExampleModuleConfigFacadeImplTest#shouldCoverConfigPolicyThreshold') `
         ($carrier | ConvertTo-Json -Depth 16)
     Assert-True 'carrier_authorization_allows_config_family' ([string]$carrier.authorization -eq 'ALLOW') ($carrier | ConvertTo-Json -Depth 16)
     Assert-True 'class_only_facade_resolves_to_callable_save_method' `
-        ([string]$carrier.selected_carrier -eq 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save' -and [string]$carrier.real_entry -eq 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save') `
+        ([string]$carrier.selected_carrier -eq 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save' -and [string]$carrier.real_entry -eq 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save') `
         ($carrier | ConvertTo-Json -Depth 16)
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'Invoke-CallableCarrierAuthorization.ps1') `
@@ -136,7 +136,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         (($expected | Where-Object { $matrixLiterals -notcontains $_ }).Count -eq 0)
     ) ($matrixLiterals -join ',')
     Assert-True 'matrix_excludes_global_exact_contract_debt' (
-        ($matrixLiterals -join ',') -notmatch 'AiApplyClaimApiTaskProcessor|AiCalculateLossApiTaskProcessor|ClaimAgentFacadeImpl|理算明细'
+        ($matrixLiterals -join ',') -notmatch 'ExampleApplyClaimApiTaskProcessor|ExampleCalculatorApiTaskProcessor|ClaimAgentFacadeImpl|理算明细'
     ) ($matrixLiterals -join ',')
     Assert-True 'matrix_rows_have_red_command' (
         (@($matrix.rows | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.red_command) }).Count -eq 0)
@@ -162,7 +162,7 @@ and `理算明细.png`; these belong to other families and must not be imposed o
         -SliceIndex 6 `
         -ForcedRequirementFamily config_policy_threshold `
         -ForcedSliceType exact_contract_slice `
-        -ForcedSiblingSurface 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl' | Out-Null
+        -ForcedSiblingSurface 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl' | Out-Null
     Assert-True 'pre_slice_authorization_exit_zero' ($LASTEXITCODE -eq 0)
     $auth = Get-Content -LiteralPath (Join-Path $replayRoot 'PRE_SLICE_AUTHORIZATION_06.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $issues = @($auth.issues | ForEach-Object { [string]$_ })

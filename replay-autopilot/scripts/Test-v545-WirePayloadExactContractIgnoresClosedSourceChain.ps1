@@ -45,7 +45,7 @@ try {
                 required = $true
                 status = 'EXECUTABLE_CLOSED'
                 weight = 100
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.rebuildTaskData'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData'
                 proof_required = @('behavior_test')
                 forbidden_proof = @('helper_only')
             },
@@ -54,7 +54,7 @@ try {
                 required = $true
                 status = 'OPEN'
                 weight = 88
-                first_executable_carrier = 'AiApplyClaimApiTaskProcessor.doIt'
+                first_executable_carrier = 'ExampleApplyClaimApiTaskProcessor.doIt'
                 proof_required = @('code_inspection', 'payload_assertion')
                 forbidden_proof = @('helper_only')
             }
@@ -65,10 +65,10 @@ try {
         required_source_chain = $true
         next_required_slice = [ordered]@{
             family = 'source_chain'
-            entry = 'AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)'
-            carrier = 'TaskProcessor rebuildTaskData -> AiClaimBaseTaskData.policyNum/insureNum -> InputData.policy_num/InputData.insure_num'
+            entry = 'ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId) and ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)'
+            carrier = 'TaskProcessor rebuildTaskData -> ExampleBaseTaskData.policyNum/insureNum -> InputData.policy_num/InputData.insure_num'
             slice_type = 'exact_contract_slice'
-            test_name = 'AiApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
+            test_name = 'ExampleApplyClaimApiTaskProcessorTest.testRebuildTaskData_PreservesPolicyNumAndInsureNum'
             required_assertions = @('source-chain preserves policyNum')
             forbidden_proof = @('helper_only')
         }
@@ -88,7 +88,7 @@ try {
                 family = 'wire_payload_api_contract'
                 required = $true
                 status = 'OPEN'
-                production_carrier = 'AiApplyClaimApiTaskProcessor.doIt'
+                production_carrier = 'ExampleApplyClaimApiTaskProcessor.doIt'
                 rank = 1
             }
         )
@@ -105,14 +105,14 @@ try {
 # Test Charter
 
 ## Test Execution Command
-mvn -pl claim-server -am test -Dtest=PolicyNumRebuildPathTest
+mvn -pl example-server -am test -Dtest=PolicyNumRebuildPathTest
 
 ## Exact Wire Assertions
-- Assert `input_data.policy_num` is emitted by `AiApplyClaimApiTaskProcessor.doIt`.
-- Assert `input_data.insure_num` is emitted by `AiApplyClaimApiTaskProcessor.doIt`.
+- Assert `input_data.policy_num` is emitted by `ExampleApplyClaimApiTaskProcessor.doIt`.
+- Assert `input_data.insure_num` is emitted by `ExampleApplyClaimApiTaskProcessor.doIt`.
 '@
     Write-TextFile (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') @'
-selected_real_entry: AiApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId), AiCalculateLossApiTaskProcessor.rebuildTaskData(Long caseId)
+selected_real_entry: ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long caseId), ExampleCalculatorApiTaskProcessor.rebuildTaskData(Long caseId)
 first_red_test: PolicyNumRebuildPathTest.testRebuildTaskData_SourceChainAssignment
 '@
 
@@ -123,7 +123,7 @@ first_red_test: PolicyNumRebuildPathTest.testRebuildTaskData_SourceChainAssignme
         -SliceIndex 2 `
         -ForcedRequirementFamily 'wire_payload_api_contract' `
         -ForcedSliceType 'exact_contract_slice' `
-        -ForcedSiblingSurface 'AiApplyClaimApiTaskProcessor.doIt' | Out-Null
+        -ForcedSiblingSurface 'ExampleApplyClaimApiTaskProcessor.doIt' | Out-Null
 
     $carrier = Get-Content -Raw -Encoding UTF8 (Join-Path $replayRoot 'CARRIER_AUTHORIZATION_02.json') | ConvertFrom-Json
     $sideEffect = Get-Content -Raw -Encoding UTF8 (Join-Path $replayRoot 'SIDE_EFFECT_EVIDENCE_02.json') | ConvertFrom-Json
@@ -142,7 +142,7 @@ first_red_test: PolicyNumRebuildPathTest.testRebuildTaskData_SourceChainAssignme
         -SliceIndex 2 `
         -ForcedRequirementFamily 'wire_payload_api_contract' `
         -ForcedSliceType 'exact_contract_slice' `
-        -ForcedSiblingSurface 'AiApplyClaimApiTaskProcessor.doIt' | Out-Null
+        -ForcedSiblingSurface 'ExampleApplyClaimApiTaskProcessor.doIt' | Out-Null
 
     $preAuth = Get-Content -Raw -Encoding UTF8 (Join-Path $replayRoot 'PRE_SLICE_AUTHORIZATION_02.json') | ConvertFrom-Json
     $issueText = (@($preAuth.issues) -join ',')

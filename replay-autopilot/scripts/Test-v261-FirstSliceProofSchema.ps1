@@ -23,7 +23,7 @@ function Test-HasIssue {
 
 function New-MinimalPlanFixtures {
     param([string]$Root)
-    $worktreeSource = Join-Path $Root 'worktree\claim-api\src\main\java\com\example'
+    $worktreeSource = Join-Path $Root 'worktree\example-api\src\main\java\com\example'
     New-Item -ItemType Directory -Force -Path $worktreeSource | Out-Null
     @'
 package com.example;
@@ -63,7 +63,7 @@ public class SomeService {
 - oracle_production_file_overlap: 100%
 - oracle_high_weight_coverage: 1/1
 - carrier_search: performed
-- carrier_search_queries: rg "SomeFacade" claim-api; rg "SomeService" claim-core; rg "someMethod" claim-core
+- carrier_search_queries: rg "SomeFacade" example-api; rg "SomeService" example-core; rg "someMethod" example-core
 - existing_production_carriers: SomeFacade.someMethod(SomeParam)
 - selected_carrier_from_search: SomeFacade.someMethod(SomeParam)
 - new_service_proposed: false
@@ -122,7 +122,7 @@ real_carrier_kind: production_entry_or_service
 minimum_side_effect_or_blocker: service triggers DB write
 forbidden_substitute_check: passed
 required_sibling_surfaces: none
-production_boundary: claim-core module
+production_boundary: example-core module
 expected_production_diff: SomeFacade.java modify return type
 red_expectation: compilation error void vs ResultModel
 green_minimum_implementation: add return statement
@@ -195,7 +195,7 @@ target_subsurface_or_carrier: SomeService
 real_carrier_kind: production_entry_or_service
 minimum_side_effect_or_blocker: DB write
 forbidden_substitute_check: passed
-production_boundary: claim-core
+production_boundary: example-core
 proof_kind: real_entry_behavior
 "@ | Set-Content -LiteralPath (Join-Path $t3Root 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
@@ -224,7 +224,7 @@ target_subsurface_or_carrier: SomeService
 real_carrier_kind: production_entry_or_service
 minimum_side_effect_or_blocker: DB write
 forbidden_substitute_check: passed
-production_boundary: claim-core
+production_boundary: example-core
 proof_kind: real_entry_behavior
 "@ | Set-Content -LiteralPath (Join-Path $t4Root 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
@@ -255,7 +255,7 @@ target_subsurface_or_carrier: SomeService
 real_carrier_kind: production_entry_or_service
 minimum_side_effect_or_blocker: DB write
 forbidden_substitute_check: passed
-production_boundary: claim-core
+production_boundary: example-core
 proof_kind: real_entry_behavior
 "@ | Set-Content -LiteralPath (Join-Path $t5Root 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
@@ -286,7 +286,7 @@ real_carrier_kind: production_service
 minimum_side_effect_or_blocker: service triggers DB write
 forbidden_substitute_check: passed
 required_sibling_surfaces: none
-production_boundary: claim-core module
+production_boundary: example-core module
 expected_production_diff: SomeService.java add field
 red_expectation: assertion failure before change
 green_minimum_implementation: add field and getter

@@ -1118,7 +1118,7 @@ if ($Stage -eq 'Phase0') {
     # v477: policyNum/insureNum rebuild source-chain plan gate. This bug class
     # is easy to fake by checking downstream TaskData setters or DTO accessors.
     # Plan-stage evidence must name the upstream RequestBuildFunction contract,
-    # the deterministic RequestBuildContext test, the claim-server harness, and
+    # the deterministic RequestBuildContext test, the example-server harness, and
     # the two production processor diffs before Phase 1 is authorized.
     $sourceChainContractText = Read-TextIfExists (Join-Path $replayRootFull 'SOURCE_CHAIN_CONTRACT.json')
     $sourceAwarePlanText = "$combinedPlanArtifacts`n$testCharterText`n$sourceChainContractText"
@@ -1138,7 +1138,7 @@ if ($Stage -eq 'Phase0') {
     if (-not [string]::IsNullOrWhiteSpace($planJsonText)) {
         try { $planMachineContract = $planJsonText | ConvertFrom-Json } catch { $planMachineContract = $null }
     }
-    $hasExplicitPolicyRebuildBoundary = $sourceAwarePlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
+    $hasExplicitPolicyRebuildBoundary = $sourceAwarePlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|ExampleDataAssemblyHelper)'
     $isPolicyRebuildSourceChainPlan = (
         ($sourceChainRequired -or $hasExplicitPolicyRebuildBoundary) -and
         $sourceAwarePlanText -match '(?i)(policyNum|policy_num)' -and
@@ -1163,8 +1163,8 @@ if ($Stage -eq 'Phase0') {
         }
 
         foreach ($requiredToken in @(
-                'AiClaimDataAssemblyHelper.buildRequestCommon',
-                'AiClaimDataAssemblyHelper.RequestBuildFunction',
+                'ExampleDataAssemblyHelper.buildRequestCommon',
+                'ExampleDataAssemblyHelper.RequestBuildFunction',
                 'RequestBuildContext'
             )) {
             if ($sourceAwarePlanText.IndexOf($requiredToken, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
@@ -1183,18 +1183,18 @@ if ($Stage -eq 'Phase0') {
             }
         }
         $machineHarnessUsesClaimServer = (
-            $machineTestModule -eq 'claim-server' -and
-            $machineTestCommand -match '(?i)-pl\s+claim-server\b' -and
+            $machineTestModule -eq 'example-server' -and
+            $machineTestCommand -match '(?i)-pl\s+example-server\b' -and
             $machineTestCommand -match '(?i)\s-am\b' -and
-            ($machineExpectedTestClass -match '(?i)claim-server[/\\]src[/\\]test|^[A-Za-z0-9_]+$')
+            ($machineExpectedTestClass -match '(?i)example-server[/\\]src[/\\]test|^[A-Za-z0-9_]+$')
         )
-        if (($sourceAwarePlanText -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java') -and -not $machineHarnessUsesClaimServer) {
+        if (($sourceAwarePlanText -notmatch '(?i)example-server[/\\]src[/\\]test[/\\]java') -and -not $machineHarnessUsesClaimServer) {
             $issues.Add('policy_rebuild_plan_missing:claim_server_test_harness') | Out-Null
         }
-        if (-not $machineHarnessUsesClaimServer -and $sourceAwarePlanText -match '(?i)claim-core[/\\]src[/\\]test|-pl\s+claim-core\b|claim-core\s+-Dtest') {
+        if (-not $machineHarnessUsesClaimServer -and $sourceAwarePlanText -match '(?i)example-core[/\\]src[/\\]test|-pl\s+example-core\b|example-core\s+-Dtest') {
             $issues.Add('policy_rebuild_plan_invalid:test_harness_claim_core') | Out-Null
         }
-        if ($sourceAwarePlanText -notmatch '(?i)-pl\s+claim-server\b' -or $sourceAwarePlanText -notmatch '(?i)\s-am\b') {
+        if ($sourceAwarePlanText -notmatch '(?i)-pl\s+example-server\b' -or $sourceAwarePlanText -notmatch '(?i)\s-am\b') {
             $issues.Add('policy_rebuild_plan_invalid:maven_missing_claim_server_am') | Out-Null
         }
         Add-FixedCaseIdIssueWithEvidence `
@@ -1217,7 +1217,7 @@ if ($Stage -eq 'Phase0') {
             $sourceAwarePlanText -match '(?i)(DTO\s+getter|getter/setter|accessor\s+methods|hasPolicyNumAndInsureNumFields|field\s+existence|DTO\s+field|Request\s+DTO\s+field|compile-time\s+validation\s+only)' -or
             $sourceAwarePlanText -match '(?i)(DTO|Request\s+DTO|compile-time\s+validation\s+only|Tests\s*-\s*None)[^\r\n]{0,160}\bFIELD_ADD\b|\bFIELD_ADD\b[^\r\n]{0,160}(DTO|Request\s+DTO|compile-time\s+validation\s+only|Tests\s*-\s*None)' -or
             $sourceAwarePlanText -match '(?im)^\s*"?first_slice"?\s*[:=]\s*"?[^\r\n]*(Contract\s+Definition|DTO|field\s+additions)' -or
-            $sourceAwarePlanText -match '(?im)^\s*"?target_carrier_file_path"?\s*[:=]\s*"?claim-domain[/\\][^\r\n]*[/\\]dto[/\\][^\r\n]*Request\.java' -or
+            $sourceAwarePlanText -match '(?im)^\s*"?target_carrier_file_path"?\s*[:=]\s*"?example-domain[/\\][^\r\n]*[/\\]dto[/\\][^\r\n]*Request\.java' -or
             $sourceAwarePlanText -match '(?is)##\s*Slice\s+1\s*:\s*[^\r\n]*(DTO|field\s+additions?|Request\s+DTO\s+field|FIELD_ADD|compile-time\s+validation\s+only)' -or
             $sourceAwarePlanText -match '(?is)##\s*Slice\s+1\b.{0,1200}(Request\s+DTO\s+field|DTO\s+field|compile-time\s+validation\s+only|Tests\s*-\s*None)' -or
             $hasDownstreamOnlyPolicySignal
@@ -1244,16 +1244,16 @@ if ($Stage -eq 'Phase0') {
             $issues.Add('policy_rebuild_plan_invalid:spring_context_harness') | Out-Null
         }
 
-        $hasApplySibling = $sourceAwarePlanText -match '(?i)AiApplyClaimApiTaskProcessor\.rebuildTaskData'
-        $hasCalculateSibling = $sourceAwarePlanText -match '(?i)AiCalculateLossApiTaskProcessor\.rebuildTaskData'
+        $hasApplySibling = $sourceAwarePlanText -match '(?i)ExampleApplyClaimApiTaskProcessor\.rebuildTaskData'
+        $hasCalculateSibling = $sourceAwarePlanText -match '(?i)ExampleCalculatorApiTaskProcessor\.rebuildTaskData'
         if (-not ($hasApplySibling -and $hasCalculateSibling)) {
             $issues.Add('policy_rebuild_plan_missing:apply_and_calculate_siblings') | Out-Null
             $missingSiblingMethods = New-Object System.Collections.Generic.List[string]
             if (-not $hasApplySibling) {
-                $missingSiblingMethods.Add('AiApplyClaimApiTaskProcessor.rebuildTaskData') | Out-Null
+                $missingSiblingMethods.Add('ExampleApplyClaimApiTaskProcessor.rebuildTaskData') | Out-Null
             }
             if (-not $hasCalculateSibling) {
-                $missingSiblingMethods.Add('AiCalculateLossApiTaskProcessor.rebuildTaskData') | Out-Null
+                $missingSiblingMethods.Add('ExampleCalculatorApiTaskProcessor.rebuildTaskData') | Out-Null
             }
             $issueEvidence.Add([ordered]@{
                 issue = 'policy_rebuild_plan_missing:apply_and_calculate_siblings'
@@ -1303,7 +1303,7 @@ if ($Stage -eq 'Phase0') {
     # Matches both key-value format and table format like:
     # ### Existing Production Carriers Found
     # | Carrier | Location | Method/Signature | Purpose |
-    # | AiAutoClaimFlowService | ... | ... | ... |
+    # | ExampleFlowService | ... | ... | ... |
     $existingProductionCarriers = Get-FirstText $combinedPlanArtifacts @(
         '(?m)^\s*-?\s*\*{0,2}\s*existing_production_carriers\s*\*{0,2}\s*[:=]\s*([^\r\n]+?)\s*$',
         '(?m)^\s*-?\s*existing_production_carriers\s*[:=]\s*([^\r\n]+?)\s*$',
@@ -1402,7 +1402,7 @@ if ($Stage -eq 'Phase0') {
         $issues.Add('carrier_search_new_service_unjustified') | Out-Null
     }
     # v406: Normalize carrier name for matching - strip method names like ".save", ".update" etc.
-    # This handles cases like "AiClaimModuleConfigService.save" matching "AiClaimModuleConfigService.java"
+    # This handles cases like "ExampleModuleConfigService.save" matching "ExampleModuleConfigService.java"
     $carrierBaseNameForMatch = Get-CarrierNameForExistenceCheck -CarrierText $selectedCarrierFromSearch
 
     if (-not $newServiceIsTrue -and
@@ -1414,7 +1414,7 @@ if ($Stage -eq 'Phase0') {
     }
 
     # v381: Carrier Existence Verification - selected carrier must exist in codebase
-    # This prevents synthetic carriers like AiAutoClaimFlowService from being selected
+    # This prevents synthetic carriers like ExampleFlowService from being selected
     # v382: Enhanced with retry logic and Get-ChildItem fallback for robustness
     # v391: Skip existence check for new services (new_service_proposed=true)
     $carrierNameForExistenceCheck = if (-not [string]::IsNullOrWhiteSpace($selectedCarrierFromSearch)) {
@@ -1948,8 +1948,8 @@ if ($Stage -eq 'Phase0') {
             }
             # v459/v461/v464: Layer validation - core_entry family requires Facade/Controller entry point
             # v461: Extract actual carrier name (before first '(') to avoid false positives
-            # Example: "AiApplyClaimApiTaskProcessor (EXISTING -> calls NEW AiAutoClaimFlowService)"
-            # should extract "AiApplyClaimApiTaskProcessor" not match on "AiAutoClaimFlowService"
+            # Example: "ExampleApplyClaimApiTaskProcessor (EXISTING -> calls NEW ExampleFlowService)"
+            # should extract "ExampleApplyClaimApiTaskProcessor" not match on "ExampleFlowService"
             # v464: Allow Service layer carriers if plan documents an existing Facade/Controller entry point
             # Example: NEW Service called from existing Facade/TaskProcessor is valid
             $actualCarrier = $selectedCarrierValueForFirstSlice.Split('(')[0].Trim()
@@ -1995,14 +1995,14 @@ if ($Stage -eq 'Phase0') {
         }
     }
 
-    # v289: Test harness placement gate. In this claim replay workspace, claim-core
+    # v289: Test harness placement gate. In this claim replay workspace, example-core
     # does not carry the test dependencies needed for JUnit/Mockito/Spring Test.
-    # Planning a RED directly under claim-core creates an environment-blocked round,
+    # Planning a RED directly under example-core creates an environment-blocked round,
     # not a business RED.
     $firstRedTestMatch = [regex]::Match($firstSliceProofText, '(?im)^\s*(?:\*{0,2}\s*)?(?:[-*]\s*)?first_red_test\s*\*{0,2}\s*[:=|]\s*(?:\r?\n\s*:\s*)?\s*(.+?)\s*$')
     if ($firstRedTestMatch.Success) {
         $firstRedValue = $firstRedTestMatch.Groups[1].Value.Trim()
-        if ($firstRedValue -match '(?i)(claim-core[/\\]src[/\\]test|-pl\s+claim-core|claim-core\s+-Dtest)') {
+        if ($firstRedValue -match '(?i)(example-core[/\\]src[/\\]test|-pl\s+example-core|example-core\s+-Dtest)') {
             $issues.Add('first_slice_proof_invalid:test_harness_claim_core') | Out-Null
         }
         if ($firstRedValue -match '(?i)(dependency\s*:|add\s+JUnit|鏂板.*(JUnit|Mockito|Spring Test))') {
@@ -2031,14 +2031,14 @@ if ($Stage -eq 'Phase0') {
         #         # Construct full test file path
         #         # Try various locations:
         #         # 1. Direct path if already qualified
-        #         # 2. Under claim-server/src/test/java/
+        #         # 2. Under example-server/src/test/java/
         #         # 3. Under src/test/java/
         #         # 4. Search in worktree
         #
         #         $testFilePaths = @(
         #             if ($testFileName -match '[/\\]') { Join-Path $worktreePath $testFileName } else { $null }
-        #             Join-Path $worktreePath "claim-server\src\test\java\com\huize\claim\core\ai\service\$testFileName"
-        #             Join-Path $worktreePath "claim-server\src\test\java\$testFileName"
+        #             Join-Path $worktreePath "example-server\src\test\java\com\example\project\core\ai\service\$testFileName"
+        #             Join-Path $worktreePath "example-server\src\test\java\$testFileName"
         #             Join-Path $worktreePath "src\test\java\$testFileName"
         #         ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         #
@@ -2286,8 +2286,8 @@ if ($Stage -eq 'Phase0') {
         # v380: Fix oracle_out_of_scope_files filtering bug (now works on domain-filtered files)
         # Previous logic used substring match (-like "*$_*") which incorrectly excluded
         # files that contained the exclusion pattern as a substring (e.g., "Facade"
-        # in exclusion list would match "AiAutoClaimFlowFacade" even though it's not
-        # "InsureCompanyPushFacade"). Now use exact match on filename without extension.
+        # in exclusion list would match "ExampleAutoClaimFlowFacade" even though it's not
+        # "ExamplePushFacade"). Now use exact match on filename without extension.
         $filteredOracleProdFiles = @($domainFilteredOracleFiles | Where-Object {
             $oracleFile = $_
             $fileName = [System.IO.Path]::GetFileName($oracleFile)

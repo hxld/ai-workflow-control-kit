@@ -64,7 +64,7 @@ try {
         slice_type = 'exact_contract_slice'
         touched_requirement_families = @('wire_payload_api_contract')
         closed_requirement_families = @()
-        implemented_files = @('claim-core/src/main/java/acme/ClaimAgentFacadeImpl.java')
+        implemented_files = @('example-core/src/main/java/acme/ClaimAgentFacadeImpl.java')
     })
     Write-JsonFile $sliceVerify ([ordered]@{
         slice_index = 5

@@ -20,23 +20,23 @@ function Write-Json {
 function New-PolicyHarnessFixture {
     param(
         [string]$Root,
-        [string]$Module = 'claim-core',
+        [string]$Module = 'example-core',
         [string]$ExpectedTestClass = 'Manual code inspection',
         [string]$FirstRedTest = 'Code inspection of rebuildTaskData lambda'
     )
 
     $worktree = Join-Path $Root 'worktree'
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java\com\example\project\core\ai\task') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task') | Out-Null
     '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\pom.xml') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'claim-core\pom.xml') -Encoding UTF8
-    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-server\src\test\java\com\huize\claim\core\ai\task\ExistingHarnessTest.java') -Encoding UTF8
-    'class AiApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task\AiApplyClaimApiTaskProcessor.java') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\pom.xml') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'example-core\pom.xml') -Encoding UTF8
+    'class ExistingHarnessTest {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-server\src\test\java\com\example\project\core\ai\task\ExistingHarnessTest.java') -Encoding UTF8
+    'class ExampleApplyClaimApiTaskProcessor {}' | Set-Content -LiteralPath (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task\ExampleApplyClaimApiTaskProcessor.java') -Encoding UTF8
 
     Write-Json (Join-Path $Root 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java'
+        target_carrier_file_path = 'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java'
         target_carrier_line_number = 384
         expected_test_class = $ExpectedTestClass
         expected_test_method = 'testRebuildTaskData_PreservesPolicyNumAndInsureNum'
@@ -98,10 +98,10 @@ try {
     )
 
     $badRoot = Join-Path $tempRoot 'bad-manual'
-    $badWorktree = New-PolicyHarnessFixture -Root $badRoot -Module 'claim-server' -ExpectedTestClass 'Manual code inspection' -FirstRedTest 'Code inspection of rebuildTaskData lambda'
+    $badWorktree = New-PolicyHarnessFixture -Root $badRoot -Module 'example-server' -ExpectedTestClass 'Manual code inspection' -FirstRedTest 'Code inspection of rebuildTaskData lambda'
     Write-Json (Join-Path $badRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = "mvn -s D:\maven\settings\settings.xml -f `"$badWorktree\pom.xml`" -pl claim-server -am test-compile"
-        module = 'claim-server'
+        command = "mvn -s D:\maven\settings\settings.xml -f `"$badWorktree\pom.xml`" -pl example-server -am test-compile"
+        module = 'example-server'
         exit_code = 0
         stdout_tail = 'BUILD SUCCESS'
     })
@@ -115,16 +115,16 @@ try {
     $repaired = Repair-PolicyRebuildPlanHarness -ReplayRoot $repairRoot -Worktree $repairWorktree -PlanResultJsonPath (Join-Path $repairRoot 'PLAN_RESULT.json')
     Assert-True 'policy_harness_repair_returns_true' ([bool]$repaired)
     $repairArtifact = Get-Content -LiteralPath (Join-Path $repairRoot 'PLAN_POLICY_REBUILD_HARNESS_REPAIR.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    Assert-True 'policy_harness_repair_artifact_written' ($repairArtifact.status -eq 'REPAIRED' -and $repairArtifact.required_module -eq 'claim-server')
+    Assert-True 'policy_harness_repair_artifact_written' ($repairArtifact.status -eq 'REPAIRED' -and $repairArtifact.required_module -eq 'example-server')
     $plan = Get-Content -LiteralPath (Join-Path $repairRoot 'PLAN_RESULT.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    Assert-True 'policy_harness_repair_sets_claim_server_module' ($plan.test_infrastructure_check.test_module_for_target -eq 'claim-server')
-    Assert-True 'policy_harness_repair_sets_claim_server_test_class' ([string]$plan.expected_test_class -match 'claim-server[/\\]src[/\\]test[/\\]java')
+    Assert-True 'policy_harness_repair_sets_claim_server_module' ($plan.test_infrastructure_check.test_module_for_target -eq 'example-server')
+    Assert-True 'policy_harness_repair_sets_claim_server_test_class' ([string]$plan.expected_test_class -match 'example-server[/\\]src[/\\]test[/\\]java')
     Assert-True 'policy_harness_repair_removes_code_inspection_red_test' ([string]$plan.first_red_test -notmatch '(?i)code\s+inspection|manual')
-    Assert-True 'policy_harness_repair_sets_claim_server_compile_command' ([string]$plan.test_infrastructure_check.compilation_dry_run_command -match '-pl claim-server' -and [string]$plan.test_infrastructure_check.compilation_dry_run_command -match '\s-am\b' -and [string]$plan.test_infrastructure_check.compilation_dry_run_command -match 'test-compile')
+    Assert-True 'policy_harness_repair_sets_claim_server_compile_command' ([string]$plan.test_infrastructure_check.compilation_dry_run_command -match '-pl example-server' -and [string]$plan.test_infrastructure_check.compilation_dry_run_command -match '\s-am\b' -and [string]$plan.test_infrastructure_check.compilation_dry_run_command -match 'test-compile')
 
     Write-Json (Join-Path $repairRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
         command = [string]$plan.test_infrastructure_check.compilation_dry_run_command
-        module = 'claim-server'
+        module = 'example-server'
         exit_code = 0
         stdout_tail = 'BUILD SUCCESS'
     })

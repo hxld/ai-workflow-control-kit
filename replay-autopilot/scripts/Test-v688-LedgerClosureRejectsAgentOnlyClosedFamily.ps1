@@ -95,7 +95,7 @@ try {
         production_boundary = 'TaskProcessor'
         proof_kind = 'stateful_side_effect'
         red_expectation = 'state not written before fix'
-        implemented_files = @('claim-core/src/main/java/acme/TaskProcessor.java')
+        implemented_files = @('example-core/src/main/java/acme/TaskProcessor.java')
         touched_requirement_families = @('stateful_side_effect')
         closed_requirement_families = @('stateful_side_effect')
         gap_flags = @()

@@ -198,7 +198,7 @@ function Test-PolicyRebuildPlan {
     if ([string]::IsNullOrWhiteSpace($PlanText)) { return $false }
     $hasPolicyNum = $PlanText -match '(?i)(policyNum|policy_num)'
     $hasInsureNum = $PlanText -match '(?i)(insureNum|insure_num)'
-    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
+    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|ExampleDataAssemblyHelper)'
     return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)
 }
 
@@ -572,14 +572,14 @@ if ($planStatus -eq 'PROCEED') {
             $policyExpectedTestClass = [string](Get-PlanProperty -Object $plan -Name 'expected_test_class')
             $policyBlockerReason = [string](Get-PlanProperty -Object $infra -Name 'blocker_reason')
 
-            if ($policyModule.Trim().ToLowerInvariant() -ne 'claim-server') {
+            if ($policyModule.Trim().ToLowerInvariant() -ne 'example-server') {
                 $testInfrastructureIssues += 'policy_rebuild_test_module_must_be_claim_server'
             }
-            if ($policyExpectedTestClass -match '(?i)claim-core[\\/]+src[\\/]+test' -or ($policyModule.Trim().ToLowerInvariant() -ne 'claim-server' -and $policyExpectedTestClass -notmatch '(?i)(claim-server[\\/]+src[\\/]+test|com\.huize\.claim\.test)')) {
+            if ($policyExpectedTestClass -match '(?i)example-core[\\/]+src[\\/]+test' -or ($policyModule.Trim().ToLowerInvariant() -ne 'example-server' -and $policyExpectedTestClass -notmatch '(?i)(example-server[\\/]+src[\\/]+test|com\.huize\.claim\.test)')) {
                 $testInfrastructureIssues += 'policy_rebuild_expected_test_class_must_use_claim_server_harness'
             }
             $policyCommandText = $policyDryRunCommand.ToLowerInvariant()
-            if (-not ($policyCommandText.Contains('-pl claim-server') -and $policyCommandText.Contains('-am') -and $policyCommandText.Contains('test-compile'))) {
+            if (-not ($policyCommandText.Contains('-pl example-server') -and $policyCommandText.Contains('-am') -and $policyCommandText.Contains('test-compile'))) {
                 $testInfrastructureIssues += 'policy_rebuild_compile_dry_run_must_use_claim_server_am_test_compile'
             }
             if ($planTextRaw -match '(?i)\b(manual\s+(verification|check|inspection|code\s+inspection)|code\s+inspection)\b' -or $policyBlockerReason -match '(?i)manual|inspection') {

@@ -19,12 +19,12 @@ function Write-Json {
 
 function New-TestHarnessFixture {
     param([string]$Worktree)
-    New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'claim-server\src\test\java\sample') | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'claim-core\src\main\java\example') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'example-server\src\test\java\sample') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $Worktree 'example-core\src\main\java\example') | Out-Null
     '<project />' | Set-Content -LiteralPath (Join-Path $Worktree 'pom.xml') -Encoding UTF8
-    '<project />' | Set-Content -LiteralPath (Join-Path $Worktree 'claim-server\pom.xml') -Encoding UTF8
-    'class DemoServiceTest {}' | Set-Content -LiteralPath (Join-Path $Worktree 'claim-server\src\test\java\sample\DemoServiceTest.java') -Encoding UTF8
-    'class DemoService {}' | Set-Content -LiteralPath (Join-Path $Worktree 'claim-core\src\main\java\example\DemoService.java') -Encoding UTF8
+    '<project />' | Set-Content -LiteralPath (Join-Path $Worktree 'example-server\pom.xml') -Encoding UTF8
+    'class DemoServiceTest {}' | Set-Content -LiteralPath (Join-Path $Worktree 'example-server\src\test\java\sample\DemoServiceTest.java') -Encoding UTF8
+    'class DemoService {}' | Set-Content -LiteralPath (Join-Path $Worktree 'example-core\src\main\java\example\DemoService.java') -Encoding UTF8
 }
 
 $scriptRoot = Split-Path -Parent $PSCommandPath
@@ -60,25 +60,25 @@ try {
     New-Item -ItemType Directory -Force -Path $badRoot | Out-Null
     New-TestHarnessFixture -Worktree $badWorktree
     Write-Json (Join-Path $badRoot 'TEST_INFRASTRUCTURE_DRY_RUN.json') ([ordered]@{
-        command = 'mvn -s D:\maven\settings\settings.xml -f D:\opt\lipei\claim\pom.xml -pl claim-server -am test-compile'
+        command = 'mvn -s D:\maven\settings\settings.xml -f D:\opt\lipei\claim\pom.xml -pl example-server -am test-compile'
         exit_code = 0
         stdout_tail = 'BUILD SUCCESS'
     })
     Write-Json (Join-Path $badRoot 'PLAN_RESULT.json') ([ordered]@{
         plan_status = 'PROCEED'
-        target_carrier_file_path = 'claim-core/src/main/java/example/DemoService.java'
+        target_carrier_file_path = 'example-core/src/main/java/example/DemoService.java'
         target_carrier_line_number = 42
         expected_test_class = 'DemoServiceTest'
         expected_test_method = 'testDemo'
         side_effects = @('DB state update')
         expected_assertions = @('assert DB state')
         test_infrastructure_check = [ordered]@{
-            test_module_for_target = 'claim-server'
+            test_module_for_target = 'example-server'
             test_module_has_dependencies = $true
             test_harness_available = $true
             can_import_production_classes = $true
             compilation_dry_run_exit_code = 0
-            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f D:\opt\lipei\claim\pom.xml -pl claim-server -am test-compile'
+            compilation_dry_run_command = 'mvn -s D:\maven\settings\settings.xml -f D:\opt\lipei\claim\pom.xml -pl example-server -am test-compile'
             compilation_dry_run_evidence_file = 'TEST_INFRASTRUCTURE_DRY_RUN.json'
             blocker_reason = 'none'
         }

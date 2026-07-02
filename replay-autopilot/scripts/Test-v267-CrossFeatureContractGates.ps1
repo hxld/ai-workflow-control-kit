@@ -128,21 +128,21 @@ Write-TestResult 'SliceVerifier has assertion_surface_mismatch in fail-closed fl
 # ============================================================
 $root1 = New-TestReplayRoot -Name 'plan-with-pattern-fields'
 
-$planResultContent = "# Plan Result`n- plan_status: PROCEED`n- selected_strategy: core-transaction-first`n- first_slice: S1`n- first_red_test: SomeTest#testReturnTicket`n- oracle_production_file_overlap: 60%`n- required_files: Service.java"
+$planResultContent = "# Plan Result`n- plan_status: PROCEED`n- selected_strategy: core-transaction-first`n- first_slice: S1`n- first_red_test: SomeTest#testExampleTicket`n- oracle_production_file_overlap: 60%`n- required_files: Service.java"
 
 $firstSliceProofWithPattern = "first_slice: S1`n"
 $firstSliceProofWithPattern += "highest_weight_open_gate: core_entry`n"
-$firstSliceProofWithPattern += "first_red_test: InsureCompanyPushServiceTest#testReturnTicket`n"
-$firstSliceProofWithPattern += "selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofWithPattern += "first_red_test: ExamplePushServiceTest#testExampleTicket`n"
+$firstSliceProofWithPattern += "selected_real_entry: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofWithPattern += "public_entry_contract_coverage: verifies response fields`n"
-$firstSliceProofWithPattern += "selected_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
-$firstSliceProofWithPattern += "target_subsurface_or_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofWithPattern += "selected_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
+$firstSliceProofWithPattern += "target_subsurface_or_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofWithPattern += "real_carrier_kind: production_entry_or_service`n"
 $firstSliceProofWithPattern += "minimum_side_effect_or_blocker: RefundTicketService insert`n"
 $firstSliceProofWithPattern += "forbidden_substitute_check: passed`n"
 $firstSliceProofWithPattern += "required_sibling_surfaces: none`n"
-$firstSliceProofWithPattern += "production_boundary: InsureCompanyPushFacadeImpl`n"
-$firstSliceProofWithPattern += "expected_production_diff: InsureCompanyPushFacadeImpl.java modified`n"
+$firstSliceProofWithPattern += "production_boundary: ExamplePushFacadeImpl`n"
+$firstSliceProofWithPattern += "expected_production_diff: ExamplePushFacadeImpl.java modified`n"
 $firstSliceProofWithPattern += "red_expectation: test fails because method not yet returning expected response`n"
 $firstSliceProofWithPattern += "green_minimum_implementation: implement returnTicket with response object`n"
 $firstSliceProofWithPattern += "proof_kind: real_entry_behavior`n"
@@ -183,17 +183,17 @@ $root2 = New-TestReplayRoot -Name 'plan-no-pattern-to-follow'
 
 $firstSliceProofNoPattern = "first_slice: S1`n"
 $firstSliceProofNoPattern += "highest_weight_open_gate: core_entry`n"
-$firstSliceProofNoPattern += "first_red_test: SomeTest#testReturnTicket`n"
-$firstSliceProofNoPattern += "selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofNoPattern += "first_red_test: SomeTest#testExampleTicket`n"
+$firstSliceProofNoPattern += "selected_real_entry: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofNoPattern += "public_entry_contract_coverage: verifies response fields`n"
-$firstSliceProofNoPattern += "selected_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
-$firstSliceProofNoPattern += "target_subsurface_or_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofNoPattern += "selected_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
+$firstSliceProofNoPattern += "target_subsurface_or_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofNoPattern += "real_carrier_kind: production_entry_or_service`n"
 $firstSliceProofNoPattern += "minimum_side_effect_or_blocker: RefundTicketService insert`n"
 $firstSliceProofNoPattern += "forbidden_substitute_check: passed`n"
 $firstSliceProofNoPattern += "required_sibling_surfaces: none`n"
-$firstSliceProofNoPattern += "production_boundary: InsureCompanyPushFacadeImpl`n"
-$firstSliceProofNoPattern += "expected_production_diff: InsureCompanyPushFacadeImpl.java modified`n"
+$firstSliceProofNoPattern += "production_boundary: ExamplePushFacadeImpl`n"
+$firstSliceProofNoPattern += "expected_production_diff: ExamplePushFacadeImpl.java modified`n"
 $firstSliceProofNoPattern += "red_expectation: test fails`n"
 $firstSliceProofNoPattern += "green_minimum_implementation: implement`n"
 $firstSliceProofNoPattern += "proof_kind: real_entry_behavior`n"
@@ -233,7 +233,7 @@ $root3 = New-TestReplayRoot -Name 'slice-contract-mismatch'
 $worktree3 = Join-Path $root3 'worktree'
 New-Item -ItemType Directory -Force -Path $worktree3 | Out-Null
 
-$testDir = Join-Path $worktree3 'claim-server\src\test\java\com\test'
+$testDir = Join-Path $worktree3 'example-server\src\test\java\com\test'
 New-Item -ItemType Directory -Force -Path $testDir | Out-Null
 $exceptionTestContent = '@Test`npublic void should_throw_when_case_not_found() {`n    try {`n        service.returnTicket(param);`n        fail("expected IllegalArgumentException");`n    } catch (IllegalArgumentException e) {`n        assertEquals("case not found", e.getMessage());`n    }`n}'
 Write-File -Path (Join-Path $testDir 'SomeServiceTest.java') -Content $exceptionTestContent
@@ -244,22 +244,22 @@ Write-File -Path (Join-Path $testDir 'SomeServiceTest.java') -Content $exception
 & git -C $worktree3 add -A 2>$null | Out-Null
 & git -C $worktree3 commit -m "init" 2>$null | Out-Null
 
-$sliceResultJson = '{"slice_index":1,"slice_id":"S1","slice_title":"Return Ticket","slice_type":"tracer_bullet","slice_status":"DONE","coverage_delta":0,"target_subsurface_or_carrier":"InsureCompanyPushFacadeImpl#returnTicket","required_sibling_surfaces":[],"production_boundary":"InsureCompanyPushFacadeImpl","proof_kind":"real_entry_behavior","real_carrier_kind":"production_entry_or_service","forbidden_substitute_check":"passed","red_expectation":"test fails","implemented_files":["claim-server/src/test/java/com/test/SomeServiceTest.java"],"current_slice_changed_files":["claim-server/src/test/java/com/test/SomeServiceTest.java"],"round_changed_files_snapshot":["claim-server/src/test/java/com/test/SomeServiceTest.java"],"tests":[{"command":"mvn test -Dtest=SomeServiceTest","phase":"RED","result":"fail","evidence":"test failed"}],"closed_assertions":[],"must_not_assertions":[],"remaining_gaps":[],"gap_flags":[],"touched_requirement_families":["core_entry"],"closed_requirement_families":[],"blocker":"","next_recommended_slice_type":"stateful_success_slice"}'
+$sliceResultJson = '{"slice_index":1,"slice_id":"S1","slice_title":"Return Ticket","slice_type":"tracer_bullet","slice_status":"DONE","coverage_delta":0,"target_subsurface_or_carrier":"ExamplePushFacadeImpl#returnTicket","required_sibling_surfaces":[],"production_boundary":"ExamplePushFacadeImpl","proof_kind":"real_entry_behavior","real_carrier_kind":"production_entry_or_service","forbidden_substitute_check":"passed","red_expectation":"test fails","implemented_files":["example-server/src/test/java/com/test/SomeServiceTest.java"],"current_slice_changed_files":["example-server/src/test/java/com/test/SomeServiceTest.java"],"round_changed_files_snapshot":["example-server/src/test/java/com/test/SomeServiceTest.java"],"tests":[{"command":"mvn test -Dtest=SomeServiceTest","phase":"RED","result":"fail","evidence":"test failed"}],"closed_assertions":[],"must_not_assertions":[],"remaining_gaps":[],"gap_flags":[],"touched_requirement_families":["core_entry"],"closed_requirement_families":[],"blocker":"","next_recommended_slice_type":"stateful_success_slice"}'
 Write-File -Path (Join-Path $root3 'SLICE_RESULT_01.json') -Content $sliceResultJson
 
 $firstSliceProofWithContract = "first_slice: S1`n"
 $firstSliceProofWithContract += "highest_weight_open_gate: core_entry`n"
-$firstSliceProofWithContract += "first_red_test: SomeServiceTest#testReturnTicket`n"
-$firstSliceProofWithContract += "selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofWithContract += "first_red_test: SomeServiceTest#testExampleTicket`n"
+$firstSliceProofWithContract += "selected_real_entry: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofWithContract += "public_entry_contract_coverage: verifies response fields`n"
-$firstSliceProofWithContract += "selected_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
-$firstSliceProofWithContract += "target_subsurface_or_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofWithContract += "selected_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
+$firstSliceProofWithContract += "target_subsurface_or_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofWithContract += "real_carrier_kind: production_entry_or_service`n"
 $firstSliceProofWithContract += "minimum_side_effect_or_blocker: RefundTicketService insert`n"
 $firstSliceProofWithContract += "forbidden_substitute_check: passed`n"
 $firstSliceProofWithContract += "required_sibling_surfaces: none`n"
-$firstSliceProofWithContract += "production_boundary: InsureCompanyPushFacadeImpl`n"
-$firstSliceProofWithContract += "expected_production_diff: InsureCompanyPushFacadeImpl.java`n"
+$firstSliceProofWithContract += "production_boundary: ExamplePushFacadeImpl`n"
+$firstSliceProofWithContract += "expected_production_diff: ExamplePushFacadeImpl.java`n"
 $firstSliceProofWithContract += "red_expectation: test fails`n"
 $firstSliceProofWithContract += "green_minimum_implementation: implement returnTicket`n"
 $firstSliceProofWithContract += "proof_kind: real_entry_behavior`n"
@@ -267,13 +267,13 @@ $firstSliceProofWithContract += "forbidden_substitute_proof: no substitutes`n"
 $firstSliceProofWithContract += "fail-closed condition: response not returned`n"
 $firstSliceProofWithContract += "coverage_cap_if_not_closed: 0`n"
 $firstSliceProofWithContract += "coverage_cap_if_missing: 0`n"
-$firstSliceProofWithContract += "pattern_to_follow: InsureCompanyPushService.returnCompany(ReturnCompanyParam) -> ReturnCompanyParam`n"
+$firstSliceProofWithContract += "pattern_to_follow: ExamplePushService.returnCompany(ReturnCompanyParam) -> ReturnCompanyParam`n"
 $firstSliceProofWithContract += "pattern_return_type: ReturnCompanyParam`n"
 $firstSliceProofWithContract += "pattern_error_handling: response_codes`n"
 $firstSliceProofWithContract += "pattern_evidence_source: rg -i `"returnCompany`" --include `"*.java`""
 
 Write-File -Path (Join-Path $root3 'FIRST_SLICE_PROOF_PLAN.md') -Content $firstSliceProofWithContract
-Write-File -Path (Join-Path $root3 'IMPLEMENTATION_CONTRACT.md') -Content 'selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket'
+Write-File -Path (Join-Path $root3 'IMPLEMENTATION_CONTRACT.md') -Content 'selected_real_entry: ExamplePushFacadeImpl#returnTicket'
 
 $verify3 = Invoke-SliceVerify -Root $root3 -Worktree $worktree3 -SliceResult (Join-Path $root3 'SLICE_RESULT_01.json')
 
@@ -293,7 +293,7 @@ $root4 = New-TestReplayRoot -Name 'slice-contract-match'
 $worktree4 = Join-Path $root4 'worktree'
 New-Item -ItemType Directory -Force -Path $worktree4 | Out-Null
 
-$testDir4 = Join-Path $worktree4 'claim-server\src\test\java\com\test'
+$testDir4 = Join-Path $worktree4 'example-server\src\test\java\com\test'
 New-Item -ItemType Directory -Force -Path $testDir4 | Out-Null
 $matchingTestContent = '@Test`npublic void should_return_500_when_case_not_found() {`n    ReturnCompanyParam result = service.returnTicket(returnTicketParam);`n    assertEquals("500", result.getCode());`n    assertEquals("case not found", result.getMsg());`n}'
 Write-File -Path (Join-Path $testDir4 'MatchingServiceTest.java') -Content $matchingTestContent
@@ -304,10 +304,10 @@ Write-File -Path (Join-Path $testDir4 'MatchingServiceTest.java') -Content $matc
 & git -C $worktree4 add -A 2>$null | Out-Null
 & git -C $worktree4 commit -m "init" 2>$null | Out-Null
 
-$sliceResult4 = '{"slice_index":1,"slice_id":"S1","slice_title":"Return Ticket","slice_type":"tracer_bullet","slice_status":"DONE","coverage_delta":0,"target_subsurface_or_carrier":"InsureCompanyPushFacadeImpl#returnTicket","required_sibling_surfaces":[],"production_boundary":"InsureCompanyPushFacadeImpl","proof_kind":"real_entry_behavior","real_carrier_kind":"production_entry_or_service","forbidden_substitute_check":"passed","red_expectation":"test fails","implemented_files":["claim-server/src/test/java/com/test/MatchingServiceTest.java"],"current_slice_changed_files":["claim-server/src/test/java/com/test/MatchingServiceTest.java"],"round_changed_files_snapshot":["claim-server/src/test/java/com/test/MatchingServiceTest.java"],"tests":[{"command":"mvn test -Dtest=MatchingServiceTest","phase":"RED","result":"fail","evidence":"test failed"}],"closed_assertions":[],"must_not_assertions":[],"remaining_gaps":[],"gap_flags":[],"touched_requirement_families":["core_entry"],"closed_requirement_families":[],"blocker":"","next_recommended_slice_type":"stateful_success_slice"}'
+$sliceResult4 = '{"slice_index":1,"slice_id":"S1","slice_title":"Return Ticket","slice_type":"tracer_bullet","slice_status":"DONE","coverage_delta":0,"target_subsurface_or_carrier":"ExamplePushFacadeImpl#returnTicket","required_sibling_surfaces":[],"production_boundary":"ExamplePushFacadeImpl","proof_kind":"real_entry_behavior","real_carrier_kind":"production_entry_or_service","forbidden_substitute_check":"passed","red_expectation":"test fails","implemented_files":["example-server/src/test/java/com/test/MatchingServiceTest.java"],"current_slice_changed_files":["example-server/src/test/java/com/test/MatchingServiceTest.java"],"round_changed_files_snapshot":["example-server/src/test/java/com/test/MatchingServiceTest.java"],"tests":[{"command":"mvn test -Dtest=MatchingServiceTest","phase":"RED","result":"fail","evidence":"test failed"}],"closed_assertions":[],"must_not_assertions":[],"remaining_gaps":[],"gap_flags":[],"touched_requirement_families":["core_entry"],"closed_requirement_families":[],"blocker":"","next_recommended_slice_type":"stateful_success_slice"}'
 Write-File -Path (Join-Path $root4 'SLICE_RESULT_01.json') -Content $sliceResult4
 Write-File -Path (Join-Path $root4 'FIRST_SLICE_PROOF_PLAN.md') -Content $firstSliceProofWithContract
-Write-File -Path (Join-Path $root4 'IMPLEMENTATION_CONTRACT.md') -Content 'selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket'
+Write-File -Path (Join-Path $root4 'IMPLEMENTATION_CONTRACT.md') -Content 'selected_real_entry: ExamplePushFacadeImpl#returnTicket'
 
 $verify4 = Invoke-SliceVerify -Root $root4 -Worktree $worktree4 -SliceResult (Join-Path $root4 'SLICE_RESULT_01.json')
 
@@ -321,17 +321,17 @@ $root5 = New-TestReplayRoot -Name 'plan-placeholder-error-handling'
 
 $firstSliceProofPlaceholderEH = "first_slice: S1`n"
 $firstSliceProofPlaceholderEH += "highest_weight_open_gate: core_entry`n"
-$firstSliceProofPlaceholderEH += "first_red_test: SomeTest#testReturnTicket`n"
-$firstSliceProofPlaceholderEH += "selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofPlaceholderEH += "first_red_test: SomeTest#testExampleTicket`n"
+$firstSliceProofPlaceholderEH += "selected_real_entry: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofPlaceholderEH += "public_entry_contract_coverage: verifies response fields`n"
-$firstSliceProofPlaceholderEH += "selected_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
-$firstSliceProofPlaceholderEH += "target_subsurface_or_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofPlaceholderEH += "selected_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
+$firstSliceProofPlaceholderEH += "target_subsurface_or_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofPlaceholderEH += "real_carrier_kind: production_entry_or_service`n"
 $firstSliceProofPlaceholderEH += "minimum_side_effect_or_blocker: RefundTicketService insert`n"
 $firstSliceProofPlaceholderEH += "forbidden_substitute_check: passed`n"
 $firstSliceProofPlaceholderEH += "required_sibling_surfaces: none`n"
-$firstSliceProofPlaceholderEH += "production_boundary: InsureCompanyPushFacadeImpl`n"
-$firstSliceProofPlaceholderEH += "expected_production_diff: InsureCompanyPushFacadeImpl.java modified`n"
+$firstSliceProofPlaceholderEH += "production_boundary: ExamplePushFacadeImpl`n"
+$firstSliceProofPlaceholderEH += "expected_production_diff: ExamplePushFacadeImpl.java modified`n"
 $firstSliceProofPlaceholderEH += "red_expectation: test fails`n"
 $firstSliceProofPlaceholderEH += "green_minimum_implementation: implement`n"
 $firstSliceProofPlaceholderEH += "proof_kind: real_entry_behavior`n"
@@ -372,17 +372,17 @@ $root6 = New-TestReplayRoot -Name 'plan-narrative-evidence'
 
 $firstSliceProofNarrative = "first_slice: S1`n"
 $firstSliceProofNarrative += "highest_weight_open_gate: core_entry`n"
-$firstSliceProofNarrative += "first_red_test: SomeTest#testReturnTicket`n"
-$firstSliceProofNarrative += "selected_real_entry: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofNarrative += "first_red_test: SomeTest#testExampleTicket`n"
+$firstSliceProofNarrative += "selected_real_entry: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofNarrative += "public_entry_contract_coverage: verifies response fields`n"
-$firstSliceProofNarrative += "selected_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
-$firstSliceProofNarrative += "target_subsurface_or_carrier: InsureCompanyPushFacadeImpl#returnTicket(ReturnTicketParam)`n"
+$firstSliceProofNarrative += "selected_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
+$firstSliceProofNarrative += "target_subsurface_or_carrier: ExamplePushFacadeImpl#returnTicket(ExampleTicketParam)`n"
 $firstSliceProofNarrative += "real_carrier_kind: production_entry_or_service`n"
 $firstSliceProofNarrative += "minimum_side_effect_or_blocker: RefundTicketService insert`n"
 $firstSliceProofNarrative += "forbidden_substitute_check: passed`n"
 $firstSliceProofNarrative += "required_sibling_surfaces: none`n"
-$firstSliceProofNarrative += "production_boundary: InsureCompanyPushFacadeImpl`n"
-$firstSliceProofNarrative += "expected_production_diff: InsureCompanyPushFacadeImpl.java modified`n"
+$firstSliceProofNarrative += "production_boundary: ExamplePushFacadeImpl`n"
+$firstSliceProofNarrative += "expected_production_diff: ExamplePushFacadeImpl.java modified`n"
 $firstSliceProofNarrative += "red_expectation: test fails`n"
 $firstSliceProofNarrative += "green_minimum_implementation: implement`n"
 $firstSliceProofNarrative += "proof_kind: real_entry_behavior`n"

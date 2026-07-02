@@ -33,15 +33,15 @@ try {
         proof_kind = 'payload_shape_behavior'
         tests = @(
             [ordered]@{
-                command = 'mvn -pl claim-server -am -Dtest=PolicyNumRebuildPathTest test'
+                command = 'mvn -pl example-server -am -Dtest=PolicyNumRebuildPathTest test'
                 phase = 'VERIFY'
                 result = 'pass'
                 evidence = 'Tests run: 5, Failures: 0, Errors: 0, Skipped: 0'
             }
         )
         implemented_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessor.java',
-            'claim-core/src/main/java/com/huize/claim/core/ai/task/AiCalculateLossApiTaskProcessor.java'
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessor.java',
+            'example-core/src/main/java/com/example/project/core/ai/task/ExampleCalculatorApiTaskProcessor.java'
         )
     })
 

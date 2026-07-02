@@ -29,12 +29,12 @@ function Initialize-MinimalWorktree {
     param([string]$Path)
     New-Item -ItemType Directory -Force -Path $Path | Out-Null
     git -C $Path init 2>&1 | Out-Null
-    $testDir = Join-Path $Path 'claim-server/src/test/java/com/huize/claim/test'
+    $testDir = Join-Path $Path 'example-server/src/test/java/com/example/project/test'
     New-Item -ItemType Directory -Force -Path $testDir | Out-Null
-    'package com.huize.claim.test; class SliceAuthTest {}' | Set-Content -LiteralPath (Join-Path $testDir 'SliceAuthTest.java') -Encoding UTF8
-    $prodDir = Join-Path $Path 'claim-core/src/main/java/com/huize/claim/core'
+    'package com.example.project.test; class SliceAuthTest {}' | Set-Content -LiteralPath (Join-Path $testDir 'SliceAuthTest.java') -Encoding UTF8
+    $prodDir = Join-Path $Path 'example-core/src/main/java/com/example/project/core'
     New-Item -ItemType Directory -Force -Path $prodDir | Out-Null
-    'package com.huize.claim.core; class TestProcessor {}' | Set-Content -LiteralPath (Join-Path $prodDir 'TestProcessor.java') -Encoding UTF8
+    'package com.example.project.core; class TestProcessor {}' | Set-Content -LiteralPath (Join-Path $prodDir 'TestProcessor.java') -Encoding UTF8
     git -C $Path add -A 2>&1 | Out-Null
     git -C $Path commit -m 'initial' --allow-empty 2>&1 | Out-Null
 }

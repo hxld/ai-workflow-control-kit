@@ -31,9 +31,9 @@ try {
 
 - plan_status: PROCEED
 - carrier_search: performed
-- carrier_search_queries: rg "AutoClaimFlow" claim-core; rg "FlowService" claim-core; rg "TaskProcessor" claim-server
-- existing_production_carriers: AiApplyClaimApiTaskProcessor; ApplyClaimService; ClaimTaskService
-- selected_carrier_from_search: NEW_SERVICE_AiAutoClaimFlowService
+- carrier_search_queries: rg "AutoClaimFlow" example-core; rg "FlowService" example-core; rg "TaskProcessor" example-server
+- existing_production_carriers: ExampleApplyClaimApiTaskProcessor; ApplyClaimService; ClaimTaskService
+- selected_carrier_from_search: NEW_SERVICE_ExampleFlowService
 - new_service_created: true
 - new_service_justification: >
   Exhaustive search found no existing carrier handles the complete workflow.
@@ -53,9 +53,9 @@ try {
 
 - plan_status: PROCEED
 - carrier_search: performed
-- carrier_search_queries: rg "AutoClaimFlow" claim-core; rg "FlowService" claim-core; rg "TaskProcessor" claim-server
-- existing_production_carriers: AiApplyClaimApiTaskProcessor; ApplyClaimService; ClaimTaskService
-- selected_carrier_from_search: NEW_SERVICE_AiAutoClaimFlowService
+- carrier_search_queries: rg "AutoClaimFlow" example-core; rg "FlowService" example-core; rg "TaskProcessor" example-server
+- existing_production_carriers: ExampleApplyClaimApiTaskProcessor; ApplyClaimService; ClaimTaskService
+- selected_carrier_from_search: NEW_SERVICE_ExampleFlowService
 - new_service_created: true
 - new_service_justification: >
   Prefer a cleaner service name.

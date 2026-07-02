@@ -26,52 +26,52 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('replay-v665-pres1-carr
 try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $replayRoot 'worktree'
-    $sourceDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
+    $sourceDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
     New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
-    Write-Utf8 (Join-Path $sourceDir 'TAiClaimApiTask.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Utf8 (Join-Path $sourceDir 'TExampleApiTask.java') @'
+package com.example.project.core.ai.task;
 
-public class TAiClaimApiTask {
+public class TExampleApiTask {
 }
 '@
 
     Write-Utf8 (Join-Path $sourceDir 'TaskResponse.java') @'
-package com.huize.claim.core.ai.task;
+package com.example.project.core.ai.task;
 
 public class TaskResponse {
 }
 '@
 
-    Write-Utf8 (Join-Path $sourceDir 'AiApplyClaimApiTask.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Utf8 (Join-Path $sourceDir 'ExampleApplyClaimApiTask.java') @'
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTask {
+public class ExampleApplyClaimApiTask {
 }
 '@
 
-    Write-Utf8 (Join-Path $sourceDir 'AiApplyClaimApiTaskResponse.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Utf8 (Join-Path $sourceDir 'ExampleApplyClaimApiTaskResponse.java') @'
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskResponse {
+public class ExampleApplyClaimApiTaskResponse {
 }
 '@
 
-    Write-Utf8 (Join-Path $sourceDir 'AbstractAiClaimApiTaskProcessor.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Utf8 (Join-Path $sourceDir 'AbstractExampleApiTaskProcessor.java') @'
+package com.example.project.core.ai.task;
 
-public abstract class AbstractAiClaimApiTaskProcessor {
-    public final TaskResponse execute(TAiClaimApiTask task) {
+public abstract class AbstractExampleApiTaskProcessor {
+    public final TaskResponse execute(TExampleApiTask task) {
         return null;
     }
 }
 '@
 
-    Write-Utf8 (Join-Path $sourceDir 'AiApplyClaimApiTaskProcessor.java') @'
-package com.huize.claim.core.ai.task;
+    Write-Utf8 (Join-Path $sourceDir 'ExampleApplyClaimApiTaskProcessor.java') @'
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor extends AbstractAiClaimApiTaskProcessor {
-    public void handleTaskResponse(AiApplyClaimApiTask task, AiApplyClaimApiTaskResponse response) {
+public class ExampleApplyClaimApiTaskProcessor extends AbstractExampleApiTaskProcessor {
+    public void handleTaskResponse(ExampleApplyClaimApiTask task, ExampleApplyClaimApiTaskResponse response) {
     }
 }
 '@
@@ -83,17 +83,17 @@ AI claim auto flow should write AI handling logs and compensation side effects.
 '@
 
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
-selected_real_entry: com.huize.claim.core.ai.task.AbstractAiClaimApiTaskProcessor.execute
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimAutoFlowBehaviorTest.java#handleTaskResponse_freeReviewAmountWithinThreshold_triggersAutoFlowSideEffects
+selected_real_entry: com.example.project.core.ai.task.AbstractExampleApiTaskProcessor.execute
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimAutoFlowBehaviorTest.java#handleTaskResponse_freeReviewAmountWithinThreshold_triggersAutoFlowSideEffects
 minimum_side_effect_or_blocker: selected carrier must produce exact AI handling log or compensation/status mapper-boundary write
-expected_test_class: com.huize.claim.core.ai.task.AiApplyClaimAutoFlowBehaviorTest
+expected_test_class: com.example.project.core.ai.task.ExampleApplyClaimAutoFlowBehaviorTest
 expected_test_method: handleTaskResponse_freeReviewAmountWithinThreshold_triggersAutoFlowSideEffects
 expected_side_effects: ["AI handling log insert","compensation mapper-boundary write"]
 '@
 
     @{
-        expected_test_class = 'com.huize.claim.core.ai.task.AiApplyClaimAutoFlowBehaviorTest'
+        expected_test_class = 'com.example.project.core.ai.task.ExampleApplyClaimAutoFlowBehaviorTest'
         expected_test_method = 'handleTaskResponse_freeReviewAmountWithinThreshold_triggersAutoFlowSideEffects'
         expected_side_effects = @('AI handling log insert', 'compensation mapper-boundary write')
         side_effects = @('AI handling log insert', 'compensation mapper-boundary write')
@@ -124,7 +124,7 @@ Invoke-V348PreS1CarrierVerification -ReplayRoot '$replayRoot' -Worktree '$worktr
     $signature = Get-Content -LiteralPath $signaturePath -Raw -Encoding UTF8 | ConvertFrom-Json
     Assert-True ([bool]$gate.signature_authorized) 'gate should authorize signature after fallback fields are derived'
     Assert-True ([bool]$signature.authorized) 'signature authorization should be true'
-    Assert-True ([string]$gate.test_invocation_path -match 'AiApplyClaimAutoFlowBehaviorTest#handleTaskResponse') 'test invocation path should fall back from expected test class/method'
+    Assert-True ([string]$gate.test_invocation_path -match 'ExampleApplyClaimAutoFlowBehaviorTest#handleTaskResponse') 'test invocation path should fall back from expected test class/method'
     Assert-True ([string]$gate.proof_observation_point -match 'AI handling log') 'proof observation point should fall back from side-effect fields'
 
     Write-Host ''

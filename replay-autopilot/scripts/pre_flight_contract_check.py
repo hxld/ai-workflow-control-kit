@@ -61,8 +61,8 @@ def find_service_file(service_name: str, project_root: Path) -> Optional[Path]:
     """Find service file in project structure"""
     # Common service locations
     search_paths = [
-        project_root / "claim-core" / "src" / "main" / "java" / "com" / "huize" / "claim" / "core",
-        project_root / "claim-core" / "src" / "main" / "java" / "com" / "huize" / "claim",
+        project_root / "example-core" / "src" / "main" / "java" / "com" / "huize" / "claim" / "core",
+        project_root / "example-core" / "src" / "main" / "java" / "com" / "huize" / "claim",
     ]
 
     for search_path in search_paths:

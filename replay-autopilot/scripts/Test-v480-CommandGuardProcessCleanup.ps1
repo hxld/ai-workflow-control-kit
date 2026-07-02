@@ -30,7 +30,7 @@ try {
     '<project />' | Set-Content -LiteralPath (Join-Path $worktree 'pom.xml') -Encoding UTF8
 
     $protectedPom = Join-Path $protectedRoot 'pom.xml'
-    $protectedPomCommand = "Start-Sleep -Seconds 120 # mvn -s D:\maven\settings\settings.xml -f `"$protectedPom`" -pl claim-server -am test"
+    $protectedPomCommand = "Start-Sleep -Seconds 120 # mvn -s D:\maven\settings\settings.xml -f `"$protectedPom`" -pl example-server -am test"
     $protectedPomProcess = Start-Process -FilePath 'powershell' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $protectedPomCommand) -WindowStyle Hidden -PassThru
     $children.Add([int]$protectedPomProcess.Id) | Out-Null
     Start-Sleep -Seconds 1

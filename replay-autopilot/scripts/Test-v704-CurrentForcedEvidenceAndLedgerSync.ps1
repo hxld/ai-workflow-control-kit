@@ -95,29 +95,29 @@ try {
     $replayRoot = Join-Path $tempRoot 'replay'
     $worktree = Join-Path $tempRoot 'worktree'
     New-Item -ItemType Directory -Force -Path $replayRoot, $worktree | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'claim-server\src\test\java'), (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\facade') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $worktree 'example-server\src\test\java'), (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\facade') | Out-Null
     Write-Utf8 (Join-Path $worktree 'pom.xml') '<project><modelVersion>4.0.0</modelVersion><groupId>demo</groupId><artifactId>root</artifactId><version>1</version></project>'
-    Write-Utf8 (Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\facade\AiClaimModuleConfigFacadeImpl.java') @'
-package com.huize.claim.core.ai.facade;
+    Write-Utf8 (Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\facade\ExampleModuleConfigFacadeImpl.java') @'
+package com.example.project.core.ai.facade;
 
-public class AiClaimModuleConfigFacadeImpl {
+public class ExampleModuleConfigFacadeImpl {
     public Object save(Object dto) {
         return null;
     }
 }
 '@
     Write-Utf8 (Join-Path $replayRoot 'FIRST_SLICE_PROOF_PLAN.md') @'
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse
 downstream_output_or_side_effect: first_slice_payload_contract
 '@
-    Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') 'global exact contract text mentions AiApplyClaimApiTaskProcessor and must not override current config evidence.'
+    Write-Utf8 (Join-Path $replayRoot 'IMPLEMENTATION_CONTRACT.md') 'global exact contract text mentions ExampleApplyClaimApiTaskProcessor and must not override current config evidence.'
     Write-Utf8 (Join-Path $replayRoot 'TEST_CHARTER.md') ''
-    Write-Utf8 (Join-Path $replayRoot 'BASELINE_INDEX.md') 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl'
+    Write-Utf8 (Join-Path $replayRoot 'BASELINE_INDEX.md') 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl'
     Write-JsonFile (Join-Path $replayRoot 'SOURCE_CHAIN_CONTRACT.json') ([ordered]@{ required_source_chain = $false })
     Write-JsonFile (Join-Path $replayRoot 'REPLAY_CONTEXT_INDEX_VALIDATION.json') ([ordered]@{ status = 'PASS' })
 
-    $configCarrier = 'com.huize.claim.core.ai.facade.AiClaimModuleConfigFacadeImpl.save'
+    $configCarrier = 'com.example.project.core.ai.facade.ExampleModuleConfigFacadeImpl.save'
     $ledgerPath = Join-Path $replayRoot 'REQUIREMENT_FAMILY_LEDGER.json'
     Write-JsonFile $ledgerPath ([ordered]@{
         schema_version = 1
@@ -129,9 +129,9 @@ downstream_output_or_side_effect: first_slice_payload_contract
         no_progress_slices = @()
         open_required_after_max = @()
         families = @(
-            (New-FamilyRow -Id 'wire_payload_api_contract' -Weight 88 -Status 'OPEN' -SliceType 'exact_contract_slice' -Carrier 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse' -ProofRequired @('wire_payload_payload_assertion') -CoverageCap 70),
+            (New-FamilyRow -Id 'wire_payload_api_contract' -Weight 88 -Status 'OPEN' -SliceType 'exact_contract_slice' -Carrier 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse' -ProofRequired @('wire_payload_payload_assertion') -CoverageCap 70),
             (New-FamilyRow -Id 'config_policy_threshold' -Weight 87 -Status 'PARTIAL' -SliceType 'exact_contract_slice' -Carrier $configCarrier -ProofRequired @('persist_free_review_amount', 'clear_updates_database', 'reject_invalid_amounts', 'auto_flow_gate_reads_config') -CoverageCap 65),
-            (New-FamilyRow -Id 'external_integration' -Weight 82 -Status 'OPEN' -SliceType 'deploy_surface_first_slice' -Carrier 'com.huize.claim.core.dock.facade.InsureCompanyPushFacadeImpl.push' -ProofRequired @('partner_push_status') -CoverageCap 65)
+            (New-FamilyRow -Id 'external_integration' -Weight 82 -Status 'OPEN' -SliceType 'deploy_surface_first_slice' -Carrier 'com.example.project.core.dock.facade.ExamplePushFacadeImpl.push' -ProofRequired @('partner_push_status') -CoverageCap 65)
         )
     })
 
@@ -186,9 +186,9 @@ downstream_output_or_side_effect: first_slice_payload_contract
         slice_status = 'DONE'
         slice_type = 'stateful_success_slice'
         coverage_delta = 10
-        production_boundary = 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog'
+        production_boundary = 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog'
         proof_kind = 'lifecycle_cleanup_retention'
-        implemented_files = @('claim-core/src/main/java/com/huize/claim/core/examine/service/CaseExamineLogService.java')
+        implemented_files = @('example-core/src/main/java/com/example/project/core/examine/service/CaseExamineLogService.java')
         touched_requirement_families = @('lifecycle_cleanup_retention')
         closed_requirement_families = @('lifecycle_cleanup_retention')
         gap_flags = @('exact_contract_gap', 'exact_contract_minimum_coverage_gap', 'tooling_enforcement_stop')
@@ -216,8 +216,8 @@ downstream_output_or_side_effect: first_slice_payload_contract
         production_boundary = $configCarrier
         proof_kind = 'config_policy_threshold'
         implemented_files = @(
-            'claim-core/src/main/java/com/huize/claim/core/ai/service/AiClaimModuleConfigService.java',
-            'claim-core/src/main/resources/mybatis/mapper/ai/TAiClaimModuleConfigMapper.xml'
+            'example-core/src/main/java/com/example/project/core/ai/service/ExampleModuleConfigService.java',
+            'example-core/src/main/resources/mybatis/mapper/ai/TExampleModuleConfigMapper.xml'
         )
         touched_requirement_families = @('config_policy_threshold')
         closed_requirement_families = @('config_policy_threshold')
@@ -245,7 +245,7 @@ downstream_output_or_side_effect: first_slice_payload_contract
     })
 
     $ledger = Read-JsonFile $ledgerPath
-    $ledger.families += (New-FamilyRow -Id 'lifecycle_cleanup_retention' -Weight 76 -Status 'PARTIAL' -SliceType 'stateful_success_slice' -Carrier 'com.huize.claim.core.examine.service.CaseExamineLogService.saveExamineLog' -ProofRequired @('same_status_cleanup', 'system_operator') -CoverageCap 60)
+    $ledger.families += (New-FamilyRow -Id 'lifecycle_cleanup_retention' -Weight 76 -Status 'PARTIAL' -SliceType 'stateful_success_slice' -Carrier 'com.example.project.core.examine.service.CaseExamineLogService.saveExamineLog' -ProofRequired @('same_status_cleanup', 'system_operator') -CoverageCap 60)
     $ledger | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $ledgerPath -Encoding UTF8
 
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scriptRoot 'FamilyRouterAndCap.ps1') -ReplayRoot $replayRoot -Ledger $ledgerPath -ValidateOnly | Out-Null

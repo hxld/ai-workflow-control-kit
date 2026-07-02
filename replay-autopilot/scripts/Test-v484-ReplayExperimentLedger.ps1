@@ -56,7 +56,7 @@ try {
         stage = 'Plan'
         verification_status = 'FAIL'
         issues = @(
-            'policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.RequestBuildFunction',
+            'policy_rebuild_plan_missing:ExampleDataAssemblyHelper.RequestBuildFunction',
             'policy_rebuild_plan_invalid:fixed_db_caseid'
         )
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $r02 'PLAN_CONTRACT_VERIFY.json') -Encoding UTF8

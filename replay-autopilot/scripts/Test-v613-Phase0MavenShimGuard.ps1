@@ -47,14 +47,14 @@ try {
     $env:REPLAY_PROTECTED_ROOT = $protectedRoot
     $env:REPLAY_WORKTREE_ROOT = $worktree
     $env:MAVEN_CMD = ''
-    $phase0Command = '"' + $mvnShim + '" -f "' + (Join-Path $worktree 'pom.xml') + '" -pl claim-core -am compile'
+    $phase0Command = '"' + $mvnShim + '" -f "' + (Join-Path $worktree 'pom.xml') + '" -pl example-core -am compile'
     $phase0Output = & cmd.exe /d /s /c "$phase0Command 2>&1" | Out-String
     $phase0Exit = $LASTEXITCODE
     Assert-True 'phase0_maven_blocked_before_real_maven' ($phase0Exit -eq 84) "exit=$phase0Exit output=$phase0Output"
     Assert-True 'phase0_maven_block_message' ($phase0Output -match 'phase0 command guard blocked Maven') $phase0Output
 
     $env:REPLAY_AGENT_STAGE = 'phase1'
-    $protectedCommand = '"' + $mvnShim + '" -f "' + (Join-Path $protectedRoot 'pom.xml') + '" -pl claim-core -am compile'
+    $protectedCommand = '"' + $mvnShim + '" -f "' + (Join-Path $protectedRoot 'pom.xml') + '" -pl example-core -am compile'
     $protectedOutput = & cmd.exe /d /s /c "$protectedCommand 2>&1" | Out-String
     $protectedExit = $LASTEXITCODE
     Assert-True 'protected_root_maven_blocked' ($protectedExit -eq 85) "exit=$protectedExit output=$protectedOutput"

@@ -197,13 +197,13 @@ function Get-TestHarnessModuleFromCommand {
 function Get-DefaultTestHarnessModule {
     param([string]$Worktree)
     if ([string]::IsNullOrWhiteSpace($Worktree) -or -not (Test-Path -LiteralPath $Worktree -PathType Container)) { return '' }
-    $claimServer = Join-Path $Worktree 'claim-server'
-    if (Test-Path -LiteralPath (Join-Path $claimServer 'src\test\java') -PathType Container) { return 'claim-server' }
+    $claimServer = Join-Path $Worktree 'example-server'
+    if (Test-Path -LiteralPath (Join-Path $claimServer 'src\test\java') -PathType Container) { return 'example-server' }
     $module = @(Get-ChildItem -LiteralPath $Worktree -Directory -ErrorAction SilentlyContinue | Where-Object {
         Test-Path -LiteralPath (Join-Path $_.FullName 'src\test\java') -PathType Container
     } | Select-Object -First 1)
     if ($module.Count -gt 0) { return [string]$module[0].Name }
-    if (Test-Path -LiteralPath $claimServer -PathType Container) { return 'claim-server' }
+    if (Test-Path -LiteralPath $claimServer -PathType Container) { return 'example-server' }
     return ''
 }
 

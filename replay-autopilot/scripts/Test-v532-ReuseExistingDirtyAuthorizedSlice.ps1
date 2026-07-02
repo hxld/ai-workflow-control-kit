@@ -48,14 +48,14 @@ try {
         slice_index = 1
         slice_status = 'DONE'
         implemented_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
         current_slice_changed_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
     })
     Write-JsonFile (Join-Path $replayRoot 'SLICE_VERIFY_01.json') ([ordered]@{
@@ -64,24 +64,24 @@ try {
         slice_status = 'DONE'
         authorized_for_next_slice = $true
         changed_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java',
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java',
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
     })
 
     Import-RunReplayLoopFunctions
 
     $allowed = Get-ReuseExistingPrePhase1DirtyDecision -ReplayRoot $replayRoot -DirtyEntries @(
-        ' M claim-core/src/main/java/acme/ApplyProcessor.java',
-        ' M claim-core/src/main/java/acme/CalcProcessor.java',
-        '?? claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+        ' M example-core/src/main/java/acme/ApplyProcessor.java',
+        ' M example-core/src/main/java/acme/CalcProcessor.java',
+        '?? example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
     )
     Assert-True 'authorized slice dirty files are allowed for reuse' ([bool]$allowed.allow -and [string]$allowed.reason -eq 'reuse_existing_dirty_matches_authorized_slice_files') ($allowed | ConvertTo-Json -Depth 12)
-    Assert-True 'dirty paths are normalized from git status entries' (@($allowed.dirty_paths) -contains 'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java') ($allowed | ConvertTo-Json -Depth 12)
+    Assert-True 'dirty paths are normalized from git status entries' (@($allowed.dirty_paths) -contains 'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java') ($allowed | ConvertTo-Json -Depth 12)
 
     $blocked = Get-ReuseExistingPrePhase1DirtyDecision -ReplayRoot $replayRoot -DirtyEntries @(
-        ' M claim-core/src/main/java/acme/ApplyProcessor.java',
+        ' M example-core/src/main/java/acme/ApplyProcessor.java',
         ' M pom.xml'
     )
     Assert-True 'extra dirty file outside authorized slice remains blocked' (-not [bool]$blocked.allow) ($blocked | ConvertTo-Json -Depth 12)
@@ -93,7 +93,7 @@ try {
         slice_index = 1
         slice_status = 'DONE'
         implemented_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java'
         )
     })
     Write-JsonFile (Join-Path $multiReplayRoot 'SLICE_VERIFY_01.json') ([ordered]@{
@@ -102,15 +102,15 @@ try {
         slice_status = 'DONE'
         authorized_for_next_slice = $true
         changed_files = @(
-            'claim-core/src/main/java/acme/ApplyProcessor.java'
+            'example-core/src/main/java/acme/ApplyProcessor.java'
         )
     })
     Write-JsonFile (Join-Path $multiReplayRoot 'SLICE_RESULT_02.json') ([ordered]@{
         slice_index = 2
         slice_status = 'DONE'
         implemented_files = @(
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
     })
     Write-JsonFile (Join-Path $multiReplayRoot 'SLICE_VERIFY_02.json') ([ordered]@{
@@ -119,14 +119,14 @@ try {
         slice_status = 'DONE'
         authorized_for_next_slice = $true
         changed_files = @(
-            'claim-core/src/main/java/acme/CalcProcessor.java',
-            'claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+            'example-core/src/main/java/acme/CalcProcessor.java',
+            'example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
         )
     })
     $multiAllowed = Get-ReuseExistingPrePhase1DirtyDecision -ReplayRoot $multiReplayRoot -DirtyEntries @(
-        ' M claim-core/src/main/java/acme/ApplyProcessor.java',
-        ' M claim-core/src/main/java/acme/CalcProcessor.java',
-        '?? claim-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
+        ' M example-core/src/main/java/acme/ApplyProcessor.java',
+        ' M example-core/src/main/java/acme/CalcProcessor.java',
+        '?? example-server/src/test/java/acme/PolicyNumRebuildPathTest.java'
     )
     Assert-True 'dirty files split across authorized slices are allowed for reuse' `
         ([bool]$multiAllowed.allow -and [string]$multiAllowed.reason -eq 'reuse_existing_dirty_matches_authorized_slice_set') `

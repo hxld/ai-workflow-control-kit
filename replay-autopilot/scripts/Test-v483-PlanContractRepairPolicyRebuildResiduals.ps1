@@ -25,8 +25,8 @@ try {
     $initialVerifyText = @'
 {
   "issues": [
-    "policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.RequestBuildFunction",
-    "policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.buildRequestCommon",
+    "policy_rebuild_plan_missing:ExampleDataAssemblyHelper.RequestBuildFunction",
+    "policy_rebuild_plan_missing:ExampleDataAssemblyHelper.buildRequestCommon",
     "policy_rebuild_plan_invalid:fixed_db_caseid"
   ],
   "residual_examples": [
@@ -52,13 +52,13 @@ try {
     Assert-True 'plan_contract_repair_prompt_has_no_control_chars' ($forbiddenControlChars.Count -eq 0)
 
     Assert-True 'prompt_handles_exact_request_build_function_missing_issue' (
-        $promptText.Contains('policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.RequestBuildFunction')
+        $promptText.Contains('policy_rebuild_plan_missing:ExampleDataAssemblyHelper.RequestBuildFunction')
     )
     Assert-True 'prompt_handles_exact_build_request_common_missing_issue' (
-        $promptText.Contains('policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.buildRequestCommon')
+        $promptText.Contains('policy_rebuild_plan_missing:ExampleDataAssemblyHelper.buildRequestCommon')
     )
     Assert-True 'prompt_requires_both_fully_qualified_source_chain_tokens' (
-        $promptText.Contains('add both exact literal tokens `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction`')
+        $promptText.Contains('add both exact literal tokens `ExampleDataAssemblyHelper.buildRequestCommon` and `ExampleDataAssemblyHelper.RequestBuildFunction`')
     )
     Assert-True 'prompt_rejects_near_miss_request_build_function_substitutes' (
         $promptText.Contains('Do not substitute `buildRequestCommon`, `RequestBuildFunction`, `Function<RequestBuildContext, T>`, or `requestBuilder` alone')
@@ -75,7 +75,7 @@ try {
         $promptText.Contains('`rebuildTaskData(fixtureCaseId)`')
     )
     Assert-True 'prompt_requires_policy_rebuild_self_scan_presence_and_absence' (
-        $promptText.Contains('The scan must prove both `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction` exist') -and
+        $promptText.Contains('The scan must prove both `ExampleDataAssemblyHelper.buildRequestCommon` and `ExampleDataAssemblyHelper.RequestBuildFunction` exist') -and
         $promptText.Contains('the following forbidden residues do not exist anywhere') -and
         $promptText.Contains('`12345L`, `67890L`, `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`')
     )

@@ -33,20 +33,20 @@ try {
     Write-Text $phase0ResultPath @'
 # Phase 0 Result
 
-- selected_real_entry: AiAutoClaimFlowService.handle(Long caseId, AiApplyClaimApiTask task)
-- carrier_class: com.huize.claim.core.ai.service.AiAutoClaimFlowService
+- selected_real_entry: ExampleFlowService.handle(Long caseId, ExampleApplyClaimApiTask task)
+- carrier_class: com.example.project.core.ai.service.ExampleFlowService
 - carrier_status: EXISTING
 
 ## Verified from Current Worktree
 
 **Verified from Current Worktree**:
-- `AiAutoClaimFlowService.java` exists at claim-core/src/main/java/com/huize/claim/core/ai/service/
-- Method signature: `public void handle(Long caseId, AiApplyClaimApiTask task)`
+- `ExampleFlowService.java` exists at example-core/src/main/java/com/example/project/core/ai/service/
+- Method signature: `public void handle(Long caseId, ExampleApplyClaimApiTask task)`
 
 ## Search Commands Used
 
 ```
-rg "AiAutoClaim" --include "*.java" → Found 6 files including service
+rg "ExampleAutoClaim" --include "*.java" → Found 6 files including service
 ```
 '@
 

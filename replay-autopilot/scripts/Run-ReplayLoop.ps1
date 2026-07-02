@@ -826,7 +826,7 @@ function Test-PolicyRebuildPlanText {
     }
     $hasPolicyNum = $PlanText -match '(?i)(policyNum|policy_num)'
     $hasInsureNum = $PlanText -match '(?i)(insureNum|insure_num)'
-    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|AiClaimDataAssemblyHelper)'
+    $hasRebuildBoundary = $PlanText -match '(?i)(rebuildTaskData|RequestBuildFunction|RequestBuildContext|ExampleDataAssemblyHelper)'
     return ($hasPolicyNum -and $hasInsureNum -and $hasRebuildBoundary)
 }
 
@@ -878,7 +878,7 @@ function Write-PlanTestCompileEvidencePolicyGate {
         fingerprint = 'policy_rebuild_claim_core_harness'
         reason = $Reason
         module = $ModuleName
-        required_module = 'claim-server'
+        required_module = 'example-server'
         generated_at = (Get-Date).ToString('s')
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $ReplayRoot 'PLAN_TEST_COMPILE_EVIDENCE_POLICY_GATE.json') -Encoding UTF8
 }
@@ -1104,12 +1104,12 @@ function Repair-PolicyRebuildPlanHarness {
 
     $needsRepair = $false
     $reasons = New-Object System.Collections.Generic.List[string]
-    if ($moduleName.Trim().ToLowerInvariant() -ne 'claim-server') {
+    if ($moduleName.Trim().ToLowerInvariant() -ne 'example-server') {
         $needsRepair = $true
         $reasons.Add("test_module_for_target:$moduleName") | Out-Null
     }
     $dryRunLower = $dryRunCommand.ToLowerInvariant()
-    if (-not ($dryRunLower.Contains('-pl claim-server') -and $dryRunLower.Contains('-am') -and $dryRunLower.Contains('test-compile'))) {
+    if (-not ($dryRunLower.Contains('-pl example-server') -and $dryRunLower.Contains('-am') -and $dryRunLower.Contains('test-compile'))) {
         $needsRepair = $true
         $reasons.Add('compile_command_not_claim_server_am_test_compile') | Out-Null
     }
@@ -1117,7 +1117,7 @@ function Repair-PolicyRebuildPlanHarness {
         $needsRepair = $true
         $reasons.Add('manual_or_code_inspection_used_as_red_test') | Out-Null
     }
-    if ($expectedTestClass -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java' -and $planRaw -notmatch '(?i)claim-server[/\\]src[/\\]test[/\\]java') {
+    if ($expectedTestClass -notmatch '(?i)example-server[/\\]src[/\\]test[/\\]java' -and $planRaw -notmatch '(?i)example-server[/\\]src[/\\]test[/\\]java') {
         $needsRepair = $true
         $reasons.Add('expected_test_class_missing_claim_server_src_test_java') | Out-Null
     }
@@ -1134,25 +1134,25 @@ function Repair-PolicyRebuildPlanHarness {
     if (-not [string]::IsNullOrWhiteSpace($mavenSettingsSegment)) {
         $compileCommandParts += $mavenSettingsSegment
     }
-    $compileCommandParts += @('-f', ('"{0}"' -f $worktreePom), '-pl', 'claim-server', '-am', 'test-compile')
+    $compileCommandParts += @('-f', ('"{0}"' -f $worktreePom), '-pl', 'example-server', '-am', 'test-compile')
     $compileCommand = $compileCommandParts -join ' '
-    $expectedClass = 'claim-server/src/test/java/com/huize/claim/core/ai/task/AiClaimRebuildPathTest.java'
+    $expectedClass = 'example-server/src/test/java/com/example/project/core/ai/task/ExampleRebuildPathTest.java'
     $expectedMethod = 'testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
-    $firstRed = 'AiClaimRebuildPathTest.testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
+    $firstRed = 'ExampleRebuildPathTest.testRebuildTaskData_PreservesPolicyNumAndInsureNumForBothProcessors'
     $expectedAssertions = @(
         'assert apply rebuildTaskData result is not null',
         'assert apply taskData.policyNum equals RequestBuildContext.policyNum',
         'assert apply taskData.insureNum equals RequestBuildContext.insureNum',
         'assert calculate-loss taskData.policyNum equals RequestBuildContext.policyNum',
         'assert calculate-loss taskData.insureNum equals RequestBuildContext.insureNum',
-        'assert AiClaimDataAssemblyHelper.RequestBuildFunction is invoked through buildRequestCommon'
+        'assert ExampleDataAssemblyHelper.RequestBuildFunction is invoked through buildRequestCommon'
     )
 
     Set-ObjectPropertyValue -Object $plan -Name 'expected_test_class' -Value $expectedClass
     Set-ObjectPropertyValue -Object $plan -Name 'expected_test_method' -Value $expectedMethod
     Set-ObjectPropertyValue -Object $plan -Name 'first_red_test' -Value $firstRed
     Set-ObjectPropertyValue -Object $plan -Name 'expected_assertions' -Value $expectedAssertions
-    Set-ObjectPropertyValue -Object $infra -Name 'test_module_for_target' -Value 'claim-server'
+    Set-ObjectPropertyValue -Object $infra -Name 'test_module_for_target' -Value 'example-server'
     Set-ObjectPropertyValue -Object $infra -Name 'test_module_has_dependencies' -Value $true
     Set-ObjectPropertyValue -Object $infra -Name 'test_harness_available' -Value $true
     Set-ObjectPropertyValue -Object $infra -Name 'can_import_production_classes' -Value $true
@@ -1166,7 +1166,7 @@ function Repair-PolicyRebuildPlanHarness {
     $result.status = 'REPAIRED'
     $result.decision = 'REWRITE_PLAN_RESULT_JSON_TEST_HARNESS'
     $result.reason = $reasons.ToArray() -join '; '
-    $result.required_module = 'claim-server'
+    $result.required_module = 'example-server'
     $result.expected_test_class = $expectedClass
     $result.expected_test_method = $expectedMethod
     $result.compilation_dry_run_command = $compileCommand
@@ -1274,7 +1274,7 @@ function Ensure-PlanTestCompileEvidence {
     }
     $evidenceFile = Get-ObjectPropertyString -Object $infra -Name 'compilation_dry_run_evidence_file'
 
-    if ((Test-PolicyRebuildPlanText -PlanText $planRaw) -and $moduleName.Trim() -ine 'claim-server') {
+    if ((Test-PolicyRebuildPlanText -PlanText $planRaw) -and $moduleName.Trim() -ine 'example-server') {
         $reason = "policy_rebuild_test_module_must_be_claim_server; actual=$moduleName"
         Write-PlanTestCompileEvidencePolicyGate -ReplayRoot $ReplayRoot -ModuleName $moduleName -Reason $reason
         Write-Warning "Skipping plan test compile evidence materialization: $reason"
@@ -1835,7 +1835,7 @@ function Write-WorktreeHeadAudit {
 function Invoke-ReplayContextIndexValidationSafe {
     param(
         [string]$ReplayRoot,
-        [string[]]$CandidateNames = @('replay-context-index.json', 'claim-system-context.json')
+        [string[]]$CandidateNames = @('replay-context-index.json', 'example-system-context.json')
     )
 
     $script = Join-Path $PSScriptRoot 'validate_replay_context_index.py'
@@ -4669,7 +4669,7 @@ Add or update the following sections in ``$planResultPath``:
 1. Before claiming "new service required", you MUST show at least 3 carrier search attempts
 2. Each search attempt must include: search query, results found, and why insufficient
 3. If existing carrier serves similar purpose, use it instead of creating new one
-4. Do not create synthetic carriers (e.g., "InsureCompanyFlowConfigService") without exhaustive search
+4. Do not create synthetic carriers (e.g., "ExampleCompanyFlowConfigService") without exhaustive search
 5. Method signatures must match requirements exactly - no inferred parameters
 
 ## After repair
@@ -4985,7 +4985,7 @@ If the existing PLAN_RESULT.md has plan_status=BLOCKED, you may write abbreviate
     $planMachineContractPath = Join-Path $replayRoot 'PLAN_RESULT.json'
     $policyHarnessRepaired = Repair-PolicyRebuildPlanHarness -ReplayRoot $replayRoot -Worktree $worktree -PlanResultJsonPath $planMachineContractPath -MavenSettings $mavenSettings
     if ($policyHarnessRepaired) {
-        Write-Host "Policy rebuild Plan machine contract normalized to claim-server test harness."
+        Write-Host "Policy rebuild Plan machine contract normalized to example-server test harness."
     }
     $planMachineNormalizer = Join-Path $PSScriptRoot 'Sync-PlanMachineContract.ps1'
     if (Test-Path -LiteralPath $planMachineNormalizer -PathType Leaf) {
@@ -5292,11 +5292,11 @@ Required binding shape:
   - `literal_contract`
   - `real_entry`
 - **Correct format examples** (keyword MUST appear in the value):
-  - `golden_slice_binding: side_effect_ledger_gap → config_family → TAiClaimModuleConfig.java → AiClaimModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
+  - `golden_slice_binding: side_effect_ledger_gap → config_family → TExampleModuleConfig.java → ExampleModuleConfigService → testFreeReviewAmount_Save_Fails → freeReviewAmount field added → DB UPDATE verified`
   - `golden_slice_binding: exact_contract_gap → facade → ClaimCaseFacade → getCaseInfo → testGetCaseInfo_ExactContract → production diff verified`
   - `golden_slice_binding: schema_contract_discovery_gap → entity → TCaseInfo → CaseInfoService → testSchemaDiscovery → table schema verified`
 - **Wrong format** (missing fingerprint keyword - will FAIL verification):
-  - `golden_slice_binding: config_family → TAiClaimModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
+  - `golden_slice_binding: config_family → TExampleModuleConfig.java → ...` (NO - starts with config_family, not a fingerprint keyword)
   - `golden_slice_binding: facade → ClaimCaseFacade → ...` (NO - starts with facade, not a fingerprint keyword)
 - The same binding must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
 - If `oracle_overlap_below_threshold`, `oracle_high_weight_uncovered`, or `low_verification_cap` appears, map at least one missing HIGH-weight oracle file to the Golden Slice first-slice contract: requirement literal -> real carrier -> RED test -> GREEN production diff -> side-effect proof.
@@ -5324,20 +5324,20 @@ You may modify ONLY these files under the replay root. The current working direc
    If `issue_evidence` exists in PLAN_CONTRACT_VERIFY.json, treat every listed `artifact` and `snippet` as authoritative: repair those exact files/snippets first.
    PLAN_RESULT.json is included because Verify-PlanContract scans it together with Markdown plan artifacts. If you edit PLAN_RESULT.json, keep it valid JSON and preserve `test_infrastructure_check` exactly unless the issue specifically names a test infrastructure field.
    **Policy rebuild hard repair rules**: If any issue starts with `policy_rebuild_plan_`, the repair must remove every verifier-triggering pattern from all allowed files before writing the completion note.
-   - For `policy_rebuild_plan_missing:claim_server_test_harness`: add the exact path token `claim-server/src/test/java/...` to the allowed plan artifacts, preferably as the planned test file path (for example `claim-server/src/test/java/com/huize/claim/core/ai/task/AiClaimRebuildPathTest.java`). Also ensure `PLAN_RESULT.json.expected_test_class` uses either that full path or a class name backed by `test_infrastructure_check.test_module_for_target=claim-server`, and ensure Maven evidence still uses `-pl claim-server -am test-compile`. Do not stop at `claim-server/src/test`; the verifier requires the `/java` segment.
-   - For `policy_rebuild_plan_invalid:test_harness_claim_core`: remove all `claim-core/src/test`, `-pl claim-core`, and `claim-core -Dtest` references. Tests must be planned under `claim-server/src/test/java/...`, and Maven evidence must use `-pl claim-server -am test-compile`.
-   - For `policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.buildRequestCommon` or `policy_rebuild_plan_missing:AiClaimDataAssemblyHelper.RequestBuildFunction`: add both exact literal tokens `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction` to the upstream source-chain contract evidence in the allowed plan artifacts. Do not substitute `buildRequestCommon`, `RequestBuildFunction`, `Function<RequestBuildContext, T>`, or `requestBuilder` alone; the verifier requires both machine contract keys.
+   - For `policy_rebuild_plan_missing:claim_server_test_harness`: add the exact path token `example-server/src/test/java/...` to the allowed plan artifacts, preferably as the planned test file path (for example `example-server/src/test/java/com/example/project/core/ai/task/ExampleRebuildPathTest.java`). Also ensure `PLAN_RESULT.json.expected_test_class` uses either that full path or a class name backed by `test_infrastructure_check.test_module_for_target=example-server`, and ensure Maven evidence still uses `-pl example-server -am test-compile`. Do not stop at `example-server/src/test`; the verifier requires the `/java` segment.
+   - For `policy_rebuild_plan_invalid:test_harness_claim_core`: remove all `example-core/src/test`, `-pl example-core`, and `example-core -Dtest` references. Tests must be planned under `example-server/src/test/java/...`, and Maven evidence must use `-pl example-server -am test-compile`.
+   - For `policy_rebuild_plan_missing:ExampleDataAssemblyHelper.buildRequestCommon` or `policy_rebuild_plan_missing:ExampleDataAssemblyHelper.RequestBuildFunction`: add both exact literal tokens `ExampleDataAssemblyHelper.buildRequestCommon` and `ExampleDataAssemblyHelper.RequestBuildFunction` to the upstream source-chain contract evidence in the allowed plan artifacts. Do not substitute `buildRequestCommon`, `RequestBuildFunction`, `Function<RequestBuildContext, T>`, or `requestBuilder` alone; the verifier requires both machine contract keys.
    - For `policy_rebuild_plan_invalid:fixed_db_caseid`: remove all fixed DB case id wording and literals including `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`, `12345L`, and `67890L`. These tokens are forbidden even in negative checklist text such as "No test uses fixed database caseIds"; rewrite that as "No numeric fixture id literals are used." Rewrite sample lines such as `Long caseId = 12345L`, `ctx.setCaseId(12345L)`, `mockContext.setCaseId(12345L)`, and `rebuildTaskData(12345L)` to use a symbolic generated/in-memory fixture variable such as `Long fixtureCaseId = generatedFixtureCaseId`, `ctx.setCaseId(fixtureCaseId)`, and `rebuildTaskData(fixtureCaseId)`. Do not leave numeric caseId literals anywhere in the allowed files.
    - For `policy_rebuild_plan_invalid:null_taskdata_pass_path`: remove the exact literal forms `taskData == null`, `result == null`, `null then pass`, `null then warn`, `null then print`, and every regex-compatible `returns null ... pass/passes/passed/passing` sentence from every allowed file, including PLAN_RESULT.json. These forms are forbidden even when describing RED failure, fail-closed behavior, trigger conditions, golden_slice_binding, or boundary conditions. Rewrite examples like `RED: request.getPolicyNum() returns null -> GREEN -> unit test passes` to `RED: source-chain assignment missing before fix -> GREEN: req.setPolicyNum(buildContext.getPolicyNum()) and req.setInsureNum(buildContext.getInsureNum()) -> executable assertion passes`. Do not use the doIt null-taskData branch as the first-slice proof; the first slice must prove the rebuild RequestBuildFunction source-chain assignment.
-   - For `policy_rebuild_plan_invalid:dto_or_downstream_only`: remove the exact literal forms `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, and `Contract Definition (DTO Fields)` from every allowed file. The first slice must be the upstream rebuild lambda/source-chain proof, not DTO support. A downstream `taskData.setPolicyNum(request.getPolicyNum())` validation may appear only after the proof names the upstream source-chain assignments `req.setPolicyNum(buildContext.getPolicyNum())` and `req.setInsureNum(buildContext.getInsureNum())`, `AiClaimDataAssemblyHelper.RequestBuildFunction`, and `RequestBuildContext`.
+   - For `policy_rebuild_plan_invalid:dto_or_downstream_only`: remove the exact literal forms `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, and `Contract Definition (DTO Fields)` from every allowed file. The first slice must be the upstream rebuild lambda/source-chain proof, not DTO support. A downstream `taskData.setPolicyNum(request.getPolicyNum())` validation may appear only after the proof names the upstream source-chain assignments `req.setPolicyNum(buildContext.getPolicyNum())` and `req.setInsureNum(buildContext.getInsureNum())`, `ExampleDataAssemblyHelper.RequestBuildFunction`, and `RequestBuildContext`.
    - For `policy_rebuild_plan_missing:upstream_request_assignment_diff`: the repaired allowed files MUST contain both exact literal assignment expressions, with this spelling: `req.setPolicyNum(buildContext.getPolicyNum())` and `req.setInsureNum(buildContext.getInsureNum())`. Abbreviations such as `req.setPolicyNum/req.setInsureNum`, downstream setters such as `taskData.setPolicyNum(request.getPolicyNum())`, or prose like "source-chain assignment" do not satisfy this gate. Put the exact literals in PLAN_RESULT.md golden_slice_binding or next_action, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, and FIRST_SLICE_PROOF_PLAN.md so the verifier can match them.
    - For `policy_rebuild_plan_invalid:no_production_change_against_oracle_additions`: ORACLE_DIFF_ANALYSIS.json has production additions, so the repaired plan must not claim `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, or test-only completion. Rewrite PLAN_RESULT.md, REPLAY_PLAN.md, EXPECTED_DIFF_MATRIX.md, and FIRST_SLICE_PROOF_PLAN.md so Slice 1 has production LOGIC_FIX changes in both oracle HIGH-weight TaskProcessor files.
-   - For `policy_rebuild_plan_invalid:core_closure_false_against_oracle` or `policy_rebuild_plan_invalid:highest_weight_gate_not_core_entry`: set the highest-weight open gate to `core_entry`, set `core_closure_required: true`, and bind Slice 1 to both `AiApplyClaimApiTaskProcessor.rebuildTaskData` and `AiCalculateLossApiTaskProcessor.rebuildTaskData`.
-   - For `policy_rebuild_plan_invalid:spring_context_harness`: remove optional Spring/real-DB integration slices and all `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB` references. Use only no-Spring JUnit with Mockito/reflection under `claim-server/src/test/java/...`.
+   - For `policy_rebuild_plan_invalid:core_closure_false_against_oracle` or `policy_rebuild_plan_invalid:highest_weight_gate_not_core_entry`: set the highest-weight open gate to `core_entry`, set `core_closure_required: true`, and bind Slice 1 to both `ExampleApplyClaimApiTaskProcessor.rebuildTaskData` and `ExampleCalculatorApiTaskProcessor.rebuildTaskData`.
+   - For `policy_rebuild_plan_invalid:spring_context_harness`: remove optional Spring/real-DB integration slices and all `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB` references. Use only no-Spring JUnit with Mockito/reflection under `example-server/src/test/java/...`.
    - For `first_slice_proof_v457_side_effects_insufficient`: replace empty `expected_side_effects: []` with a non-empty JSON array of concrete state changes, for example `[{"memory":"request.policyNum","operation":"set","value":"from buildContext.getPolicyNum()"},{"memory":"request.insureNum","operation":"set","value":"from buildContext.getInsureNum()"},{"memory":"taskData.policyNum","operation":"set","value":"from request.getPolicyNum()"}]`. Do not use an empty array or prose-only side effects.
    - TEST_CHARTER.md must pass `Invoke-TestCharterPrevalidator.ps1 -WorkDir <replay_root> -PassThru` before Phase 1 starts. It must include prevalidator-recognized labels: `Entry Point: <exact production entry method(s)>`, `Test Class: <no-Spring JUnit/Mockito test class>`, `DB Verification: <AtomicReference/ArgumentCaptor/SELECT verification>`, and `Side Effects:` with verify/assert/query wording for each listed side effect. For source-chain rebuild requirements, the Entry Point must name the real rebuildTaskData carrier(s), not a synthetic TaskData-only proof.
-   - For `golden_slice_binding_weak:plan_result` or `golden_slice_binding_weak:first_slice_proof`: replace `none`, `none_with_reason`, `TBD`, or "no golden delivery slice files exist" with a concrete binding that contains a verifier-approved fingerprint, for example `exact_contract_gap -> AiClaimDataAssemblyHelper.RequestBuildFunction -> AiApplyClaimApiTaskProcessor.rebuildTaskData -> RED -> req.setPolicyNum(buildContext.getPolicyNum())/req.setInsureNum(buildContext.getInsureNum()) -> stateful_side_effect`. The same value must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
-   - After repairing, self-scan PLAN_RESULT.md, PLAN_RESULT.json, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, SIDE_EFFECT_LEDGER.md, TEST_CHARTER.md, and FIRST_SLICE_PROOF_PLAN.md. The scan must prove both `AiClaimDataAssemblyHelper.buildRequestCommon` and `AiClaimDataAssemblyHelper.RequestBuildFunction` exist and the following forbidden residues do not exist anywhere: `12345L`, `67890L`, `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`, `taskData == null`, `result == null`, `returns null ->`, `returns null pass`, `returns null passes`, `returns null passed`, `returns null passing`, `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB`. `FIELD_ADD` is forbidden only when it is DTO-only, Request-DTO-only, compile-only, or test-none evidence; it is allowed when it explicitly describes TaskProcessor production field propagation plus the upstream RequestBuildFunction source-chain assignment. If any forbidden pattern remains, continue editing; do not claim completion.
+   - For `golden_slice_binding_weak:plan_result` or `golden_slice_binding_weak:first_slice_proof`: replace `none`, `none_with_reason`, `TBD`, or "no golden delivery slice files exist" with a concrete binding that contains a verifier-approved fingerprint, for example `exact_contract_gap -> ExampleDataAssemblyHelper.RequestBuildFunction -> ExampleApplyClaimApiTaskProcessor.rebuildTaskData -> RED -> req.setPolicyNum(buildContext.getPolicyNum())/req.setInsureNum(buildContext.getInsureNum()) -> stateful_side_effect`. The same value must appear in both PLAN_RESULT.md and FIRST_SLICE_PROOF_PLAN.md.
+   - After repairing, self-scan PLAN_RESULT.md, PLAN_RESULT.json, REPLAY_PLAN.md, IMPLEMENTATION_CONTRACT.md, EXPECTED_DIFF_MATRIX.md, SIDE_EFFECT_LEDGER.md, TEST_CHARTER.md, and FIRST_SLICE_PROOF_PLAN.md. The scan must prove both `ExampleDataAssemblyHelper.buildRequestCommon` and `ExampleDataAssemblyHelper.RequestBuildFunction` exist and the following forbidden residues do not exist anywhere: `12345L`, `67890L`, `fixed caseId`, `fixed database caseId`, `fixed database caseIds`, `fixed DB caseId`, `real database caseId`, `external test data`, `taskData == null`, `result == null`, `returns null ->`, `returns null pass`, `returns null passes`, `returns null passed`, `returns null passing`, `DTO getter`, `getter/setter`, `accessor methods`, `hasPolicyNumAndInsureNumFields`, `field existence`, `DTO field`, `Request DTO field`, `compile-time validation only`, `Tests - None`, `NO_CHANGE`, `VERIFIED_PRESENT`, `Total Production Changes: 0`, `baseline already contains the complete implementation`, `Production Code: No changes`, `AbstractTestClass`, `@SpringBootTest`, `SpringJUnit4ClassRunner`, `@ContextConfiguration`, `@Resource`, `Spring context`, `real database`, and `Real DB`. `FIELD_ADD` is forbidden only when it is DTO-only, Request-DTO-only, compile-only, or test-none evidence; it is allowed when it explicitly describes TaskProcessor production field propagation plus the upstream RequestBuildFunction source-chain assignment. If any forbidden pattern remains, continue editing; do not claim completion.
 2. PLAN_RESULT.md must use these exact machine keys as single-line `key: value` fields; do not invent aliases:
    - `plan_status: PROCEED` or `plan_status: BLOCKED`
    - `carrier_search: performed` or `carrier_search: blocked`
@@ -5352,7 +5352,7 @@ You may modify ONLY these files under the replay root. The current working direc
    - `oracle_out_of_scope_files: <semicolon-separated oracle files with blocker reasons or none>`
    - `golden_slice_binding: <MUST contain one of: side_effect_ledger_gap|exact_contract_gap|schema_contract_discovery_gap|low_verification_cap|oracle_overlap|positive_first_slice|first_slice_contract|stateful_side_effect|literal_contract|real_entry -> selected production carrier -> first RED -> minimum GREEN -> executable side effect>`
    - `first_slice: <S1 identifier, e.g., "S1" or "S1 - Auto Claim Flow">`
-   - `first_red_test: <test class.method, e.g., "AiAutoClaimFlowServiceTest.testHappyPath">`
+   - `first_red_test: <test class.method, e.g., "ExampleFlowServiceTest.testHappyPath">`
 3. FIRST_SLICE_PROOF_PLAN.md must use these exact single-line `key: value` fields; do not rely on headings, bullets, tables, or narrative paragraphs:
    - `first_slice: <S1 identifier MUST match PLAN_RESULT.md first_slice exactly>`
    - `first_red_test: <test signature MUST match PLAN_RESULT.md first_red_test exactly - this is cross-artifact consistency, not a suggestion>`
@@ -5382,9 +5382,9 @@ You may modify ONLY these files under the replay root. The current working direc
    - `pattern_error_handling: <response_codes or exception_propagation>`
    - `pattern_evidence_source: <rg command + file path>`
    **V457 Executable Evidence Gate MANDATORY fields** (required for plan_status: PROCEED):
-   - `target_carrier_file_path: <exact file path to carrier, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java">`
+   - `target_carrier_file_path: <exact file path to carrier, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java">`
    - `target_carrier_line_number: <exact integer line number where method is defined, e.g., "42". If NEW_SERVICE and line number unknown, write "NEW_SERVICE_LINE_NUMBER_PENDING" and set plan_status: BLOCKED>`
-   - `expected_test_class: <full test class name, e.g., "AiApplyClaimApiTaskProcessorTest">`
+   - `expected_test_class: <full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest">`
    - `expected_test_method: <test method name, e.g., "testExecuteTask_AutoFlowTriggered">`
    - `expected_assertions: <JSON array with at least 3 assertions, e.g., ["assertEquals(35, caseStatus)", "verify(compensateDetailMapper).insert()", "assertNotNull(result)"]>`
    - `expected_side_effects: <JSON array with at least 1 side effect, e.g., [{"table": "t_compensate_detail", "operation": "insert"}, {"table": "t_case_route", "operation": "update", "field": "status", "value": "35"}]>`
@@ -5394,9 +5394,9 @@ You may modify ONLY these files under the replay root. The current working direc
 6. If any `first_slice_proof_schema_missing:*` or dry-run `missing_fields` issue appears, update FIRST_SLICE_PROOF_PLAN.md using the exact keys above. Do not write `fail-closed condition:`; use `fail_closed_condition:`.
    **v452/v595 CRITICAL**: If `first_slice_proof_schema_missing:highest_weight_open_gate` appears, you MUST add this field. Use the highest pending family from ROUND_CONTRACT.md. Also add `first_slice_family:` for the actual S1 proof family. If S1 is an explicit prerequisite, such as a config field/threshold needed before the core tracer, do not rewrite `selected_real_entry` away from Phase0 and do not force the S1 carrier into Facade/Controller. Instead set `first_slice_family: config_policy_threshold`, keep `selected_real_entry: <Phase0 selected_real_entry>`, put the prerequisite carrier in `selected_carrier:`, and keep the core entry scheduled in PLAN_RESULT/REPLAY_PLAN. Example values: `stateful_side_effect`, `core_entry`, `wire_payload_api_contract`, `config_policy_threshold`. Do NOT write TBD, unknown, or placeholder.
    **V457 Executable Evidence Gate CRITICAL**: If any `first_slice_proof_v457_missing:*` or `first_slice_proof_v457_*` issue appears, you MUST add or fix the specific V457 fields in FIRST_SLICE_PROOF_PLAN.md:
-   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "claim-core/src/main/java/com/huize/claim/core/task/AiApplyClaimApiTaskProcessor.java"
+   - `first_slice_proof_v457_missing:target_carrier_file_path`: Add `target_carrier_file_path: <exact file path>` - use rg or file read to find the exact path, e.g., "example-core/src/main/java/com/example/project/core/task/ExampleApplyClaimApiTaskProcessor.java"
    - `first_slice_proof_v457_missing:target_carrier_line_number`: Add `target_carrier_line_number: <integer>` - read the file to find the exact line number where the method is defined, e.g., "42". Do NOT use TBD, unknown, or placeholder.
-   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "AiApplyClaimApiTaskProcessorTest"
+   - `first_slice_proof_v457_missing:expected_test_class`: Add `expected_test_class: <ClassName>` - the full test class name, e.g., "ExampleApplyClaimApiTaskProcessorTest"
    - `first_slice_proof_v457_missing:expected_test_method`: Add `expected_test_method: <methodName>` - the test method name, e.g., "testExecuteTask_AutoFlowTriggered"
    - `first_slice_proof_v457_assertions_missing` or `first_slice_proof_v457_assertions_insufficient`: Add `expected_assertions: ["assert1", "assert2", "assert3"]` - JSON array format with at least 3 concrete assertions. Convert any narrative format to JSON array.
    - `first_slice_proof_v457_side_effects_missing`: Add `expected_side_effects: [{"table": "...", "operation": "..."}]` - JSON array format with at least 1 side effect. Convert any narrative format to JSON array.

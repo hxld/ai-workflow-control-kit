@@ -58,44 +58,44 @@ New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
 try {
     $worktree = Join-Path $tempRoot 'worktree'
-    $sourceDir = Join-Path $worktree 'claim-core\src\main\java\com\huize\claim\core\ai\task'
+    $sourceDir = Join-Path $worktree 'example-core\src\main\java\com\example\project\core\ai\task'
     New-Item -ItemType Directory -Force -Path $sourceDir | Out-Null
 
     @'
-package com.huize.claim.core.ai.task;
+package com.example.project.core.ai.task;
 
-public class AiApplyClaimApiTaskProcessor {
-    private AiApplyClaimTaskData rebuildTaskData(Long caseId) {
+public class ExampleApplyClaimApiTaskProcessor {
+    private ExampleApplyClaimTaskData rebuildTaskData(Long caseId) {
         return null;
     }
 
     public void doIt() {
     }
 
-    public void handleTaskResponse(AiApplyClaimApiTask aiClaimApiTask, AiApplyClaimApiTaskResponse taskResponse) {
+    public void handleTaskResponse(ExampleApplyClaimApiTask example-featureApiTask, ExampleApplyClaimApiTaskResponse taskResponse) {
     }
 }
-'@ | Set-Content -LiteralPath (Join-Path $sourceDir 'AiApplyClaimApiTaskProcessor.java') -Encoding UTF8
+'@ | Set-Content -LiteralPath (Join-Path $sourceDir 'ExampleApplyClaimApiTaskProcessor.java') -Encoding UTF8
 
     @'
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorAutoFlowTest.java#eligibleSystemTriggeredAiResultStartsAutoFlow
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.doIt
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorAutoFlowTest.java#eligibleSystemTriggeredAiResultStartsAutoFlow
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.doIt
 '@ | Set-Content -LiteralPath (Join-Path $tempRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
     @'
 plan_status: PROCEED
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AiApplyClaimApiTaskProcessorAutoFlowTest.java#eligibleSystemTriggeredAiResultStartsAutoFlow
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.doIt
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/ExampleApplyClaimApiTaskProcessorAutoFlowTest.java#eligibleSystemTriggeredAiResultStartsAutoFlow
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.doIt
 '@ | Set-Content -LiteralPath (Join-Path $tempRoot 'IMPLEMENTATION_CONTRACT.md') -Encoding UTF8
 
     $sourceChain = [pscustomobject]@{
         required_source_chain = $true
         next_required_slice = [pscustomobject]@{
             carrier = 'TaskProcessor rebuildTaskData -> source.caseId -> InputData.case_id'
-            entry = 'AbstractAiClaimApiTaskProcessor.rebuildTaskData(Long caseId)'
-            test_name = 'AbstractAiClaimApiTaskProcessorTest.testRebuildTaskData_PreservesSourceFields'
+            entry = 'AbstractExampleApiTaskProcessor.rebuildTaskData(Long caseId)'
+            test_name = 'AbstractExampleApiTaskProcessorTest.testRebuildTaskData_PreservesSourceFields'
             slice_type = 'exact_contract_slice'
         }
     }
@@ -103,7 +103,7 @@ selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.d
     $forced = [pscustomobject]@{
         family_id = 'core_entry'
         slice_type = 'tracer_bullet'
-        target_sibling_surface = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.doIt'
+        target_sibling_surface = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.doIt'
         reason = 'rank1 core entry'
     }
 
@@ -132,7 +132,7 @@ selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.d
         [string]$sourceChain.next_required_slice.slice_type -eq 'exact_contract_slice' -and
         (
             [string]$forced.target_sibling_surface -eq [string]$sourceChain.next_required_slice.carrier -or
-            [string]$forced.target_sibling_surface -match '(?i)CaseRoute|Insure|RequestBuildContext|AiClaimBaseRequest|source' -or
+            [string]$forced.target_sibling_surface -match '(?i)CaseRoute|Insure|RequestBuildContext|ExampleBaseRequest|source' -or
             [string]$forced.family_id -eq 'core_entry'
         )
     )
@@ -145,8 +145,8 @@ selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.d
     }
 
     $carrierObject = [ordered]@{
-        selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)'
-        real_entry = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)'
+        selected_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)'
+        real_entry = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)'
         downstream_side_effect_or_output = 'auto flow side effect'
     }
     $carrierObject | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
@@ -158,12 +158,12 @@ selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.d
     }
 
     @'
-first_red_test: claim-server/src/test/java/com/huize/claim/core/ai/task/AbstractAiClaimApiTaskProcessorTest.java#testRebuildTaskData_PreservesSourceFields
-selected_carrier: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.rebuildTaskData(Long)
-selected_real_entry: com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.handleTaskResponse(AiApplyClaimApiTask,AiApplyClaimApiTaskResponse)
+first_red_test: example-server/src/test/java/com/example/project/core/ai/task/AbstractExampleApiTaskProcessorTest.java#testRebuildTaskData_PreservesSourceFields
+selected_carrier: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long)
+selected_real_entry: com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.handleTaskResponse(ExampleApplyClaimApiTask,ExampleApplyClaimApiTaskResponse)
 '@ | Set-Content -LiteralPath (Join-Path $tempRoot 'FIRST_SLICE_PROOF_PLAN.md') -Encoding UTF8
 
-    $carrierObject.selected_carrier = 'com.huize.claim.core.ai.task.AiApplyClaimApiTaskProcessor.rebuildTaskData(Long)'
+    $carrierObject.selected_carrier = 'com.example.project.core.ai.task.ExampleApplyClaimApiTaskProcessor.rebuildTaskData(Long)'
     $carrierObject | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $tempRoot 'CARRIER_AUTHORIZATION_01.json') -Encoding UTF8
     & powershell -NoProfile -ExecutionPolicy Bypass -File $callableGatePath -ReplayRoot $tempRoot -Worktree $worktree -SliceIndex 1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
